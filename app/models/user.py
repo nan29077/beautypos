@@ -1,0 +1,30 @@
+import enum
+from datetime import datetime
+from sqlalchemy import (
+    Column, Integer, String, Boolean, DateTime, Enum as SAEnum, Text
+)
+from app.database import Base
+
+
+class UserRole(str, enum.Enum):
+    ADMIN = "admin"
+    SALES = "sales"
+    OWNER = "owner"
+    DESIGNER = "designer"
+    LANDLORD = "landlord"
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    password_hash = Column(String(255), nullable=True)  # nullable for OAuth-only users
+    name = Column(String(100), nullable=False)
+    role = Column(SAEnum(UserRole), nullable=False, default=UserRole.OWNER)
+    oauth_provider = Column(String(50), nullable=True)  # kakao / naver / google
+    oauth_sub = Column(String(255), nullable=True)       # provider's user id
+    phone = Column(String(30), nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

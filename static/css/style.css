@@ -1,0 +1,294 @@
+/* ADPAY Dashboard — Global Styles */
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap');
+
+:root {
+    --primary: #1b3a5c;
+    --primary-light: #2c5f8a;
+    --accent: #0ea5e9;
+    --dark: #0d1b2a;
+    --sidebar-width: 260px;
+    --sidebar-bg: linear-gradient(180deg, #0d1b2a 0%, #1b3a5c 100%);
+}
+
+* { font-family: 'Noto Sans KR', sans-serif; box-sizing: border-box; }
+body { background: #f0f2f5; margin: 0; min-height: 100vh; -webkit-font-smoothing: antialiased; }
+
+/* ─── Sidebar ─── */
+.sidebar {
+    position: fixed; left: 0; top: 0; bottom: 0;
+    width: var(--sidebar-width); background: var(--sidebar-bg);
+    color: #fff; z-index: 1050; overflow-y: auto;
+    transition: transform 0.3s ease;
+    display: flex; flex-direction: column;
+}
+.sidebar::-webkit-scrollbar { width: 4px; }
+.sidebar::-webkit-scrollbar-thumb { background: rgba(255,255,255,.15); border-radius: 2px; }
+.sidebar .brand {
+    padding: 1.2rem 1.3rem; font-size: 1.3rem; font-weight: 900;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    display: flex; align-items: center; gap: 10px;
+    letter-spacing: -0.5px; white-space: nowrap; overflow: hidden;
+}
+.sidebar .brand i { color: var(--accent); }
+.sidebar .user-info { padding: .9rem 1.3rem; border-bottom: 1px solid rgba(255,255,255,0.08); }
+.sidebar .user-info .user-name { font-weight: 700; font-size: 0.9rem; }
+.sidebar .user-info .user-role {
+    display: inline-block; margin-top: 4px; padding: 3px 10px;
+    border-radius: 50px; font-size: 0.68rem; font-weight: 600; letter-spacing: .5px;
+}
+.sidebar .user-info .role-admin { background: rgba(239,68,68,.2); color: #fca5a5; }
+.sidebar .user-info .role-sales { background: rgba(14,165,233,.2); color: #7dd3fc; }
+.sidebar .user-info .role-owner { background: rgba(34,197,94,.2); color: #86efac; }
+.sidebar .user-info .role-designer { background: rgba(245,158,11,.2); color: #fcd34d; }
+.sidebar .user-info .role-landlord { background: rgba(255,159,28,.2); color: #fcd34d; }
+
+.sidebar nav { flex: 1; padding: 0.3rem 0; overflow-y: auto; }
+.sidebar .nav-link {
+    color: rgba(255,255,255,0.6); padding: 8px 1.3rem; margin: 0;
+    font-size: 0.84rem; display: flex; align-items: center; gap: 10px;
+    transition: all .2s; border-left: 3px solid transparent;
+    text-decoration: none; white-space: nowrap;
+}
+.sidebar .nav-link:hover { color: #fff; background: rgba(255,255,255,0.06); border-left-color: rgba(14,165,233,.3); }
+.sidebar .nav-link.active { color: #fff; background: rgba(14,165,233,.12); border-left-color: var(--accent); font-weight: 500; }
+.sidebar .nav-link i { width: 18px; text-align: center; font-size: 0.82rem; flex-shrink: 0; }
+.sidebar .nav-section {
+    padding: .8rem 1.3rem 0.3rem; font-size: 0.64rem; text-transform: uppercase;
+    letter-spacing: 1.5px; color: rgba(255,255,255,0.3); font-weight: 700;
+    display: flex; align-items: center; gap: 4px;
+}
+.sidebar .nav-divider { height: 1px; background: rgba(255,255,255,0.08); margin: 0.4rem 1rem; }
+
+.sidebar .sidebar-footer {
+    padding: .8rem 1.3rem; border-top: 1px solid rgba(255,255,255,0.08);
+    margin-top: auto;
+}
+.sidebar .sidebar-footer .nav-link { padding: 6px 0; margin: 0; border: none; }
+
+/* Sidebar overlay for mobile */
+.sidebar-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,.5);
+    z-index: 1040; opacity: 0; transition: opacity .3s;
+}
+.sidebar-overlay.show { display: block; opacity: 1; }
+
+/* ─── Main Content ─── */
+.main-content {
+    margin-left: var(--sidebar-width); padding: 0; min-height: 100vh;
+    background: #f0f2f5;
+    display: flex; flex-direction: column;
+}
+
+/* ─── Top Bar ─── */
+.top-bar {
+    background: #fff; padding: 0.8rem 1.5rem;
+    border-bottom: 1px solid #e5e7eb;
+    display: flex; justify-content: space-between; align-items: center;
+    position: sticky; top: 0; z-index: 100;
+    box-shadow: 0 1px 3px rgba(0,0,0,.05);
+}
+.top-bar .page-title { font-weight: 700; font-size: 1.05rem; color: #1a1a2e; }
+.top-bar .user-badge { display: flex; align-items: center; gap: 8px; }
+.top-bar .user-badge .avatar {
+    width: 34px; height: 34px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--primary), var(--accent));
+    color: #fff; display: flex; align-items: center; justify-content: center;
+    font-size: 0.8rem; font-weight: 700;
+}
+
+/* ─── Page Content ─── */
+.page-content { padding: 1.5rem 2rem; flex: 1; }
+
+/* ─── KPI Cards ─── */
+.kpi-card {
+    border: none; border-radius: 1rem; overflow: hidden;
+    background: #fff; transition: transform .2s, box-shadow .2s;
+}
+.kpi-card:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(0,0,0,.08); }
+.kpi-card .card-body { padding: 1.2rem; }
+.kpi-card .kpi-value { font-size: 1.6rem; font-weight: 800; color: #1a1a2e; line-height: 1.2; }
+.kpi-card .kpi-label { font-size: 0.8rem; color: #9ca3af; font-weight: 500; margin-top: 2px; }
+.kpi-card .kpi-icon {
+    width: 44px; height: 44px; border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.1rem;
+}
+
+/* ─── Data Cards ─── */
+.data-card { border: none; border-radius: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,.05); background: #fff; }
+.data-card .card-header {
+    background: #fff; border-bottom: 1px solid #f3f4f6;
+    padding: .9rem 1.2rem; border-radius: 1rem 1rem 0 0 !important;
+}
+.data-card .card-header h5 { font-weight: 700; font-size: .95rem; margin: 0; }
+
+/* ─── Tables ─── */
+.table th {
+    font-weight: 600; font-size: 0.78rem; color: #9ca3af;
+    white-space: nowrap; text-transform: uppercase; letter-spacing: .5px;
+    border-bottom-width: 1px;
+}
+.table td { vertical-align: middle; font-size: 0.85rem; color: #374151; }
+.table-hover tbody tr:hover { background: #f8fafc; }
+
+/* ─── Badges ─── */
+.badge { font-weight: 600; font-size: 0.7rem; padding: 4px 9px; border-radius: 6px; letter-spacing: .3px; }
+
+/* ─── Buttons ─── */
+.btn { border-radius: 8px; font-weight: 600; font-size: 0.85rem; }
+.btn-sm { padding: 5px 12px; font-size: 0.78rem; }
+
+/* ─── Forms ─── */
+.form-control, .form-select {
+    border-radius: 8px; border: 1.5px solid #e5e7eb;
+    padding: 10px 14px; font-size: 0.88rem;
+}
+.form-control:focus, .form-select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(14,165,233,.1); }
+.form-label { font-weight: 600; font-size: 0.85rem; color: #374151; }
+
+/* ─── Modals ─── */
+.modal-content { border-radius: 1rem; border: none; }
+
+/* ─── Alert clean style ─── */
+.alert { border-radius: 12px; border: none; font-size: .88rem; }
+
+/* ─── Mobile toggle ─── */
+.mobile-header {
+    background: #fff; border-bottom: 1px solid #e5e7eb;
+    padding: .6rem 1rem; display: flex; align-items: center; gap: .8rem;
+}
+.mobile-header .brand-mobile { font-weight: 800; font-size: 1rem; color: var(--primary); }
+
+/* ═══════════════════════════════════════════
+   RESPONSIVE — Mobile (max-width: 768px)
+   ═══════════════════════════════════════════ */
+@media (max-width: 768px) {
+    :root { --sidebar-width: 260px; }
+
+    .sidebar { transform: translateX(-100%); }
+    .sidebar.show { transform: translateX(0); }
+    .main-content { margin-left: 0; }
+
+    /* Page content */
+    .page-content { padding: .75rem !important; }
+
+    /* KPI cards mobile */
+    .kpi-card .card-body { padding: .8rem !important; }
+    .kpi-card .kpi-value { font-size: 1.2rem !important; }
+    .kpi-card .kpi-label { font-size: .7rem !important; }
+    .kpi-card .kpi-icon { width: 36px !important; height: 36px !important; font-size: .9rem !important; }
+
+    /* Data card headers */
+    .data-card .card-header { padding: .7rem 1rem !important; }
+    .data-card .card-header h5 { font-size: .88rem !important; }
+    .data-card .card-body { padding: .8rem !important; }
+
+    /* Tables mobile */
+    .table th { font-size: .68rem !important; padding: .4rem .3rem !important; }
+    .table td { font-size: .76rem !important; padding: .4rem .3rem !important; }
+    .table-responsive { -webkit-overflow-scrolling: touch; }
+
+    /* Buttons mobile */
+    .btn { font-size: .78rem !important; }
+    .btn-sm { font-size: .7rem !important; padding: 4px 8px !important; }
+
+    /* Forms mobile */
+    .form-control, .form-select { font-size: .82rem !important; padding: 8px 10px !important; }
+    .form-label { font-size: .78rem !important; }
+
+    /* Badges mobile */
+    .badge { font-size: .62rem !important; padding: 3px 7px !important; }
+
+    /* Cards general */
+    .card { border-radius: .8rem !important; }
+    .card-body { padding: .8rem !important; }
+
+    /* Row gaps */
+    .row.g-3 { --bs-gutter-x: .5rem !important; --bs-gutter-y: .5rem !important; }
+    .row.g-2 { --bs-gutter-x: .4rem !important; --bs-gutter-y: .4rem !important; }
+
+    /* Charts container */
+    canvas { max-height: 180px !important; }
+
+    /* Modals mobile */
+    .modal-dialog { margin: .5rem !important; }
+    .modal-lg { max-width: calc(100vw - 1rem) !important; }
+    .modal-body { padding: .8rem !important; }
+
+    /* Sub-KPI cards */
+    .row .card.shadow-sm.border-0 .card-body.py-2 { padding: .3rem .2rem !important; }
+    .row .card.shadow-sm.border-0 .card-body.py-2 .fw-bold { font-size: .9rem !important; }
+    .row .card.shadow-sm.border-0 .card-body.py-2 small { font-size: .6rem !important; }
+
+    /* Quick action buttons */
+    .btn.py-2.d-flex.flex-column { padding: .5rem .3rem !important; font-size: .72rem !important; }
+    .btn.py-2.d-flex.flex-column i { font-size: .9rem !important; }
+
+    /* List group items */
+    .list-group-item { padding: .5rem .6rem !important; font-size: .8rem !important; }
+
+    /* Alerts mobile */
+    .alert { font-size: .8rem !important; padding: .7rem .9rem !important; }
+    .alert h6 { font-size: .82rem !important; }
+    .alert ul { padding-left: 1.2rem !important; }
+
+    /* Banner cards (gradients) */
+    .card[style*="linear-gradient"] .card-body { padding: .7rem 1rem !important; }
+    .card[style*="linear-gradient"] h5 { font-size: .9rem !important; }
+
+    /* Input groups */
+    .input-group { flex-wrap: nowrap; }
+    .input-group .form-control { min-width: 0; }
+
+    /* 영수증 리뷰관리 모바일 최적화 */
+    .review-stats-grid .card-body { padding: .5rem !important; }
+    .review-stats-grid .fw-bold.fs-3 { font-size: 1.3rem !important; }
+    .review-stats-grid .small { font-size: .7rem !important; }
+
+    /* QR/NFC 설정 카드 모바일 */
+    .review-qr-section .card-body { padding: 1rem !important; }
+    .review-qr-section img[alt="QR Code"] { width: 120px !important; height: 120px !important; }
+
+    /* 리뷰 목록 모바일 */
+    .review-list-section .card-body { max-height: 400px !important; padding: .75rem !important; }
+    .review-list-section .d-flex.gap-3 { gap: .5rem !important; }
+    .review-list-section .flex-shrink-0 { width: 40px !important; height: 40px !important; }
+    .review-list-section .flex-shrink-0 img,
+    .review-list-section .flex-shrink-0 > div { width: 40px !important; height: 40px !important; }
+
+    /* 리뷰 상세 모달 모바일 */
+    #reviewDetailModal .modal-body .row > div { flex: 0 0 100%; max-width: 100%; }
+    #reviewDetailModal .modal-body img.img-fluid { max-height: 250px !important; }
+    #reviewDetailModal .modal-footer .d-flex { flex-direction: column; gap: .5rem !important; }
+    #reviewDetailModal .modal-footer .d-flex > div { display: flex; gap: .5rem; flex-wrap: wrap; }
+
+    /* Flex columns on mobile */
+    .d-flex.gap-2 { gap: .3rem !important; }
+    .d-flex.gap-3 { gap: .4rem !important; }
+
+    /* fs-* overrides for mobile */
+    .fs-2 { font-size: 1.3rem !important; }
+    .fs-3 { font-size: 1.1rem !important; }
+    .fs-4 { font-size: 1rem !important; }
+    .fs-5 { font-size: .9rem !important; }
+
+    /* Overflow text */
+    .text-truncate-mobile { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px; }
+}
+
+/* ═══════════════════════════════════════════
+   RESPONSIVE — Small Mobile (max-width: 480px)
+   ═══════════════════════════════════════════ */
+@media (max-width: 480px) {
+    .page-content { padding: .5rem !important; }
+    .kpi-card .kpi-value { font-size: 1rem !important; }
+    .kpi-card .kpi-label { font-size: .65rem !important; }
+    .kpi-card .kpi-icon { width: 30px !important; height: 30px !important; font-size: .8rem !important; }
+    .kpi-card .card-body { padding: .6rem !important; }
+    canvas { max-height: 140px !important; }
+
+    /* Table: horizontal scroll touch */
+    .table-responsive { border-radius: .5rem; }
+    .table th { font-size: .6rem !important; }
+    .table td { font-size: .68rem !important; }
+}

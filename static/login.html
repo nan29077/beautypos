@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ADPAY - 로그인</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    <style>
+        * { font-family: 'Noto Sans KR', sans-serif; box-sizing: border-box; }
+        html, body { margin: 0; padding: 0; }
+        body { background: linear-gradient(135deg, #0d1b2a 0%, #1b3a5c 100%); min-height: 100vh; min-height: 100dvh; }
+        .login-container { 
+            min-height: 100vh; min-height: 100dvh;
+            display: flex; align-items: center; justify-content: center; 
+            padding: 1rem; 
+        }
+        .login-wrapper { width: 100%; max-width: 440px; }
+        .login-card { background: #fff; border-radius: 1.2rem; box-shadow: 0 20px 50px rgba(0,0,0,.3); overflow: hidden; width: 100%; }
+        .login-header { background: linear-gradient(135deg, #0d1b2a, #1b3a5c); padding: 1.5rem 1.5rem 1.2rem; text-align: center; color: #fff; }
+        .login-header h1 { font-size: 1.6rem; font-weight: 900; margin-bottom: 4px; }
+        .login-header p { font-size: .82rem; }
+        .login-body { padding: 1.5rem; }
+        .nav-pills .nav-link { border-radius: 50px; font-weight: 600; font-size: 0.85rem; padding: 7px 0; }
+        .nav-pills .nav-link.active { background: #1b3a5c; }
+        .form-control { border-radius: 10px; padding: 10px 14px; border: 1.5px solid #e5e7eb; font-size: 0.9rem; }
+        .form-control:focus { border-color: #0ea5e9; box-shadow: 0 0 0 3px rgba(14,165,233,.15); }
+        .btn-login { border-radius: 50px; padding: 10px; font-weight: 700; font-size: 0.95rem; }
+        .oauth-btn { border-radius: 10px; padding: 8px; font-weight: 600; font-size: 0.82rem; transition: all .2s; }
+        .oauth-btn:hover { transform: translateY(-1px); }
+        .test-card { background: rgba(255,255,255,.06); border-radius: 1rem; border: 1.5px dashed rgba(255,255,255,.15); margin-top: .8rem; padding: 1rem !important; }
+        .test-btn { border-radius: 8px; padding: 8px; font-weight: 600; font-size: 0.82rem; transition: all .2s; border-width: 2px; }
+        .test-btn:hover { transform: translateY(-1px); }
+        .test-btn i { width: 20px; }
+        .divider { display: flex; align-items: center; gap: .8rem; margin: 1rem 0; }
+        .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: #e5e7eb; }
+        .divider span { white-space: nowrap; }
+        .back-link { position: fixed; top: 16px; left: 16px; color: rgba(255,255,255,.7); text-decoration: none; font-size: 0.85rem; z-index: 10; }
+        .back-link:hover { color: #fff; }
+
+        /* Mobile responsive */
+        @media (max-width: 480px) {
+            .login-container { padding: .6rem; align-items: flex-start; padding-top: 2.5rem; }
+            .login-header { padding: 1.2rem 1rem 1rem; }
+            .login-header h1 { font-size: 1.4rem; }
+            .login-body { padding: 1.2rem; }
+            .login-card { border-radius: 1rem; }
+            .form-control { padding: 9px 12px; font-size: .85rem; }
+            .btn-login { padding: 9px; font-size: .9rem; }
+            .oauth-btn { padding: 7px; font-size: .78rem; }
+            .test-card { padding: .8rem !important; margin-top: .6rem; }
+            .test-btn { padding: 7px; font-size: .78rem; }
+            .divider { margin: .8rem 0; }
+            .back-link { top: 10px; left: 10px; font-size: .8rem; }
+        }
+        @media (max-height: 700px) {
+            .login-container { align-items: flex-start; padding-top: 1.5rem; }
+            .login-header { padding: 1rem; }
+            .login-header h1 { font-size: 1.3rem; }
+            .login-body { padding: 1rem; }
+            .mb-3 { margin-bottom: .6rem !important; }
+            .mb-4 { margin-bottom: .8rem !important; }
+        }
+    </style>
+</head>
+<body>
+    <a href="/static/landing/splash.html" class="back-link"><i class="fas fa-arrow-left me-1"></i>홈으로</a>
+
+    <div class="login-container">
+        <div class="login-wrapper">
+            <div class="login-card">
+                <!-- Header -->
+                <div class="login-header">
+                    <h1><i class="fas fa-credit-card me-2" style="color:#0ea5e9;"></i>ADPAY</h1>
+                    <p class="mb-0 opacity-80 small">오프라인 결제 관리 플랫폼</p>
+                </div>
+
+                <div class="login-body">
+                    <!-- Tabs -->
+                    <ul class="nav nav-pills nav-fill mb-3" id="authTabs">
+                        <li class="nav-item"><a class="nav-link active" href="#" onclick="showTab('login')">로그인</a></li>
+                        <li class="nav-item"><a class="nav-link" href="#" onclick="showTab('register')">회원가입</a></li>
+                    </ul>
+
+                    <!-- Login Form -->
+                    <div id="loginForm">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small mb-1">이메일</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-white border-end-0" style="border-radius:10px 0 0 10px;"><i class="fas fa-envelope text-muted"></i></span>
+                                <input type="email" class="form-control border-start-0" id="loginEmail" placeholder="email@example.com" style="border-radius:0 10px 10px 0;">
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small mb-1">비밀번호</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-white border-end-0" style="border-radius:10px 0 0 10px;"><i class="fas fa-lock text-muted"></i></span>
+                                <input type="password" class="form-control border-start-0" id="loginPassword" placeholder="비밀번호 입력" style="border-radius:0 10px 10px 0;">
+                            </div>
+                        </div>
+                        <button class="btn btn-primary btn-login w-100" onclick="doLogin()">
+                            <i class="fas fa-sign-in-alt me-2"></i>로그인
+                        </button>
+                    </div>
+
+                    <!-- Register Form -->
+                    <div id="registerForm" style="display:none;">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small mb-1">이름</label>
+                            <input type="text" class="form-control" id="regName" placeholder="홍길동">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small mb-1">이메일</label>
+                            <input type="email" class="form-control" id="regEmail" placeholder="email@example.com">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small mb-1">비밀번호</label>
+                            <input type="password" class="form-control" id="regPassword" placeholder="6자 이상">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small mb-1">역할</label>
+                            <select class="form-select" id="regRole" style="border-radius:10px;padding:10px 14px;">
+                                <option value="owner">사장님(원장님)</option>
+                                <option value="designer">직원(디자이너)</option>
+                            </select>
+                        </div>
+                        <button class="btn btn-success btn-login w-100" onclick="doRegister()">
+                            <i class="fas fa-user-plus me-2"></i>회원가입
+                        </button>
+                    </div>
+
+                    <!-- Alert -->
+                    <div id="authAlert" class="alert mt-2 d-none" style="border-radius:10px;font-size:.85rem;"></div>
+
+                    <!-- OAuth -->
+                    <div class="divider"><span class="text-muted small">OR</span></div>
+                    <div class="d-flex gap-2">
+                        <button class="oauth-btn btn btn-outline-warning flex-grow-1" onclick="oauthLogin('kakao')">
+                            <i class="fas fa-comment me-1"></i>카카오
+                        </button>
+                        <button class="oauth-btn btn btn-outline-success flex-grow-1" onclick="oauthLogin('naver')">
+                            <strong class="me-1">N</strong>네이버
+                        </button>
+                        <button class="oauth-btn btn btn-outline-danger flex-grow-1" onclick="oauthLogin('google')">
+                            <i class="fab fa-google me-1"></i>구글
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Test Login (당분간 숨김 — 복원 시 git 이력 참고) -->
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const API = '';
+
+        function showTab(tab) {
+            document.getElementById('loginForm').style.display = tab === 'login' ? '' : 'none';
+            document.getElementById('registerForm').style.display = tab === 'register' ? '' : 'none';
+            document.querySelectorAll('#authTabs .nav-link').forEach((el, i) => {
+                el.classList.toggle('active', (i === 0 && tab === 'login') || (i === 1 && tab === 'register'));
+            });
+            hideAlert();
+        }
+
+        function showAlert(msg, type) {
+            const el = document.getElementById('authAlert');
+            el.className = `alert mt-2 alert-${type}`;
+            el.innerHTML = msg;
+            el.classList.remove('d-none');
+        }
+        function hideAlert() {
+            document.getElementById('authAlert').classList.add('d-none');
+        }
+
+        function handleAuthSuccess(data) {
+            localStorage.setItem('access_token', data.access_token);
+            localStorage.setItem('refresh_token', data.refresh_token);
+            localStorage.setItem('user', JSON.stringify(data.user));
+            window.location.href = '/static/dashboard.html';
+        }
+
+        async function doLogin() {
+            const email = document.getElementById('loginEmail').value;
+            const password = document.getElementById('loginPassword').value;
+            if (!email || !password) { showAlert('이메일과 비밀번호를 입력하세요', 'warning'); return; }
+            try {
+                const res = await fetch(API + '/api/auth/login', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({email, password})
+                });
+                const data = await res.json();
+                if (!res.ok) { showAlert(data.detail || '로그인 실패', 'danger'); return; }
+                handleAuthSuccess(data);
+            } catch (e) { showAlert('서버 연결 오류', 'danger'); }
+        }
+
+        async function doRegister() {
+            const name = document.getElementById('regName').value;
+            const email = document.getElementById('regEmail').value;
+            const password = document.getElementById('regPassword').value;
+            const role = document.getElementById('regRole').value;
+            if (!name || !email || !password) { showAlert('모든 필드를 입력하세요', 'warning'); return; }
+            try {
+                const res = await fetch(API + '/api/auth/register', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({name, email, password, role})
+                });
+                const data = await res.json();
+                if (!res.ok) { showAlert(data.detail || '가입 실패', 'danger'); return; }
+                handleAuthSuccess(data);
+            } catch (e) { showAlert('서버 연결 오류', 'danger'); }
+        }
+
+        async function testLogin(role) {
+            try {
+                showAlert('<i class="fas fa-spinner fa-spin me-1"></i>로그인 중...', 'info');
+                const res = await fetch(API + `/api/auth/test-login?role=${role}`, {method: 'POST'});
+                const data = await res.json();
+                if (!res.ok) { showAlert(data.detail || '테스트 로그인 실패', 'danger'); return; }
+                handleAuthSuccess(data);
+            } catch (e) { showAlert('서버 연결 오류', 'danger'); }
+        }
+
+        async function oauthLogin(provider) {
+            const names = {kakao: '카카오', naver: '네이버', google: '구글'};
+            showAlert(`<i class="fas fa-tools me-1"></i>${names[provider] || provider} 소셜 로그인은 현재 준비중입니다.`, 'warning');
+        }
+
+        // Enter key support
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                if (document.getElementById('loginForm').style.display !== 'none') doLogin();
+                else doRegister();
+            }
+        });
+
+        // If already logged in, redirect
+        if (localStorage.getItem('access_token')) {
+            window.location.href = '/static/dashboard.html';
+        }
+    </script>
+</body>
+</html>

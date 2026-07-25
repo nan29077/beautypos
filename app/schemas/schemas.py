@@ -1,0 +1,209 @@
+"""
+Pydantic schemas for request/response validation.
+"""
+from pydantic import BaseModel, EmailStr, Field
+from typing import Optional, List
+from datetime import datetime, date
+from enum import Enum
+
+
+# ─── Auth ────────────────────────────────────────────────────
+
+class RegisterRequest(BaseModel):
+    email: str
+    password: str = Field(min_length=6)
+    name: str
+    role: str = "owner"  # default
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    user: dict
+
+
+# ─── Merchant ────────────────────────────────────────────────
+
+class MerchantCreate(BaseModel):
+    name: str
+    owner_user_id: int
+    business_no: Optional[str] = None
+    address: Optional[str] = None
+    phone: Optional[str] = None
+
+
+class MerchantUpdate(BaseModel):
+    name: Optional[str] = None
+    business_no: Optional[str] = None
+    address: Optional[str] = None
+    phone: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+# ─── PG Config ───────────────────────────────────────────────
+
+class PGConfigCreate(BaseModel):
+    provider_id: int
+    mid: str
+    secret: str
+
+
+# ─── Staff ───────────────────────────────────────────────────
+
+class StaffCreate(BaseModel):
+    name: str
+    staff_code: str
+    user_id: Optional[int] = None
+    share_rate: Optional[float] = None  # 디자이너 분배율 (0~1). 미지정 시 기본 0.5
+
+
+class StaffUpdate(BaseModel):
+    name: Optional[str] = None
+    is_active: Optional[bool] = None
+    share_rate: Optional[float] = None  # 디자이너 분배율 (0~1)
+
+class DesignerCreate(BaseModel):
+    """원장이 디자이너 계정을 직접 등록할 때 사용.
+    User(role=designer) 생성 + Staff 로 미용실 귀속."""
+    name: str
+    email: str
+    password: str = Field(min_length=6)
+    staff_code: str
+    phone: Optional[str] = None
+    share_rate: Optional[float] = None  # 디자이너 분배율 (0~1)
+
+
+class DesignerUpdate(BaseModel):
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    share_rate: Optional[float] = None
+    is_active: Optional[bool] = None
+    password: Optional[str] = None  # 비밀번호 재설정 (선택)
+
+
+
+# ─── Terminal Transaction ────────────────────────────────────
+
+class TerminalTransactionCreate(BaseModel):
+    merchant_id: int
+    terminal_id: Optional[str] = None  # terminal_serial
+    amount: float
+    installment_months: int = 0
+    staff_code: Optional[str] = None
+    card_brand: Optional[str] = None
+    approval_code: Optional[str] = None
+    approved_at: Optional[datetime] = None
+
+
+# ─── Payout ──────────────────────────────────────────────────
+
+class PayoutRequestCreate(BaseModel):
+    amount: float
+    bank_info: Optional[str] = None
+    memo: Optional[str] = None
+
+
+# ─── Ad Orders ───────────────────────────────────────────────
+
+class AdBlogOrderCreate(BaseModel):
+    campaign_name: str
+    address: Optional[str] = None
+    contact: Optional[str] = None
+    links: List[str] = []
+    main_keywords: List[str] = Field(default=[], max_length=5)
+    hashtags: List[str] = Field(default=[], max_length=5)
+    description: Optional[str] = None
+    extra_image_link: Optional[str] = None
+
+
+class AdPlaceTrafficOrderCreate(BaseModel):
+    place_name_or_id: str
+    search_keywords: List[str] = Field(default=[], max_length=3)
+
+
+class AdOrderStatusUpdate(BaseModel):
+    status: str  # reviewing / running / done / rejected
+    admin_memo: Optional[str] = None
+
+
+# ─── Ad Metrics ──────────────────────────────────────────────
+
+class AdMetricCreate(BaseModel):
+    merchant_id: int
+    place_url: str
+    date: date
+    blog_review_count: int = 0
+    visitor_review_count: int = 0
+    place_rank: Optional[int] = None
+    source: str = "manual"
+
+
+# ─── Ad Place Profile ───────────────────────────────────────
+
+class AdPlaceProfileCreate(BaseModel):
+    place_url: Optional[str] = None
+    place_id: Optional[str] = None
+    nickname: Optional[str] = None
+
+
+class AdCompetitorCreate(BaseModel):
+    competitor_place_url: str
+    memo: Optional[str] = None
+
+
+# ─── Fee Policy ──────────────────────────────────────────────
+
+class FeePolicyUpdate(BaseModel):
+    pg_fee_rate: float = 0.035  # 3.5% (VAT 별도)
+
+
+class SalesAssignmentCreate(BaseModel):
+    merchant_id: int
+    sales_manager_user_id: int
+    commission_rate: float = 0.01  # 3.5% 내에서 영업관리자 수익률
+    memo: Optional[str] = None
+
+
+class SalesAssignmentUpdate(BaseModel):
+    commission_rate: Optional[float] = None
+    memo: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+# ─── Commission Visibility (Admin) ───────────────────────────
+
+class CommissionVisibilityUpdate(BaseModel):
+    sales: Optional[bool] = None
+    owner: Optional[bool] = None
+    designer: Optional[bool] = None
+
+
+# ─── Staff Share Rate (Admin) ────────────────────────────────
+
+class StaffShareRateUpdate(BaseModel):
+    share_rate: float  # 0~1
+
+
+# ─── Merchant Info Update (Owner) ────────────────────────────
+
+class MerchantInfoUpdate(BaseModel):
+    name: Optional[str] = None
+    category: Optional[str] = None
+    category_custom: Optional[str] = None
+    place_url: Optional[str] = None
+    address: Optional[str] = None
+    phone: Optional[str] = None
+
+
+# ─── Receipt Review ──────────────────────────────────────────
+
+class ReceiptReviewConfigUpdate(BaseModel):
+    place_url: Optional[str] = None
+    welcome_message: Optional[str] = None
+    is_active: Optional[bool] = None

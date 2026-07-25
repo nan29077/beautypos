@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#2563eb">
+    <title>결제 대시보드</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+    <link rel="icon" href="/static/favicon.ico">
+    <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #f3f4f6;
+            --surface: #ffffff;
+            --text: #111827;
+            --text-soft: #6b7280;
+            --text-mute: #9ca3af;
+            --border: #f3f4f6;
+            --shadow: 0 1px 3px rgba(17, 24, 39, .05), 0 1px 2px rgba(17, 24, 39, .04);
+            --shadow-md: 0 4px 12px rgba(17, 24, 39, .08);
+        }
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        html, body {
+            margin: 0; padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Inter", "Apple SD Gothic Neo", "Noto Sans KR", "Segoe UI", sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            -webkit-font-smoothing: antialiased;
+            text-rendering: optimizeLegibility;
+        }
+        body { padding-bottom: calc(env(safe-area-inset-bottom) + 1rem); }
+
+        .app { max-width: 480px; margin: 0 auto; padding: 0 1rem; }
+
+        /* Header */
+        header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: calc(env(safe-area-inset-top) + 1rem) 0 1rem;
+        }
+        .brand { display: flex; align-items: center; gap: .65rem; }
+        .brand-icon {
+            width: 38px; height: 38px; border-radius: 10px;
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            display: flex; align-items: center; justify-content: center;
+            color: #fff; font-size: 1rem;
+            box-shadow: 0 4px 10px rgba(37, 99, 235, .25);
+        }
+        .brand-title { font-size: 1.05rem; font-weight: 700; letter-spacing: -.01em; }
+        .bell-btn {
+            position: relative;
+            width: 38px; height: 38px; border-radius: 50%;
+            background: var(--surface); border: 1px solid #e5e7eb;
+            display: flex; align-items: center; justify-content: center;
+            color: #6b7280; cursor: pointer;
+        }
+        .bell-btn .dot {
+            position: absolute; top: 8px; right: 9px;
+            width: 7px; height: 7px; border-radius: 50%;
+            background: #ef4444; border: 2px solid var(--surface);
+        }
+
+        /* Stat cards */
+        .stat-hero, .stat-tile {
+            position: relative; overflow: hidden;
+            border-radius: 18px; padding: 1.1rem 1.15rem;
+            color: #fff;
+            box-shadow: 0 6px 18px rgba(17, 24, 39, .08);
+        }
+        .stat-hero { padding: 1.35rem 1.25rem; min-height: 130px; }
+        .stat-tile { min-height: 110px; }
+
+        .stat-label {
+            font-size: .82rem; font-weight: 500; opacity: .88;
+            display: flex; align-items: center; gap: .35rem;
+        }
+        .stat-value {
+            font-size: 1.6rem; font-weight: 800; letter-spacing: -.025em;
+            margin-top: .85rem;
+        }
+        .stat-hero .stat-value { font-size: 1.95rem; margin-top: 1rem; }
+        .stat-tile .stat-value { font-size: 1.45rem; }
+
+        .stat-icon {
+            position: absolute; top: 1rem; right: 1rem;
+            width: 30px; height: 30px; border-radius: 9px;
+            background: rgba(255, 255, 255, .22);
+            display: flex; align-items: center; justify-content: center;
+            font-size: .85rem; color: #fff;
+            backdrop-filter: blur(4px);
+        }
+        .stat-hero .stat-icon { width: 36px; height: 36px; font-size: .95rem; }
+
+        /* Decorative bubbles */
+        .stat-hero::before, .stat-tile::before {
+            content: ''; position: absolute;
+            right: -30px; bottom: -40px;
+            width: 130px; height: 130px; border-radius: 50%;
+            background: rgba(255, 255, 255, .12);
+            pointer-events: none;
+        }
+        .stat-hero::after, .stat-tile::after {
+            content: ''; position: absolute;
+            right: 40px; bottom: -30px;
+            width: 80px; height: 80px; border-radius: 50%;
+            background: rgba(255, 255, 255, .08);
+            pointer-events: none;
+        }
+
+        .gradient-total { background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); }
+        .gradient-month { background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%); }
+        .gradient-week { background: linear-gradient(135deg, #14b8a6 0%, #0d9488 100%); }
+        .gradient-today { background: linear-gradient(135deg, #fb923c 0%, #ea580c 100%); }
+        .gradient-settle { background: linear-gradient(135deg, #34d399 0%, #059669 100%); }
+
+        .stat-hero { margin-bottom: .75rem; }
+        .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; margin-bottom: 1rem; }
+
+        /* Calendar card */
+        .card {
+            background: var(--surface);
+            border-radius: 18px;
+            box-shadow: var(--shadow);
+            margin-bottom: 1rem;
+            overflow: hidden;
+        }
+        .cal-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 1.1rem 1.1rem .5rem;
+        }
+        .cal-title { font-size: 1rem; font-weight: 700; }
+        .cal-nav {
+            width: 32px; height: 32px; border-radius: 10px;
+            background: #f3f4f6; border: none;
+            display: flex; align-items: center; justify-content: center;
+            color: #374151; cursor: pointer;
+            transition: background .15s;
+        }
+        .cal-nav:active { background: #e5e7eb; }
+
+        .cal-grid {
+            display: grid; grid-template-columns: repeat(7, 1fr);
+            padding: .35rem .6rem 1rem;
+        }
+        .cal-dow {
+            text-align: center; font-size: .78rem; font-weight: 600;
+            color: #374151; padding: .65rem 0;
+        }
+        .cal-dow.sun { color: #ef4444; }
+        .cal-dow.sat { color: #2563eb; }
+
+        .cal-day {
+            position: relative;
+            text-align: center; padding: .55rem 0;
+            font-size: .9rem; font-weight: 500;
+            color: #111827;
+            cursor: pointer;
+            border-radius: 999px;
+            transition: background .15s;
+        }
+        .cal-day.sun { color: #ef4444; }
+        .cal-day.sat { color: #2563eb; }
+        .cal-day.outside { color: #d1d5db; cursor: default; }
+        .cal-day:not(.outside):active { background: #f3f4f6; }
+        .cal-day.selected {
+            background: #2563eb !important; color: #fff !important;
+        }
+        .cal-day .has-txn {
+            position: absolute; left: 50%; bottom: 4px;
+            transform: translateX(-50%);
+            width: 4px; height: 4px; border-radius: 50%;
+            background: #2563eb;
+        }
+        .cal-day.selected .has-txn { background: #fff; }
+
+        /* Day detail card */
+        .day-detail { padding: 1.1rem 1.15rem; }
+        .day-detail-head {
+            display: flex; justify-content: space-between; align-items: flex-start;
+            margin-bottom: 1rem;
+        }
+        .day-detail-date { font-size: 1.05rem; font-weight: 700; }
+        .day-detail-sub { font-size: .78rem; color: var(--text-mute); margin-top: .15rem; }
+        .day-detail-total { font-size: 1.05rem; font-weight: 800; color: #111827; }
+
+        .txn-list { display: flex; flex-direction: column; }
+        .txn-item {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: .85rem 0;
+            border-top: 1px solid #f3f4f6;
+        }
+        .txn-item:first-child { border-top: none; }
+        .txn-brand { font-size: .92rem; font-weight: 600; }
+        .txn-meta { font-size: .73rem; color: var(--text-mute); margin-top: .15rem; }
+        .txn-amount { font-size: .98rem; font-weight: 700; }
+
+        .empty {
+            padding: 2.5rem 1rem;
+            text-align: center; color: var(--text-mute);
+        }
+        .empty .icon {
+            font-size: 2rem; color: #d1d5db; margin-bottom: .75rem;
+            display: block;
+        }
+        .empty .msg { font-size: .88rem; }
+
+        .skeleton {
+            background: linear-gradient(90deg, rgba(255,255,255,.15) 0%, rgba(255,255,255,.3) 50%, rgba(255,255,255,.15) 100%);
+            background-size: 200% 100%;
+            animation: shimmer 1.4s infinite;
+            border-radius: 6px;
+            display: inline-block;
+        }
+        @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+        .bottom-actions {
+            display: flex; justify-content: center; align-items: center;
+            gap: .85rem; padding: .9rem; flex-wrap: wrap;
+            font-size: .8rem; color: var(--text-mute);
+        }
+        .bottom-actions a {
+            color: var(--text-mute); text-decoration: none;
+            display: inline-flex; align-items: center; gap: .3rem;
+        }
+        .bottom-actions a:active { color: var(--text-soft); }
+        .bottom-actions .sep { color: #d1d5db; }
+    </style>
+</head>
+<body>
+
+<div class="app">
+
+<header>
+    <div class="brand">
+        <div class="brand-icon"><i class="fas fa-credit-card"></i></div>
+        <div class="brand-title">결제 대시보드</div>
+    </div>
+    <button class="bell-btn" onclick="alert('알림 기능은 준비 중입니다')" title="알림">
+        <i class="far fa-bell"></i>
+        <span class="dot"></span>
+    </button>
+</header>
+
+<!-- Hero: 총 거래내역 -->
+<div class="stat-hero gradient-total">
+    <div class="stat-icon"><i class="fas fa-wallet"></i></div>
+    <div class="stat-label">총 거래내역</div>
+    <div class="stat-value" id="totalSales"><span class="skeleton" style="width:140px; height:28px;"></span></div>
+</div>
+
+<!-- 2x2 stat grid -->
+<div class="stat-grid">
+    <div class="stat-tile gradient-month">
+        <div class="stat-icon"><i class="far fa-calendar"></i></div>
+        <div class="stat-label">월별 거래</div>
+        <div class="stat-value" id="monthSales">-</div>
+    </div>
+    <div class="stat-tile gradient-week">
+        <div class="stat-icon"><i class="far fa-calendar-alt"></i></div>
+        <div class="stat-label">주별 거래</div>
+        <div class="stat-value" id="weekSales">-</div>
+    </div>
+    <div class="stat-tile gradient-today">
+        <div class="stat-icon"><i class="far fa-clock"></i></div>
+        <div class="stat-label">오늘 거래</div>
+        <div class="stat-value" id="todaySales">-</div>
+    </div>
+    <div class="stat-tile gradient-settle">
+        <div class="stat-icon"><i class="fas fa-money-bill-wave"></i></div>
+        <div class="stat-label">정산 예정</div>
+        <div class="stat-value" id="pendingSettlement">-</div>
+    </div>
+</div>
+
+<!-- Calendar -->
+<div class="card">
+    <div class="cal-header">
+        <button class="cal-nav" onclick="moveMonth(-1)"><i class="fas fa-chevron-left"></i></button>
+        <div class="cal-title" id="calTitle">- 년 - 월</div>
+        <button class="cal-nav" onclick="moveMonth(1)"><i class="fas fa-chevron-right"></i></button>
+    </div>
+    <div class="cal-grid" id="calGrid">
+        <!-- weekday headers + day cells filled by JS -->
+    </div>
+</div>
+
+<!-- Day detail -->
+<div class="card">
+    <div class="day-detail">
+        <div class="day-detail-head">
+            <div>
+                <div class="day-detail-date" id="dayTitle">-</div>
+                <div class="day-detail-sub" id="dayCount">-</div>
+            </div>
+            <div class="day-detail-total" id="dayTotal">0원</div>
+        </div>
+        <div id="dayBody">
+            <div class="empty">
+                <span class="icon"><i class="far fa-credit-card"></i></span>
+                <div class="msg">거래 내역이 없습니다</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="bottom-actions">
+    <a href="/static/dashboard.html?view=desktop"><i class="fas fa-desktop"></i> 데스크탑 버전</a>
+    <span class="sep">·</span>
+    <a href="#" onclick="logout(); return false;"><i class="fas fa-sign-out-alt"></i> 로그아웃</a>
+</div>
+
+</div>
+
+<script src="/static/js/api.js"></script>
+<script>
+(function () {
+    if (!getToken()) { window.location.replace('/static/login.html'); return; }
+
+    const DOW_KR = ['일', '월', '화', '수', '목', '금', '토'];
+
+    const fmtKRW = (n) => Math.round(Number(n) || 0).toLocaleString('ko-KR') + '원';
+    const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+    // State
+    const today = new Date();
+    let viewYear = today.getFullYear();
+    let viewMonth = today.getMonth() + 1; // 1-12
+    let selectedDate = ymd(today);
+    let monthlyMap = {}; // { 'YYYY-MM-DD': {total, count} }
+
+    // ─── Hero / stat grid ─────────────────────────────
+    async function loadStats() {
+        try {
+            const d = await apiGet('/api/owner/dashboard-stats');
+            if (!d) return;
+            document.getElementById('totalSales').textContent = fmtKRW(d.total_sales);
+            document.getElementById('monthSales').textContent = fmtKRW(d.month_sales);
+            document.getElementById('weekSales').textContent = fmtKRW(d.week_sales);
+            document.getElementById('todaySales').textContent = fmtKRW(d.today_sales);
+            document.getElementById('pendingSettlement').textContent = fmtKRW(d.pending_settlement);
+        } catch (e) {
+            console.error('stats load failed', e);
+            ['totalSales','monthSales','weekSales','todaySales','pendingSettlement'].forEach(id => {
+                document.getElementById(id).textContent = '오류';
+            });
+        }
+    }
+
+    // ─── Calendar ─────────────────────────────────────
+    function moveMonth(delta) {
+        let y = viewYear, m = viewMonth + delta;
+        if (m < 1) { m = 12; y -= 1; }
+        else if (m > 12) { m = 1; y += 1; }
+        viewYear = y; viewMonth = m;
+        renderCalendar();
+        loadMonthly();
+    }
+    window.moveMonth = moveMonth;
+
+    function renderCalendar() {
+        document.getElementById('calTitle').textContent = `${viewYear}년 ${viewMonth}월`;
+
+        const grid = document.getElementById('calGrid');
+        grid.innerHTML = '';
+
+        // Weekday headers
+        DOW_KR.forEach((w, i) => {
+            const el = document.createElement('div');
+            el.className = 'cal-dow' + (i === 0 ? ' sun' : i === 6 ? ' sat' : '');
+            el.textContent = w;
+            grid.appendChild(el);
+        });
+
+        const first = new Date(viewYear, viewMonth - 1, 1);
+        const startWeekday = first.getDay(); // 0=Sun
+        const daysInMonth = new Date(viewYear, viewMonth, 0).getDate();
+        const prevDays = new Date(viewYear, viewMonth - 1, 0).getDate();
+
+        const todayStr = ymd(today);
+
+        // Previous month tail
+        for (let i = startWeekday - 1; i >= 0; i--) {
+            const el = document.createElement('div');
+            el.className = 'cal-day outside';
+            el.textContent = prevDays - i;
+            grid.appendChild(el);
+        }
+
+        // This month
+        for (let d = 1; d <= daysInMonth; d++) {
+            const dateStr = `${viewYear}-${String(viewMonth).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+            const dt = new Date(viewYear, viewMonth - 1, d);
+            const dow = dt.getDay();
+            const el = document.createElement('div');
+            el.className = 'cal-day' + (dow === 0 ? ' sun' : dow === 6 ? ' sat' : '');
+            if (dateStr === selectedDate) el.classList.add('selected');
+            el.textContent = d;
+            el.dataset.date = dateStr;
+            el.addEventListener('click', () => selectDate(dateStr));
+
+            if (monthlyMap[dateStr] && monthlyMap[dateStr].total > 0) {
+                const dot = document.createElement('span');
+                dot.className = 'has-txn';
+                el.appendChild(dot);
+            }
+            grid.appendChild(el);
+        }
+
+        // Next month head (fill to last row of the month — 5 or 6 weeks)
+        const totalDayCells = Math.ceil((startWeekday + daysInMonth) / 7) * 7;
+        const trailing = totalDayCells - startWeekday - daysInMonth;
+        for (let i = 1; i <= trailing; i++) {
+            const el = document.createElement('div');
+            el.className = 'cal-day outside';
+            el.textContent = i;
+            grid.appendChild(el);
+        }
+    }
+
+    async function loadMonthly() {
+        try {
+            const d = await apiGet(`/api/owner/calendar-monthly?year=${viewYear}&month=${viewMonth}`);
+            if (!d) return;
+            monthlyMap = {};
+            (d.days || []).forEach(x => { monthlyMap[x.date] = x; });
+            renderCalendar();
+        } catch (e) { console.error('monthly load failed', e); }
+    }
+
+    // ─── Day detail ───────────────────────────────────
+    async function selectDate(dateStr) {
+        selectedDate = dateStr;
+        // Update calendar selection styles
+        document.querySelectorAll('.cal-day.selected').forEach(el => el.classList.remove('selected'));
+        const sel = document.querySelector(`.cal-day[data-date="${dateStr}"]`);
+        if (sel) sel.classList.add('selected');
+        await loadDaily();
+    }
+
+    async function loadDaily() {
+        const [y, m, d] = selectedDate.split('-').map(Number);
+        const dt = new Date(y, m - 1, d);
+        const dow = DOW_KR[dt.getDay()];
+        document.getElementById('dayTitle').textContent = `${m}월 ${d}일 (${dow}요일)`;
+
+        try {
+            const data = await apiGet(`/api/owner/calendar-daily?date=${selectedDate}`);
+            if (!data) return;
+            document.getElementById('dayCount').textContent = `${data.count}건의 거래`;
+            document.getElementById('dayTotal').textContent = fmtKRW(data.total);
+
+            const body = document.getElementById('dayBody');
+            if (!data.transactions || data.transactions.length === 0) {
+                body.innerHTML = `
+                    <div class="empty">
+                        <span class="icon"><i class="far fa-credit-card"></i></span>
+                        <div class="msg">거래 내역이 없습니다</div>
+                    </div>`;
+            } else {
+                body.innerHTML = '<div class="txn-list">' + data.transactions.map(t => {
+                    const ts = new Date((t.created_at || '').replace(' ', 'T'));
+                    const hh = isNaN(ts) ? '' : `${String(ts.getHours()).padStart(2,'0')}:${String(ts.getMinutes()).padStart(2,'0')}`;
+                    const meta = [hh, t.staff_name].filter(Boolean).join(' · ');
+                    const inst = t.installment_months && t.installment_months > 1 ? ` ${t.installment_months}개월` : '';
+                    return `
+                        <div class="txn-item">
+                            <div>
+                                <div class="txn-brand">${(t.card_brand || '카드결제') + inst}</div>
+                                <div class="txn-meta">${meta || '&nbsp;'}</div>
+                            </div>
+                            <div class="txn-amount">${fmtKRW(t.amount)}</div>
+                        </div>`;
+                }).join('') + '</div>';
+            }
+        } catch (e) {
+            console.error('daily load failed', e);
+            document.getElementById('dayCount').textContent = '불러오기 실패';
+        }
+    }
+
+    // ─── Init ─────────────────────────────────────────
+    renderCalendar();
+    loadStats();
+    loadMonthly();
+    loadDaily();
+})();
+</script>
+</body>
+</html>

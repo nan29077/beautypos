@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ADPAY - 요금제</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    <style>
+        :root { --primary: #1b3a5c; --accent: #0ea5e9; --dark: #0d1b2a; }
+        * { font-family: 'Noto Sans KR', sans-serif; }
+        .navbar-adpay { background: rgba(13,27,42,0.92) !important; backdrop-filter: blur(12px); }
+        .navbar-adpay.scrolled { background: rgba(13,27,42,0.98) !important; box-shadow: 0 2px 20px rgba(0,0,0,.3); }
+        .hero-pricing { background: linear-gradient(135deg, #0d1b2a 0%, #1b3a5c 60%, #0ea5e9 100%); padding: 8rem 0 5rem; }
+        .section-pad { padding: 5rem 0; }
+        .section-title { font-size: 2rem; font-weight: 800; }
+        .section-sub { color: #6b7280; font-size: 1.05rem; }
+        .pricing-card { border: none; border-radius: 1.2rem; overflow: hidden; transition: transform .3s, box-shadow .3s; }
+        .pricing-card:hover { transform: translateY(-8px); box-shadow: 0 20px 50px rgba(0,0,0,.12); }
+        .pricing-card.popular { border: 3px solid var(--accent); position: relative; }
+        .pricing-card.popular::before { content: '인기'; position: absolute; top: -1px; left: 50%; transform: translateX(-50%) translateY(-50%); background: var(--accent); color: #fff; padding: 4px 24px; border-radius: 50px; font-size: 0.8rem; font-weight: 700; }
+        .pricing-price { font-size: 3rem; font-weight: 900; color: var(--primary); }
+        .pricing-period { font-size: 1rem; font-weight: 400; color: #6b7280; }
+        .feature-check { color: #22c55e; }
+        .feature-cross { color: #d1d5db; }
+        .compare-table th { background: #f8fafc; font-weight: 700; font-size: 0.9rem; }
+        .compare-table td { vertical-align: middle; font-size: 0.9rem; }
+        .cta-gradient { background: linear-gradient(135deg, #0d1b2a 0%, #1b3a5c 50%, #0ea5e9 100%); }
+        .footer-dark { background: #070b14; }
+        .footer-link { color: rgba(255,255,255,.5); text-decoration: none; transition: color .2s; }
+        .footer-link:hover { color: #0ea5e9; }
+        .fade-up { opacity: 0; transform: translateY(30px); transition: all 0.6s ease; }
+        .fade-up.visible { opacity: 1; transform: translateY(0); }
+    </style>
+</head>
+<body>
+
+<!-- Navbar -->
+<nav class="navbar navbar-expand-lg navbar-dark fixed-top navbar-adpay" id="mainNav">
+    <div class="container">
+        <a class="navbar-brand fw-bold" href="/static/landing/index.html"><i class="fas fa-credit-card me-2" style="color:#0ea5e9"></i>ADPAY</a>
+        <button class="navbar-toggler border-0" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"><span class="navbar-toggler-icon"></span></button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav ms-auto align-items-center">
+                <li class="nav-item"><a class="nav-link px-3" href="/static/landing/index.html">홈</a></li>
+                <li class="nav-item"><a class="nav-link px-3" href="/static/landing/features.html">기능소개</a></li>
+                <li class="nav-item"><a class="nav-link active px-3" href="/static/landing/pricing.html">요금제</a></li>
+                <li class="nav-item ms-2"><a class="btn btn-primary px-4 py-2 fw-bold" href="/static/login.html" style="border-radius:50px;font-size:.9rem;"><i class="fas fa-sign-in-alt me-1"></i>시작하기</a></li>
+            </ul>
+        </div>
+    </div>
+</nav>
+
+<!-- Hero -->
+<section class="hero-pricing text-white text-center">
+    <div class="container">
+        <span class="badge bg-white bg-opacity-10 px-3 py-2 mb-3"><i class="fas fa-tags me-1"></i>PRICING</span>
+        <h1 class="display-4 fw-bold mb-3">합리적인 요금제</h1>
+        <p class="lead opacity-80 mx-auto" style="max-width:600px;">매장 규모에 맞는 요금제를 선택하세요<br>모든 플랜에서 핵심 기능을 사용할 수 있습니다</p>
+    </div>
+</section>
+
+<!-- Pricing Cards -->
+<section class="section-pad">
+    <div class="container">
+        <div class="row g-4 justify-content-center">
+            <!-- Starter -->
+            <div class="col-lg-4 col-md-6 fade-up">
+                <div class="card pricing-card shadow-sm h-100 text-center">
+                    <div class="card-body p-5 d-flex flex-column">
+                        <div class="mb-3">
+                            <i class="fas fa-seedling fa-2x text-success"></i>
+                        </div>
+                        <h4 class="fw-bold text-muted">스타터</h4>
+                        <p class="text-muted small mb-3">소규모 매장 시작</p>
+                        <div class="mb-4">
+                            <span class="pricing-price">무료</span>
+                        </div>
+                        <hr>
+                        <ul class="list-unstyled text-start flex-grow-1">
+                            <li class="mb-2"><i class="fas fa-check-circle feature-check me-2"></i>단말기 <strong>1대</strong></li>
+                            <li class="mb-2"><i class="fas fa-check-circle feature-check me-2"></i>직원 <strong>2명</strong>까지</li>
+                            <li class="mb-2"><i class="fas fa-check-circle feature-check me-2"></i>기본 결제 관리</li>
+                            <li class="mb-2"><i class="fas fa-check-circle feature-check me-2"></i>월 <strong>100건</strong> 결제</li>
+                            <li class="mb-2"><i class="fas fa-check-circle feature-check me-2"></i>기본 정산 기능</li>
+                            <li class="mb-2"><i class="fas fa-check-circle feature-check me-2"></i>이메일 지원</li>
+                            <li class="mb-2 text-muted"><i class="fas fa-times-circle feature-cross me-2"></i>광고 분석</li>
+                            <li class="mb-2 text-muted"><i class="fas fa-times-circle feature-cross me-2"></i>광고 주문</li>
+                            <li class="mb-2 text-muted"><i class="fas fa-times-circle feature-cross me-2"></i>API 직접 호출</li>
+                        </ul>
+                        <a href="/static/login.html" class="btn btn-outline-primary btn-lg mt-3 fw-bold" style="border-radius:50px;">시작하기</a>
+                    </div>
+                </div>
+            </div>
+            <!-- Pro (Popular) -->
+            <div class="col-lg-4 col-md-6 fade-up">
+                <div class="card pricing-card popular shadow h-100 text-center">
+                    <div class="card-body p-5 d-flex flex-column">
+                        <div class="mb-3">
+                            <i class="fas fa-rocket fa-2x text-primary"></i>
+                        </div>
+                        <h4 class="fw-bold text-primary">프로</h4>
+                        <p class="text-muted small mb-3">성장하는 매장</p>
+                        <div class="mb-4">
+                            <span class="pricing-price">49,000</span><span class="pricing-period">/월</span>
+                        </div>
+                        <hr>
+                        <ul class="list-unstyled text-start flex-grow-1">
+                            <li class="mb-2"><i class="fas fa-check-circle feature-check me-2"></i>단말기 <strong>5대</strong></li>
+                            <li class="mb-2"><i class="fas fa-check-circle feature-check me-2"></i>직원 <strong>무제한</strong></li>
+                            <li class="mb-2"><i class="fas fa-check-circle feature-check me-2"></i>전체 결제/정산 관리</li>
+                            <li class="mb-2"><i class="fas fa-check-circle feature-check me-2"></i><strong>무제한</strong> 결제</li>
+                            <li class="mb-2"><i class="fas fa-check-circle feature-check me-2"></i>광고 분석 대시보드</li>
+                            <li class="mb-2"><i class="fas fa-check-circle feature-check me-2"></i>광고 주문 월 <strong>5건</strong></li>
+                            <li class="mb-2"><i class="fas fa-check-circle feature-check me-2"></i>영업관리자 커미션 관리</li>
+                            <li class="mb-2"><i class="fas fa-check-circle feature-check me-2"></i>우선 이메일/채팅 지원</li>
+                            <li class="mb-2 text-muted"><i class="fas fa-times-circle feature-cross me-2"></i>API 직접 호출</li>
+                        </ul>
+                        <a href="/static/login.html" class="btn btn-primary btn-lg mt-3 fw-bold" style="border-radius:50px;">시작하기</a>
+                    </div>
+                </div>
+            </div>
+            <!-- Enterprise -->
+            <div class="col-lg-4 col-md-6 fade-up">
+                <div class="card pricing-card shadow-sm h-100 text-center">
+                    <div class="card-body p-5 d-flex flex-column">
+                        <div class="mb-3">
+                            <i class="fas fa-building fa-2x text-dark"></i>
+                        </div>
+                        <h4 class="fw-bold text-dark">엔터프라이즈</h4>
+                        <p class="text-muted small mb-3">대규모/프랜차이즈</p>
+                        <div class="mb-4">
+                            <span class="pricing-price">맞춤</span>
+                        </div>
+                        <hr>
+                        <ul class="list-unstyled text-start flex-grow-1">
+                            <li class="mb-2"><i class="fas fa-check-circle feature-check me-2"></i>단말기 <strong>무제한</strong></li>
+                            <li class="mb-2"><i class="fas fa-check-circle feature-check me-2"></i>직원 <strong>무제한</strong></li>
+                            <li class="mb-2"><i class="fas fa-check-circle feature-check me-2"></i>전체 기능 무제한</li>
+                            <li class="mb-2"><i class="fas fa-check-circle feature-check me-2"></i><strong>무제한</strong> 결제</li>
+                            <li class="mb-2"><i class="fas fa-check-circle feature-check me-2"></i>광고 <strong>무제한</strong></li>
+                            <li class="mb-2"><i class="fas fa-check-circle feature-check me-2"></i>전담 매니저 배정</li>
+                            <li class="mb-2"><i class="fas fa-check-circle feature-check me-2"></i>맞춤 개발 지원</li>
+                            <li class="mb-2"><i class="fas fa-check-circle feature-check me-2"></i>API 직접 호출</li>
+                            <li class="mb-2"><i class="fas fa-check-circle feature-check me-2"></i>SLA 보장</li>
+                        </ul>
+                        <a href="#" class="btn btn-outline-dark btn-lg mt-3 fw-bold" style="border-radius:50px;">문의하기</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Feature Comparison Table -->
+<section class="section-pad bg-light">
+    <div class="container">
+        <div class="text-center fade-up mb-5">
+            <h2 class="section-title">요금제 상세 비교</h2>
+            <p class="section-sub">어떤 플랜이 나에게 맞는지 비교해보세요</p>
+        </div>
+        <div class="card border-0 shadow-sm rounded-4 overflow-hidden fade-up">
+            <div class="table-responsive">
+                <table class="table compare-table mb-0">
+                    <thead>
+                        <tr>
+                            <th class="py-3 px-4" style="width:35%;">기능</th>
+                            <th class="text-center py-3" style="width:22%;">스타터</th>
+                            <th class="text-center py-3" style="width:22%; background:#f0f9ff;">프로</th>
+                            <th class="text-center py-3" style="width:22%;">엔터프라이즈</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td class="px-4 fw-bold" colspan="4" style="background:#f8fafc;">결제 관리</td></tr>
+                        <tr><td class="px-4">단말기 수</td><td class="text-center">1대</td><td class="text-center" style="background:#f0f9ff;">5대</td><td class="text-center">무제한</td></tr>
+                        <tr><td class="px-4">월 결제 건수</td><td class="text-center">100건</td><td class="text-center" style="background:#f0f9ff;">무제한</td><td class="text-center">무제한</td></tr>
+                        <tr><td class="px-4">직원별 매출 분리</td><td class="text-center"><i class="fas fa-check text-success"></i></td><td class="text-center" style="background:#f0f9ff;"><i class="fas fa-check text-success"></i></td><td class="text-center"><i class="fas fa-check text-success"></i></td></tr>
+                        <tr><td class="px-4">PG 통합 관리</td><td class="text-center"><i class="fas fa-check text-success"></i></td><td class="text-center" style="background:#f0f9ff;"><i class="fas fa-check text-success"></i></td><td class="text-center"><i class="fas fa-check text-success"></i></td></tr>
+
+                        <tr><td class="px-4 fw-bold" colspan="4" style="background:#f8fafc;">직원 관리</td></tr>
+                        <tr><td class="px-4">직원 수</td><td class="text-center">2명</td><td class="text-center" style="background:#f0f9ff;">무제한</td><td class="text-center">무제한</td></tr>
+                        <tr><td class="px-4">직원별 매출 통계</td><td class="text-center"><i class="fas fa-check text-success"></i></td><td class="text-center" style="background:#f0f9ff;"><i class="fas fa-check text-success"></i></td><td class="text-center"><i class="fas fa-check text-success"></i></td></tr>
+
+                        <tr><td class="px-4 fw-bold" colspan="4" style="background:#f8fafc;">정산 & 커미션</td></tr>
+                        <tr><td class="px-4">기본 정산</td><td class="text-center"><i class="fas fa-check text-success"></i></td><td class="text-center" style="background:#f0f9ff;"><i class="fas fa-check text-success"></i></td><td class="text-center"><i class="fas fa-check text-success"></i></td></tr>
+                        <tr><td class="px-4">영업 커미션 관리</td><td class="text-center"><i class="fas fa-times text-muted"></i></td><td class="text-center" style="background:#f0f9ff;"><i class="fas fa-check text-success"></i></td><td class="text-center"><i class="fas fa-check text-success"></i></td></tr>
+                        <tr><td class="px-4">출금요청 시스템</td><td class="text-center"><i class="fas fa-times text-muted"></i></td><td class="text-center" style="background:#f0f9ff;"><i class="fas fa-check text-success"></i></td><td class="text-center"><i class="fas fa-check text-success"></i></td></tr>
+
+                        <tr><td class="px-4 fw-bold" colspan="4" style="background:#f8fafc;">광고 & 마케팅</td></tr>
+                        <tr><td class="px-4">광고 분석 대시보드</td><td class="text-center"><i class="fas fa-times text-muted"></i></td><td class="text-center" style="background:#f0f9ff;"><i class="fas fa-check text-success"></i></td><td class="text-center"><i class="fas fa-check text-success"></i></td></tr>
+                        <tr><td class="px-4">광고 주문</td><td class="text-center"><i class="fas fa-times text-muted"></i></td><td class="text-center" style="background:#f0f9ff;">월 5건</td><td class="text-center">무제한</td></tr>
+                        <tr><td class="px-4">경쟁업체 비교</td><td class="text-center"><i class="fas fa-times text-muted"></i></td><td class="text-center" style="background:#f0f9ff;"><i class="fas fa-check text-success"></i></td><td class="text-center"><i class="fas fa-check text-success"></i></td></tr>
+
+                        <tr><td class="px-4 fw-bold" colspan="4" style="background:#f8fafc;">지원</td></tr>
+                        <tr><td class="px-4">지원 채널</td><td class="text-center">이메일</td><td class="text-center" style="background:#f0f9ff;">이메일/채팅</td><td class="text-center">전담 매니저</td></tr>
+                        <tr><td class="px-4">API 직접 접근</td><td class="text-center"><i class="fas fa-times text-muted"></i></td><td class="text-center" style="background:#f0f9ff;"><i class="fas fa-times text-muted"></i></td><td class="text-center"><i class="fas fa-check text-success"></i></td></tr>
+                        <tr><td class="px-4">SLA 보장</td><td class="text-center"><i class="fas fa-times text-muted"></i></td><td class="text-center" style="background:#f0f9ff;"><i class="fas fa-times text-muted"></i></td><td class="text-center"><i class="fas fa-check text-success"></i></td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- FAQ -->
+<section class="section-pad">
+    <div class="container" style="max-width:800px;">
+        <div class="text-center fade-up mb-5">
+            <h2 class="section-title">요금제 관련 FAQ</h2>
+            <p class="section-sub">자주 묻는 질문을 확인하세요</p>
+        </div>
+        <div class="accordion fade-up" id="pricingFaq">
+            <div class="accordion-item border-0 mb-2 shadow-sm rounded-3 overflow-hidden">
+                <h2 class="accordion-header"><button class="accordion-button fw-bold" data-bs-toggle="collapse" data-bs-target="#pf1">스타터 플랜에서 프로로 업그레이드할 수 있나요?</button></h2>
+                <div id="pf1" class="accordion-collapse collapse show" data-bs-parent="#pricingFaq"><div class="accordion-body text-muted">네, 언제든지 플랜을 업그레이드할 수 있습니다. 업그레이드 시 기존 데이터는 그대로 유지되며, 추가 기능이 즉시 활성화됩니다.</div></div>
+            </div>
+            <div class="accordion-item border-0 mb-2 shadow-sm rounded-3 overflow-hidden">
+                <h2 class="accordion-header"><button class="accordion-button collapsed fw-bold" data-bs-toggle="collapse" data-bs-target="#pf2">결제 수수료가 별도로 있나요?</button></h2>
+                <div id="pf2" class="accordion-collapse collapse" data-bs-parent="#pricingFaq"><div class="accordion-body text-muted">ADPAY 자체 수수료는 없습니다. 결제 수수료는 연동한 PG사의 수수료 정책을 따릅니다. ADPAY에서는 PG 수수료율을 설정하면 자동으로 정산에 반영됩니다.</div></div>
+            </div>
+            <div class="accordion-item border-0 mb-2 shadow-sm rounded-3 overflow-hidden">
+                <h2 class="accordion-header"><button class="accordion-button collapsed fw-bold" data-bs-toggle="collapse" data-bs-target="#pf3">무료 플랜에 사용 기간 제한이 있나요?</button></h2>
+                <div id="pf3" class="accordion-collapse collapse" data-bs-parent="#pricingFaq"><div class="accordion-body text-muted">없습니다. 스타터 플랜은 기간 제한 없이 무료로 사용 가능합니다. 다만 단말기 1대, 직원 2명, 월 100건 결제 제한이 있습니다.</div></div>
+            </div>
+            <div class="accordion-item border-0 mb-2 shadow-sm rounded-3 overflow-hidden">
+                <h2 class="accordion-header"><button class="accordion-button collapsed fw-bold" data-bs-toggle="collapse" data-bs-target="#pf4">엔터프라이즈 플랜은 어떻게 신청하나요?</button></h2>
+                <div id="pf4" class="accordion-collapse collapse" data-bs-parent="#pricingFaq"><div class="accordion-body text-muted">엔터프라이즈 플랜은 영업팀과 상담 후 맞춤 견적을 제공합니다. 문의하기 버튼을 클릭하시거나 info@adpay.kr로 이메일을 보내주세요.</div></div>
+            </div>
+            <div class="accordion-item border-0 mb-2 shadow-sm rounded-3 overflow-hidden">
+                <h2 class="accordion-header"><button class="accordion-button collapsed fw-bold" data-bs-toggle="collapse" data-bs-target="#pf5">여러 지점을 운영하면 어떤 플랜이 좋나요?</button></h2>
+                <div id="pf5" class="accordion-collapse collapse" data-bs-parent="#pricingFaq"><div class="accordion-body text-muted">지점 수에 따라 다릅니다. 2~3개 지점이면 프로 플랜으로 충분하고, 5개 이상의 지점이나 프랜차이즈라면 엔터프라이즈 플랜을 추천합니다.</div></div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- CTA -->
+<section class="section-pad cta-gradient text-white text-center">
+    <div class="container fade-up">
+        <h2 class="display-5 fw-bold mb-3">지금 무료로 시작하세요</h2>
+        <p class="lead opacity-80 mb-4">스타터 플랜으로 바로 시작하고, 필요할 때 업그레이드하세요</p>
+        <div class="d-flex justify-content-center gap-3 flex-wrap">
+            <a href="/static/login.html" class="btn btn-light btn-lg px-5 py-3 fw-bold" style="border-radius:50px;"><i class="fas fa-sign-in-alt me-2"></i>무료로 시작하기</a>
+            <a href="/static/login.html" class="btn btn-outline-light btn-lg px-5 py-3" style="border-radius:50px;"><i class="fas fa-flask me-2"></i>테스트 계정 체험</a>
+        </div>
+    </div>
+</section>
+
+<!-- Footer -->
+<footer class="footer-dark text-light">
+    <div class="container">
+        <div class="row py-5">
+            <div class="col-lg-4 mb-4 mb-lg-0">
+                <h5 class="fw-bold mb-3"><i class="fas fa-credit-card me-2" style="color:#0ea5e9"></i>ADPAY</h5>
+                <p class="text-white-50 small">오프라인 매장을 위한 올인원 결제, 정산, 마케팅 플랫폼.</p>
+            </div>
+            <div class="col-lg-2 col-md-4 col-6">
+                <h6 class="fw-bold mb-3">서비스</h6>
+                <ul class="list-unstyled"><li class="mb-2"><a href="/static/landing/features.html" class="footer-link">기능소개</a></li><li class="mb-2"><a href="/static/landing/pricing.html" class="footer-link">요금제</a></li></ul>
+            </div>
+            <div class="col-lg-2 col-md-4 col-6">
+                <h6 class="fw-bold mb-3">지원</h6>
+                <ul class="list-unstyled"><li class="mb-2"><a href="#" class="footer-link">고객센터</a></li><li class="mb-2"><a href="#" class="footer-link">API 문서</a></li></ul>
+            </div>
+            <div class="col-lg-2 col-md-4 col-6">
+                <h6 class="fw-bold mb-3">법적 고지</h6>
+                <ul class="list-unstyled"><li class="mb-2"><a href="#" class="footer-link">이용약관</a></li><li class="mb-2"><a href="#" class="footer-link">개인정보처리방침</a></li></ul>
+            </div>
+        </div>
+        <div class="border-top border-secondary py-3">
+            <p class="mb-0 text-white-50 small text-center">&copy; 2025 ADPAY Inc. All rights reserved.</p>
+        </div>
+    </div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+window.addEventListener('scroll', () => { document.getElementById('mainNav').classList.toggle('scrolled', window.scrollY > 50); });
+const observer = new IntersectionObserver((entries) => { entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); }); }, { threshold: 0.1 });
+document.querySelectorAll('.fade-up').forEach(el => observer.observe(el));
+</script>
+</body>
+</html>

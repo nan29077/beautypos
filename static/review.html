@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ADPAY - 영수증 리뷰</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    <style>
+        * { font-family: 'Noto Sans KR', sans-serif; box-sizing: border-box; }
+        body { 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+            min-height: 100vh; margin: 0;
+        }
+        .review-container { 
+            min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1rem; 
+        }
+        .review-card { 
+            background: #fff; border-radius: 1.5rem; box-shadow: 0 25px 60px rgba(0,0,0,.25); 
+            overflow: hidden; max-width: 440px; width: 100%; 
+        }
+        .review-header { 
+            background: linear-gradient(135deg, #1b3a5c, #0ea5e9); 
+            padding: 1.8rem 1.5rem; text-align: center; color: #fff; position: relative;
+        }
+        .review-header h1 { font-size: 1.4rem; font-weight: 900; margin: 0; }
+        .review-header .merchant-name { font-size: 1.1rem; font-weight: 700; margin-top: .4rem; opacity: .9; }
+        .review-header .category-badge {
+            display: inline-block; background: rgba(255,255,255,.2); padding: 2px 10px;
+            border-radius: 20px; font-size: .75rem; margin-top: .4rem;
+        }
+        .review-body { padding: 1.5rem; }
+
+        /* Step Indicator */
+        .step-bar { display: flex; align-items: center; margin-bottom: 1.5rem; padding: 0 .5rem; }
+        .step-item { 
+            flex: 1; text-align: center; position: relative; 
+        }
+        .step-num { 
+            width: 32px; height: 32px; border-radius: 50%; display: inline-flex; 
+            align-items: center; justify-content: center; font-weight: 700; font-size: .85rem;
+            background: #e5e7eb; color: #9ca3af; transition: all .3s; margin: 0 auto;
+        }
+        .step-item.active .step-num { background: #0ea5e9; color: #fff; }
+        .step-item.done .step-num { background: #22c55e; color: #fff; }
+        .step-label { font-size: .7rem; color: #9ca3af; margin-top: 4px; display: block; }
+        .step-item.active .step-label { color: #0ea5e9; font-weight: 600; }
+        .step-item.done .step-label { color: #22c55e; }
+        .step-line { 
+            position: absolute; top: 16px; left: 50%; width: 100%; height: 2px; background: #e5e7eb; z-index: 0;
+        }
+        .step-item.done .step-line { background: #22c55e; }
+
+        /* Flow Guide */
+        .flow-guide { background: #f8fafc; border-radius: 12px; padding: 1rem; margin-bottom: 1.2rem; }
+        .flow-step { 
+            display: flex; align-items: flex-start; gap: 10px; padding: 6px 0;
+        }
+        .flow-step .flow-icon { 
+            width: 28px; height: 28px; border-radius: 50%; display: flex; 
+            align-items: center; justify-content: center; font-size: .75rem; flex-shrink: 0;
+        }
+        .flow-step .flow-text { font-size: .85rem; line-height: 1.4; }
+
+        /* Action Buttons */
+        .action-btn { 
+            border-radius: 1rem; padding: .9rem; font-weight: 700; font-size: .95rem; 
+            transition: all .3s; border-width: 2px; position: relative; overflow: hidden;
+        }
+        .action-btn:hover { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(0,0,0,.15); }
+        .action-btn .btn-icon { font-size: 1.4rem; display: block; margin-bottom: .3rem; }
+
+        /* Camera / Image Preview */
+        .receipt-preview-area {
+            width: 100%; border-radius: 12px; overflow: hidden; position: relative;
+            background: #f1f5f9; aspect-ratio: 3/4; display: flex; align-items: center; justify-content: center;
+        }
+        .receipt-preview-area video, .receipt-preview-area img {
+            width: 100%; height: 100%; object-fit: cover;
+        }
+        .capture-controls { 
+            display: flex; justify-content: center; gap: 16px; align-items: center; padding: .8rem 0;
+        }
+        .capture-btn-main {
+            width: 64px; height: 64px; border-radius: 50%; border: 4px solid #0ea5e9;
+            background: #fff; color: #0ea5e9; font-size: 1.5rem; cursor: pointer;
+            transition: all .2s; display: flex; align-items: center; justify-content: center;
+        }
+        .capture-btn-main:hover { background: #0ea5e9; color: #fff; transform: scale(1.08); }
+        .capture-btn-sub {
+            width: 44px; height: 44px; border-radius: 50%; border: 2px solid #cbd5e1;
+            background: #fff; color: #64748b; font-size: 1rem; cursor: pointer;
+            transition: all .2s; display: flex; align-items: center; justify-content: center;
+        }
+        .capture-btn-sub:hover { border-color: #0ea5e9; color: #0ea5e9; }
+
+        /* Review Form */
+        .review-textarea { 
+            border-radius: 12px; border: 2px solid #e5e7eb; resize: none; 
+            transition: border-color .2s; font-size: .95rem;
+        }
+        .review-textarea:focus { border-color: #0ea5e9; box-shadow: 0 0 0 3px rgba(14,165,233,.1); }
+
+        /* Success */
+        .success-animation { animation: successPulse 0.5s ease; }
+        @keyframes successPulse {
+            0% { transform: scale(0.8); opacity: 0; }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .confetti-icon { font-size: 2rem; animation: confettiBounce 1s ease infinite alternate; }
+        @keyframes confettiBounce { 0%{transform:translateY(0)} 100%{transform:translateY(-6px)} }
+        .place-btn {
+            background: linear-gradient(135deg, #22c55e, #16a34a); color: #fff; border: none;
+            border-radius: 1rem; padding: 1rem 2rem; font-size: 1.05rem; font-weight: 700;
+            width: 100%; transition: all .3s; display: block; text-align: center; text-decoration: none;
+        }
+        .place-btn:hover { background: linear-gradient(135deg, #16a34a, #15803d); color: #fff; transform: translateY(-2px); }
+
+        /* Thumbnail of captured receipt */
+        .receipt-thumb { 
+            width: 64px; height: 64px; border-radius: 8px; object-fit: cover; border: 2px solid #e5e7eb;
+        }
+        .fade-in { animation: fadeIn .3s ease; }
+        @keyframes fadeIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+    </style>
+</head>
+<body>
+
+<div class="review-container">
+    <div class="review-card">
+        <!-- Header -->
+        <div class="review-header">
+            <div class="mb-1"><i class="fas fa-receipt" style="font-size:1.8rem;opacity:.8;"></i></div>
+            <h1>영수증 리뷰</h1>
+            <div class="merchant-name" id="merchantName">로딩 중...</div>
+            <div class="category-badge" id="categoryBadge" style="display:none;"></div>
+        </div>
+
+        <div class="review-body">
+            <!-- Loading -->
+            <div id="loadingView" class="text-center py-4">
+                <div class="spinner-border text-primary mb-3"></div>
+                <p class="text-muted">매장 정보를 불러오는 중...</p>
+            </div>
+
+            <!-- Error -->
+            <div id="errorView" style="display:none;" class="text-center py-4">
+                <i class="fas fa-exclamation-circle text-danger fa-3x mb-3"></i>
+                <p class="text-danger fw-bold mb-1">유효하지 않은 링크입니다</p>
+                <p class="text-muted small">QR코드나 NFC 태그를 다시 확인해주세요</p>
+            </div>
+
+            <!-- ═══ STEP 1: Welcome & Flow Guide ═══ -->
+            <div id="step1" style="display:none;" class="fade-in">
+                <div class="step-bar">
+                    <div class="step-item active">
+                        <div class="step-num">1</div>
+                        <span class="step-label">시작</span>
+                    </div>
+                    <div class="step-item">
+                        <div class="step-num">2</div>
+                        <span class="step-label">영수증</span>
+                    </div>
+                    <div class="step-item">
+                        <div class="step-num">3</div>
+                        <span class="step-label">리뷰</span>
+                    </div>
+                    <div class="step-item">
+                        <div class="step-num">4</div>
+                        <span class="step-label">완료</span>
+                    </div>
+                </div>
+
+                <div class="text-center mb-3">
+                    <p class="text-muted mb-0" id="welcomeMessage">방문해주셔서 감사합니다!</p>
+                </div>
+
+                <!-- 리뷰 플로우 안내 -->
+                <div class="flow-guide">
+                    <div class="small fw-bold text-secondary mb-2"><i class="fas fa-route me-1"></i>리뷰 참여 방법</div>
+                    <div class="flow-step">
+                        <div class="flow-icon bg-primary bg-opacity-10 text-primary"><i class="fas fa-camera"></i></div>
+                        <div class="flow-text"><strong>영수증 촬영/불러오기</strong><br><span class="text-muted">카메라로 촬영하거나 갤러리에서 선택</span></div>
+                    </div>
+                    <div class="flow-step">
+                        <div class="flow-icon bg-info bg-opacity-10 text-info"><i class="fas fa-edit"></i></div>
+                        <div class="flow-text"><strong>한줄 리뷰 작성</strong><br><span class="text-muted">방문 경험을 간단히 남겨주세요</span></div>
+                    </div>
+                    <div class="flow-step">
+                        <div class="flow-icon bg-success bg-opacity-10 text-success"><i class="fas fa-map-marker-alt"></i></div>
+                        <div class="flow-text"><strong>플레이스 리뷰 남기기</strong><br><span class="text-muted">매장 플레이스에서 리뷰 작성</span></div>
+                    </div>
+                </div>
+
+                <div class="d-grid gap-2">
+                    <button class="action-btn btn btn-primary" onclick="goToStep2()">
+                        <i class="fas fa-arrow-right me-2"></i>영수증 리뷰 시작하기
+                    </button>
+                </div>
+
+                <div class="text-center mt-3">
+                    <small class="text-muted">
+                        <i class="fas fa-shield-alt me-1"></i>개인정보는 안전하게 보호됩니다
+                    </small>
+                </div>
+            </div>
+
+            <!-- ═══ STEP 2: Receipt Capture ═══ -->
+            <div id="step2" style="display:none;" class="fade-in">
+                <div class="step-bar">
+                    <div class="step-item done"><div class="step-num"><i class="fas fa-check"></i></div><span class="step-label">시작</span></div>
+                    <div class="step-item active"><div class="step-num">2</div><span class="step-label">영수증</span></div>
+                    <div class="step-item"><div class="step-num">3</div><span class="step-label">리뷰</span></div>
+                    <div class="step-item"><div class="step-num">4</div><span class="step-label">완료</span></div>
+                </div>
+
+                <h6 class="text-center fw-bold mb-3">
+                    <i class="fas fa-camera text-primary me-1"></i>영수증을 촬영하거나 불러오세요
+                </h6>
+
+                <!-- 촬영/불러오기 선택 (초기 상태) -->
+                <div id="captureChoiceView">
+                    <div class="receipt-preview-area mb-3" id="cameraPreviewArea">
+                        <video id="cameraVideo" autoplay playsinline style="display:none;"></video>
+                        <div id="cameraPlaceholder" class="text-center p-3">
+                            <i class="fas fa-camera fa-3x text-muted mb-2 d-block opacity-50"></i>
+                            <p class="text-muted small mb-0">아래 버튼으로 촬영하거나<br>갤러리에서 불러오세요</p>
+                        </div>
+                    </div>
+
+                    <div class="capture-controls">
+                        <label class="capture-btn-sub" title="갤러리에서 선택">
+                            <i class="fas fa-images"></i>
+                            <input type="file" accept="image/*" onchange="handleFileSelect(event)" style="display:none;">
+                        </label>
+                        <button class="capture-btn-main" id="startCameraBtn" onclick="startCameraCapture()" title="카메라 촬영">
+                            <i class="fas fa-camera"></i>
+                        </button>
+                        <button class="capture-btn-sub" id="captureBtn" onclick="capturePhoto()" title="촬영" style="display:none;">
+                            <i class="fas fa-circle" style="color:#ef4444;"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 촬영/선택 완료 후 미리보기 -->
+                <div id="capturedPreview" style="display:none;" class="fade-in">
+                    <div class="receipt-preview-area mb-3">
+                        <img id="capturedImage" alt="영수증 이미지">
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-outline-secondary flex-grow-1 rounded-3" onclick="retakePhoto()">
+                            <i class="fas fa-redo me-1"></i>다시 선택
+                        </button>
+                        <button class="btn btn-primary flex-grow-1 rounded-3" onclick="goToStep3WithReceipt()">
+                            <i class="fas fa-arrow-right me-1"></i>다음 단계
+                        </button>
+                    </div>
+                </div>
+
+                <div class="text-center mt-3">
+                    <a href="#" class="text-muted small" onclick="goToStep3WithoutReceipt(); return false;">
+                        <i class="fas fa-forward me-1"></i>영수증 없이 바로 리뷰 남기기
+                    </a>
+                </div>
+            </div>
+
+            <!-- ═══ STEP 3: Review Form ═══ -->
+            <div id="step3" style="display:none;" class="fade-in">
+                <div class="step-bar">
+                    <div class="step-item done"><div class="step-num"><i class="fas fa-check"></i></div><span class="step-label">시작</span></div>
+                    <div class="step-item done"><div class="step-num"><i class="fas fa-check"></i></div><span class="step-label">영수증</span></div>
+                    <div class="step-item active"><div class="step-num">3</div><span class="step-label">리뷰</span></div>
+                    <div class="step-item"><div class="step-num">4</div><span class="step-label">완료</span></div>
+                </div>
+
+                <h6 class="text-center fw-bold mb-3">
+                    <i class="fas fa-edit text-info me-1"></i>리뷰를 남겨주세요
+                </h6>
+
+                <!-- 첨부 영수증 미리보기 -->
+                <div id="attachedReceipt" style="display:none;" class="d-flex align-items-center gap-2 bg-light rounded-3 p-2 mb-3">
+                    <img id="receiptThumb" class="receipt-thumb" alt="영수증">
+                    <div class="flex-grow-1">
+                        <div class="small fw-bold">영수증 첨부됨</div>
+                        <div class="small text-muted">이미지가 함께 제출됩니다</div>
+                    </div>
+                    <i class="fas fa-check-circle text-success"></i>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label fw-bold small">이름 <span class="text-muted fw-normal">(선택)</span></label>
+                    <input class="form-control rounded-3" id="reviewName" placeholder="닉네임 또는 이름">
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label fw-bold small">한줄 리뷰 <span class="text-muted fw-normal">(선택)</span></label>
+                    <textarea class="form-control review-textarea" id="reviewMemo" rows="3" 
+                              placeholder="방문 경험을 자유롭게 작성해주세요&#10;예) 분위기가 좋고 서비스가 친절했어요!"></textarea>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label fw-bold small">연락처 <span class="text-muted fw-normal">(선택)</span></label>
+                    <input class="form-control rounded-3" id="reviewPhone" placeholder="010-0000-0000" type="tel">
+                </div>
+
+                <div class="d-grid">
+                    <button class="btn btn-primary rounded-3 py-2 fw-bold" onclick="submitReview()" id="submitBtn">
+                        <i class="fas fa-paper-plane me-1"></i>리뷰 제출하기
+                    </button>
+                </div>
+
+                <div class="text-center mt-2">
+                    <a href="#" class="text-muted small" onclick="goBack2(); return false;">
+                        <i class="fas fa-arrow-left me-1"></i>이전 단계로
+                    </a>
+                </div>
+            </div>
+
+            <!-- ═══ STEP 4: Success ═══ -->
+            <div id="step4" style="display:none;" class="fade-in">
+                <div class="step-bar">
+                    <div class="step-item done"><div class="step-num"><i class="fas fa-check"></i></div><span class="step-label">시작</span></div>
+                    <div class="step-item done"><div class="step-num"><i class="fas fa-check"></i></div><span class="step-label">영수증</span></div>
+                    <div class="step-item done"><div class="step-num"><i class="fas fa-check"></i></div><span class="step-label">리뷰</span></div>
+                    <div class="step-item active"><div class="step-num"><i class="fas fa-check"></i></div><span class="step-label">완료</span></div>
+                </div>
+
+                <div class="text-center success-animation">
+                    <div class="mb-2 confetti-icon">🎉</div>
+                    <div class="d-inline-flex align-items-center justify-content-center bg-success bg-opacity-10 rounded-circle mb-3" 
+                         style="width:70px;height:70px;">
+                        <i class="fas fa-check-circle text-success" style="font-size:2.5rem;"></i>
+                    </div>
+                    <h5 class="fw-bold text-success mb-1">리뷰가 제출되었습니다!</h5>
+                    <p class="text-muted mb-3 small" id="successMessage">소중한 후기 감사합니다.</p>
+                </div>
+
+                <div id="placeUrlSection" style="display:none;" class="mb-3">
+                    <div class="alert alert-light border text-center mb-3 rounded-3 py-2">
+                        <i class="fas fa-star text-warning me-1"></i>
+                        <strong class="small">마지막 한 단계!</strong>
+                        <p class="small text-muted mb-0 mt-1">아래 버튼을 눌러 플레이스 리뷰도 남겨주시면<br>매장에 큰 도움이 됩니다</p>
+                    </div>
+                    <a href="#" id="placeUrlBtn" class="place-btn" target="_blank">
+                        <i class="fas fa-map-marker-alt me-2"></i>플레이스에서 리뷰 남기기
+                    </a>
+                </div>
+
+                <div class="text-center mt-3">
+                    <small class="text-muted">
+                        <i class="fas fa-heart text-danger me-1"></i>
+                        <span id="merchantNameFooter">매장</span>을 이용해 주셔서 감사합니다
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<canvas id="captureCanvas" style="display:none;"></canvas>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    let reviewToken = null;
+    let storeData = null;
+    let cameraStream = null;
+    let capturedDataUrl = null;
+    let cameraActive = false;
+
+    // Get token from URL
+    const params = new URLSearchParams(window.location.search);
+    reviewToken = params.get('t');
+
+    if (!reviewToken) {
+        showError();
+    } else {
+        loadStoreInfo();
+    }
+
+    async function loadStoreInfo() {
+        try {
+            const res = await fetch(`/api/public/review/${reviewToken}`);
+            if (!res.ok) throw new Error('Invalid token');
+            storeData = await res.json();
+
+            document.getElementById('merchantName').textContent = storeData.merchant_name;
+            document.getElementById('merchantNameFooter').textContent = storeData.merchant_name;
+            if (storeData.display_category) {
+                const badge = document.getElementById('categoryBadge');
+                badge.textContent = storeData.display_category;
+                badge.style.display = 'inline-block';
+            }
+            if (storeData.welcome_message) {
+                document.getElementById('welcomeMessage').textContent = storeData.welcome_message;
+            }
+
+            document.getElementById('loadingView').style.display = 'none';
+            document.getElementById('step1').style.display = '';
+        } catch (e) {
+            showError();
+        }
+    }
+
+    function showError() {
+        document.getElementById('loadingView').style.display = 'none';
+        document.getElementById('errorView').style.display = '';
+        document.getElementById('merchantName').textContent = '오류';
+    }
+
+    // ─── Step Navigation ─────────────────────────────────────
+
+    function goToStep2() {
+        document.getElementById('step1').style.display = 'none';
+        document.getElementById('step2').style.display = '';
+    }
+
+    function goToStep3WithReceipt() {
+        stopCamera();
+        document.getElementById('step2').style.display = 'none';
+        document.getElementById('step3').style.display = '';
+        // 영수증 썸네일 표시
+        if (capturedDataUrl) {
+            document.getElementById('receiptThumb').src = capturedDataUrl;
+            document.getElementById('attachedReceipt').style.display = 'flex';
+        }
+    }
+
+    function goToStep3WithoutReceipt() {
+        stopCamera();
+        capturedDataUrl = null;
+        document.getElementById('step2').style.display = 'none';
+        document.getElementById('step3').style.display = '';
+        document.getElementById('attachedReceipt').style.display = 'none';
+    }
+
+    function goBack2() {
+        document.getElementById('step3').style.display = 'none';
+        document.getElementById('step2').style.display = '';
+    }
+
+    // ─── Camera ──────────────────────────────────────────────
+
+    async function startCameraCapture() {
+        try {
+            cameraStream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 1920 } }
+            });
+            cameraActive = true;
+            const video = document.getElementById('cameraVideo');
+            video.srcObject = cameraStream;
+            video.style.display = '';
+            document.getElementById('cameraPlaceholder').style.display = 'none';
+            document.getElementById('startCameraBtn').style.display = 'none';
+            document.getElementById('captureBtn').style.display = 'flex';
+        } catch (e) {
+            // Camera not available - show file picker directly
+            const fileInput = document.createElement('input');
+            fileInput.type = 'file';
+            fileInput.accept = 'image/*';
+            fileInput.capture = 'environment';
+            fileInput.onchange = handleFileSelect;
+            fileInput.click();
+        }
+    }
+
+    function handleFileSelect(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            capturedDataUrl = e.target.result;
+            showCapturedPreview();
+        };
+        reader.readAsDataURL(file);
+    }
+
+    function capturePhoto() {
+        const video = document.getElementById('cameraVideo');
+        const canvas = document.getElementById('captureCanvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        canvas.getContext('2d').drawImage(video, 0, 0);
+        capturedDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+        stopCamera();
+        showCapturedPreview();
+    }
+
+    function showCapturedPreview() {
+        document.getElementById('captureChoiceView').style.display = 'none';
+        document.getElementById('capturedImage').src = capturedDataUrl;
+        document.getElementById('capturedPreview').style.display = '';
+    }
+
+    function retakePhoto() {
+        capturedDataUrl = null;
+        document.getElementById('capturedPreview').style.display = 'none';
+        document.getElementById('captureChoiceView').style.display = '';
+        document.getElementById('cameraPlaceholder').style.display = '';
+        document.getElementById('cameraVideo').style.display = 'none';
+        document.getElementById('startCameraBtn').style.display = 'flex';
+        document.getElementById('captureBtn').style.display = 'none';
+    }
+
+    function stopCamera() {
+        if (cameraStream) {
+            cameraStream.getTracks().forEach(t => t.stop());
+            cameraStream = null;
+            cameraActive = false;
+        }
+    }
+
+    // ─── Submit ──────────────────────────────────────────────
+
+    async function submitReview() {
+        const btn = document.getElementById('submitBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>제출 중...';
+
+        try {
+            const formData = new FormData();
+            const name = document.getElementById('reviewName').value.trim();
+            const phone = document.getElementById('reviewPhone').value.trim();
+            const memo = document.getElementById('reviewMemo').value.trim();
+
+            if (name) formData.append('customer_name', name);
+            if (phone) formData.append('customer_phone', phone);
+            if (capturedDataUrl) {
+                formData.append('receipt_image_url', capturedDataUrl.substring(0, 500));
+            }
+            if (memo) formData.append('memo', memo);
+
+            const res = await fetch(`/api/public/review/${reviewToken}/submit`, {
+                method: 'POST',
+                body: formData,
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || '제출 실패');
+
+            showSuccess(data.place_url);
+        } catch (e) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-paper-plane me-1"></i>리뷰 제출하기';
+            alert('제출 실패: ' + e.message);
+        }
+    }
+
+    function showSuccess(placeUrl) {
+        document.getElementById('step1').style.display = 'none';
+        document.getElementById('step2').style.display = 'none';
+        document.getElementById('step3').style.display = 'none';
+        document.getElementById('step4').style.display = '';
+
+        if (placeUrl) {
+            document.getElementById('placeUrlSection').style.display = '';
+            document.getElementById('placeUrlBtn').href = placeUrl;
+            document.getElementById('successMessage').textContent =
+                '영수증 리뷰가 제출되었습니다! 아래에서 플레이스 리뷰도 남겨주세요.';
+        } else {
+            document.getElementById('successMessage').textContent =
+                '소중한 리뷰 감사합니다!';
+        }
+    }
+</script>
+</body>
+</html>

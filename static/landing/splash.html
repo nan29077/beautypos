@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ADPAY - 결제의 새로운 기준</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    <style>
+        *{font-family:'Noto Sans KR',sans-serif;margin:0;padding:0;box-sizing:border-box}
+        html,body{height:100%;overflow:hidden;background:#0a0f1a}
+        .splash-wrap{display:flex;height:100vh;width:100%}
+
+        /* ─── Left: ADPAY ─── */
+        .panel{flex:1;position:relative;cursor:pointer;overflow:hidden;transition:flex .6s cubic-bezier(.4,0,.2,1)}
+        .panel:hover{flex:1.15}
+        .panel .bg{position:absolute;inset:0;background-size:cover;background-position:center;transition:transform .8s ease}
+        .panel:hover .bg{transform:scale(1.05)}
+        .panel .overlay{position:absolute;inset:0;transition:background .5s}
+        .panel-left .overlay{background:linear-gradient(135deg,rgba(13,27,42,.88) 0%,rgba(27,58,92,.75) 50%,rgba(14,165,233,.35) 100%)}
+        .panel-left:hover .overlay{background:linear-gradient(135deg,rgba(13,27,42,.78) 0%,rgba(27,58,92,.6) 50%,rgba(14,165,233,.25) 100%)}
+        .panel-right .overlay{background:linear-gradient(135deg,rgba(255,107,53,.15) 0%,rgba(255,159,28,.3) 30%,rgba(45,27,3,.88) 100%)}
+        .panel-right:hover .overlay{background:linear-gradient(135deg,rgba(255,107,53,.1) 0%,rgba(255,159,28,.2) 30%,rgba(45,27,3,.78) 100%)}
+
+        .panel-content{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:3rem;text-align:center;color:#fff}
+        .panel-icon{width:90px;height:90px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:2.2rem;margin-bottom:1.8rem;transition:transform .4s,box-shadow .4s}
+        .panel:hover .panel-icon{transform:scale(1.12);box-shadow:0 12px 40px rgba(0,0,0,.4)}
+        .panel-left .panel-icon{background:linear-gradient(135deg,#0ea5e9,#1b3a5c);box-shadow:0 8px 30px rgba(14,165,233,.35)}
+        .panel-right .panel-icon{background:linear-gradient(135deg,#ff6b35,#ff9f1c);box-shadow:0 8px 30px rgba(255,107,53,.35)}
+
+        .panel-badge{display:inline-block;padding:6px 18px;border-radius:50px;font-size:.75rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:1rem}
+        .panel-left .panel-badge{background:rgba(14,165,233,.2);color:#7dd3fc;border:1px solid rgba(14,165,233,.3)}
+        .panel-right .panel-badge{background:rgba(255,159,28,.2);color:#ffd19a;border:1px solid rgba(255,159,28,.3)}
+
+        .panel-question{font-size:clamp(1.6rem,3vw,2.6rem);font-weight:900;margin-bottom:.6rem;line-height:1.2}
+        .panel-brand{font-size:clamp(1rem,2vw,1.4rem);font-weight:300;opacity:.85;margin-bottom:1.5rem}
+        .panel-desc{font-size:.95rem;line-height:1.7;opacity:.75;max-width:360px;margin-bottom:2rem}
+
+        .panel-cta{display:inline-flex;align-items:center;gap:.6rem;padding:14px 36px;border-radius:50px;font-weight:700;font-size:1rem;border:none;cursor:pointer;transition:all .3s;text-decoration:none}
+        .panel-left .panel-cta{background:linear-gradient(135deg,#0ea5e9,#3b82f6);color:#fff;box-shadow:0 6px 25px rgba(14,165,233,.35)}
+        .panel-left .panel-cta:hover{transform:translateY(-2px);box-shadow:0 10px 35px rgba(14,165,233,.5);color:#fff}
+        .panel-right .panel-cta{background:linear-gradient(135deg,#ff6b35,#ff9f1c);color:#fff;box-shadow:0 6px 25px rgba(255,107,53,.35)}
+        .panel-right .panel-cta:hover{transform:translateY(-2px);box-shadow:0 10px 35px rgba(255,107,53,.5);color:#fff}
+
+        /* Features list */
+        .feature-list{list-style:none;padding:0;margin:0 0 2rem;text-align:left;max-width:320px}
+        .feature-list li{padding:5px 0;font-size:.88rem;opacity:.8;display:flex;align-items:center;gap:8px}
+        .feature-list li i{font-size:.7rem}
+
+        /* Divider */
+        .center-divider{position:fixed;left:50%;top:0;bottom:0;width:3px;background:linear-gradient(to bottom,transparent,rgba(255,255,255,.15) 30%,rgba(255,255,255,.15) 70%,transparent);z-index:10;transform:translateX(-50%)}
+        .center-or{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:11;width:50px;height:50px;border-radius:50%;background:#1a1f2e;border:2px solid rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;font-size:.8rem;font-weight:700;color:rgba(255,255,255,.6)}
+
+        /* Login link */
+        .login-float{position:fixed;top:20px;right:24px;z-index:20;display:flex;gap:10px}
+        .login-float a{color:rgba(255,255,255,.7);text-decoration:none;font-size:.85rem;font-weight:500;padding:8px 18px;border:1px solid rgba(255,255,255,.15);border-radius:50px;backdrop-filter:blur(8px);background:rgba(255,255,255,.05);transition:all .3s}
+        .login-float a:hover{color:#fff;background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.3)}
+
+        /* Particles */
+        .particles{position:absolute;inset:0;overflow:hidden;z-index:1;pointer-events:none}
+        .particles span{position:absolute;width:3px;height:3px;background:#fff;border-radius:50%;opacity:.25;animation:float-up 6s ease-in infinite}
+        @keyframes float-up{0%{transform:translateY(100vh) scale(0);opacity:0}20%{opacity:.3}100%{transform:translateY(-10vh) scale(1.2);opacity:0}}
+
+        /* Mobile */
+        @media(max-width:768px){
+            .splash-wrap{flex-direction:column}
+            .center-divider{left:0;right:0;top:50%;bottom:auto;width:100%;height:2px;background:linear-gradient(to right,transparent,rgba(255,255,255,.15) 30%,rgba(255,255,255,.15) 70%,transparent);transform:none}
+            .center-or{top:50%;left:50%}
+            .panel-content{padding:1.5rem}
+            .panel-icon{width:60px;height:60px;font-size:1.5rem;margin-bottom:1rem}
+            .panel-desc{display:none}
+            .feature-list{display:none}
+            .panel-cta{padding:10px 24px;font-size:.85rem}
+            .panel-question{font-size:1.4rem}
+        }
+    </style>
+</head>
+<body>
+    <!-- Login -->
+    <div class="login-float">
+        <a href="/static/login.html"><i class="fas fa-sign-in-alt me-1"></i>로그인</a>
+    </div>
+
+    <div class="splash-wrap">
+        <!-- ADPAY (소상공인) -->
+        <div class="panel panel-left" onclick="location.href='/static/landing/index.html'">
+            <div class="bg" style="background-image:url('https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=1200&q=80')"></div>
+            <div class="overlay"></div>
+            <div class="particles" id="particles-left"></div>
+            <div class="panel-content">
+                <div class="panel-icon"><i class="fas fa-store"></i></div>
+                <span class="panel-badge">For Small Business</span>
+                <h2 class="panel-question">소상공인이세요?</h2>
+                <p class="panel-brand">ADPAY</p>
+                <p class="panel-desc">오프라인 결제를 스마트하게. PG 통합관리, 직원별 매출, 광고분석까지 한번에.</p>
+                <ul class="feature-list">
+                    <li><i class="fas fa-check-circle" style="color:#0ea5e9"></i>PG사 통합 관리 & 원클릭 연동</li>
+                    <li><i class="fas fa-check-circle" style="color:#0ea5e9"></i>직원별 매출 자동 분리</li>
+                    <li><i class="fas fa-check-circle" style="color:#0ea5e9"></i>네이버 플레이스 광고 분석</li>
+                    <li><i class="fas fa-check-circle" style="color:#0ea5e9"></i>실시간 정산 & 커미션 관리</li>
+                </ul>
+                <a href="/static/landing/index.html" class="panel-cta">
+                    자세히 보기 <i class="fas fa-arrow-right"></i>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    // Generate floating particles
+    function spawnParticles(containerId, count) {
+        const c = document.getElementById(containerId);
+        if (!c) return;
+        for (let i = 0; i < count; i++) {
+            const s = document.createElement('span');
+            s.style.left = Math.random() * 100 + '%';
+            s.style.animationDelay = Math.random() * 6 + 's';
+            s.style.animationDuration = (4 + Math.random() * 4) + 's';
+            c.appendChild(s);
+        }
+    }
+    spawnParticles('particles-left', 15);
+    </script>
+</body>
+</html>

@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ADPAY - 기능소개</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    <style>
+        :root { --primary: #1b3a5c; --accent: #0ea5e9; --dark: #0d1b2a; }
+        * { font-family: 'Noto Sans KR', sans-serif; }
+        html, body { min-height: 100vh; margin: 0; }
+        body { background: #070b14; }
+        .navbar-adpay { background: rgba(13,27,42,0.92) !important; backdrop-filter: blur(12px); }
+        .navbar-adpay.scrolled { background: rgba(13,27,42,0.98) !important; box-shadow: 0 2px 20px rgba(0,0,0,.3); }
+        .hero-features { background: linear-gradient(135deg, #0d1b2a 0%, #1b3a5c 60%, #0ea5e9 100%); padding: 8rem 0 5rem; }
+        .section-pad { padding: 5rem 0; }
+        .section-title { font-size: 2rem; font-weight: 800; }
+        .section-sub { color: #6b7280; font-size: 1.05rem; }
+        .feature-detail-card { border: none; border-radius: 1rem; overflow: hidden; transition: transform .3s, box-shadow .3s; }
+        .feature-detail-card:hover { transform: translateY(-6px); box-shadow: 0 15px 40px rgba(0,0,0,.1); }
+        .feature-detail-icon { width: 56px; height: 56px; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 1.3rem; }
+        .showcase-img img { width: 100%; height: 300px; object-fit: cover; border-radius: 1rem; }
+        .workflow-step { position: relative; padding-left: 60px; margin-bottom: 2rem; }
+        .workflow-step .step-num { position: absolute; left: 0; top: 0; width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 1.1rem; }
+        .workflow-step .step-line { position: absolute; left: 21px; top: 44px; width: 2px; height: calc(100% + 1rem); background: #e5e7eb; }
+        .workflow-step:last-child .step-line { display: none; }
+        .api-card { background: #1e293b; border-radius: 0.75rem; padding: 1rem; font-family: 'Fira Code', 'Courier New', monospace; font-size: 0.85rem; color: #a5f3fc; }
+        .api-method { display: inline-block; padding: 2px 8px; border-radius: 4px; font-weight: 700; font-size: 0.7rem; }
+        .api-get { background: #22c55e; color: #fff; }
+        .api-post { background: #3b82f6; color: #fff; }
+        .cta-gradient { background: linear-gradient(135deg, #0d1b2a 0%, #1b3a5c 50%, #0ea5e9 100%); }
+        .footer-dark { background: #070b14; }
+        .footer-link { color: rgba(255,255,255,.5); text-decoration: none; transition: color .2s; }
+        .footer-link:hover { color: #0ea5e9; }
+        .fade-up { opacity: 0; transform: translateY(30px); transition: all 0.6s ease; }
+        .fade-up.visible { opacity: 1; transform: translateY(0); }
+    </style>
+</head>
+<body>
+
+<!-- Navbar -->
+<nav class="navbar navbar-expand-lg navbar-dark fixed-top navbar-adpay" id="mainNav">
+    <div class="container">
+        <a class="navbar-brand fw-bold" href="/static/landing/index.html"><i class="fas fa-credit-card me-2" style="color:#0ea5e9"></i>ADPAY</a>
+        <button class="navbar-toggler border-0" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"><span class="navbar-toggler-icon"></span></button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav ms-auto align-items-center">
+                <li class="nav-item"><a class="nav-link px-3" href="/static/landing/index.html">홈</a></li>
+                <li class="nav-item"><a class="nav-link px-3" href="/static/landing/features.html">기능소개</a></li>
+                <li class="nav-item ms-2"><a class="btn btn-primary px-4 py-2 fw-bold" href="/static/login.html" style="border-radius:50px;font-size:.9rem;"><i class="fas fa-sign-in-alt me-1"></i>시작하기</a></li>
+            </ul>
+        </div>
+    </div>
+</nav>
+
+<!-- Hero -->
+<section class="hero-features text-white text-center">
+    <div class="container">
+        <span class="badge bg-white bg-opacity-10 px-3 py-2 mb-3"><i class="fas fa-th-large me-1"></i>FEATURES</span>
+        <h1 class="display-4 fw-bold mb-3">ADPAY 핵심 기능</h1>
+        <p class="lead opacity-80 mx-auto" style="max-width:600px;">오프라인 매장 운영에 필요한 결제, 정산, 직원 관리, 광고 분석까지<br>하나의 플랫폼에서 모든 것을 해결합니다</p>
+    </div>
+</section>
+
+<!-- ═══ 1. PG 통합 관리 ═══ -->
+<section class="section-pad" id="pg">
+    <div class="container">
+        <div class="row align-items-center g-5">
+            <div class="col-lg-6 fade-up">
+                <img src="https://images.unsplash.com/photo-1556742393-d75f468bfcb0?w=700&h=450&fit=crop&q=80" alt="POS 시스템" class="img-fluid rounded-4 shadow">
+            </div>
+            <div class="col-lg-6 fade-up">
+                <span class="badge bg-primary mb-3 px-3 py-2"><i class="fas fa-network-wired me-1"></i>PG 연동</span>
+                <h2 class="fw-bold mb-3">다중 PG사 통합 관리</h2>
+                <p class="text-muted fs-5 mb-4">주요 PG사를 가맹점별로 등록하고 MID/SECRET 암호화 보관. 원클릭 연동 테스트.</p>
+                <ul class="list-unstyled mb-4">
+                    <li class="mb-1"><i class="fas fa-check text-success me-2"></i>가맹점별 PG 설정</li>
+                    <li class="mb-1"><i class="fas fa-check text-success me-2"></i>민감정보 암호화 보관</li>
+                    <li class="mb-1"><i class="fas fa-check text-success me-2"></i>실시간 연동 테스트</li>
+                </ul>
+                <div class="row g-3">
+                    <div class="col-sm-6">
+                        <div class="card feature-detail-card shadow-sm h-100 p-3">
+                            <div class="d-flex align-items-start">
+                                <div class="feature-detail-icon bg-primary bg-opacity-10 text-primary me-3"><i class="fas fa-key"></i></div>
+                                <div><h6 class="fw-bold mb-1">MID/SECRET 암호화</h6><p class="text-muted small mb-0">AES 암호화로 민감 정보를 안전하게 보관합니다</p></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-sm-6">
+                        <div class="card feature-detail-card shadow-sm h-100 p-3">
+                            <div class="d-flex align-items-start">
+                                <div class="feature-detail-icon bg-success bg-opacity-10 text-success me-3"><i class="fas fa-vial"></i></div>
+                                <div><h6 class="fw-bold mb-1">연동 테스트</h6><p class="text-muted small mb-0">원클릭으로 PG 연동 상태를 즉시 테스트합니다</p></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-sm-6">
+                        <div class="card feature-detail-card shadow-sm h-100 p-3">
+                            <div class="d-flex align-items-start">
+                                <div class="feature-detail-icon bg-warning bg-opacity-10 text-warning me-3"><i class="fas fa-exchange-alt"></i></div>
+                                <div><h6 class="fw-bold mb-1">PG사 변경/추가</h6><p class="text-muted small mb-0">언제든 PG사를 추가, 변경, 비활성화 할 수 있습니다</p></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-sm-6">
+                        <div class="card feature-detail-card shadow-sm h-100 p-3">
+                            <div class="d-flex align-items-start">
+                                <div class="feature-detail-icon bg-info bg-opacity-10 text-info me-3"><i class="fas fa-store"></i></div>
+                                <div><h6 class="fw-bold mb-1">가맹점별 관리</h6><p class="text-muted small mb-0">가맹점마다 개별 PG 설정이 가능합니다</p></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ═══ 2. 직원별 매출 분리 ═══ -->
+<section class="section-pad bg-light" id="staff-sales">
+    <div class="container">
+        <div class="row align-items-center g-5">
+            <div class="col-lg-6 order-lg-2 fade-up">
+                <img src="https://images.unsplash.com/photo-1560066984-138dadb4c035?w=700&h=450&fit=crop&q=80" alt="헤어살롱" class="img-fluid rounded-4 shadow">
+            </div>
+            <div class="col-lg-6 order-lg-1 fade-up">
+                <span class="badge bg-success mb-3 px-3 py-2"><i class="fas fa-users-cog me-1"></i>매출 관리</span>
+                <h2 class="fw-bold mb-3">직원(디자이너)별 매출 자동 분리</h2>
+                <p class="text-muted fs-5 mb-4">단말기 결제 시 직원 코드를 입력하면 자동으로 해당 직원의 매출로 귀속됩니다. 코드 없이 결제하면 원장님 매출로 자동 처리됩니다.</p>
+                
+                <!-- Workflow -->
+                <div class="workflow-step">
+                    <div class="step-num bg-primary text-white">1</div>
+                    <div class="step-line"></div>
+                    <h6 class="fw-bold">직원 코드 발급</h6>
+                    <p class="text-muted small">원장님이 각 직원에게 고유 staff_code를 부여합니다 (가맹점 단위 유니크)</p>
+                </div>
+                <div class="workflow-step">
+                    <div class="step-num bg-success text-white">2</div>
+                    <div class="step-line"></div>
+                    <h6 class="fw-bold">결제 시 코드 입력</h6>
+                    <p class="text-muted small">단말기에서 결제할 때 staff_code를 함께 전송합니다</p>
+                </div>
+                <div class="workflow-step">
+                    <div class="step-num bg-warning text-white">3</div>
+                    <div class="step-line"></div>
+                    <h6 class="fw-bold">자동 귀속</h6>
+                    <p class="text-muted small">유효한 코드면 해당 직원 매출, 없으면 원장 매출 + 로그 기록</p>
+                </div>
+                <div class="workflow-step">
+                    <div class="step-num bg-info text-white">4</div>
+                    <h6 class="fw-bold">통계 확인</h6>
+                    <p class="text-muted small">원장님은 직원별 매출을 기간별로 조회하고 비교합니다</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ═══ 3. 정산 & 커미션 ═══ -->
+<section class="section-pad" id="settlement">
+    <div class="container">
+        <div class="row align-items-center g-5">
+            <div class="col-lg-6 fade-up">
+                <img src="https://images.unsplash.com/photo-1554224155-6726b3ff858f?w=700&h=450&fit=crop&q=80" alt="정산 계산" class="img-fluid rounded-4 shadow">
+            </div>
+            <div class="col-lg-6 fade-up">
+                <span class="badge bg-warning text-dark mb-3 px-3 py-2"><i class="fas fa-calculator me-1"></i>정산</span>
+                <h2 class="fw-bold mb-3">정산 & 커미션 자동 계산</h2>
+                <p class="text-muted fs-5 mb-4">PG 수수료, 영업관리자 커미션이 자동으로 계산됩니다. 출금 요청부터 승인까지 시스템으로 깔끔하게 관리하세요.</p>
+                
+                <div class="bg-light rounded-4 p-4 mb-4">
+                    <h6 class="fw-bold mb-3"><i class="fas fa-coins text-warning me-1"></i>정산 계산 예시</h6>
+                    <table class="table table-sm mb-0">
+                        <tbody>
+                            <tr><td class="text-muted">총 매출</td><td class="fw-bold text-end">1,000,000</td></tr>
+                            <tr><td class="text-muted">PG 수수료 (3.3%)</td><td class="text-danger text-end">-33,000</td></tr>
+                            <tr><td class="text-muted">영업 커미션 (5%)</td><td class="text-danger text-end">-50,000</td></tr>
+                            <tr class="border-top"><td class="fw-bold">순 정산금</td><td class="fw-bold text-primary text-end">917,000</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="row g-3">
+                    <div class="col-6">
+                        <div class="text-center p-3 bg-light rounded-3">
+                            <i class="fas fa-percentage text-primary fs-3 mb-2"></i>
+                            <div class="small fw-bold">가맹점별 수수료율</div>
+                            <div class="text-muted small">맞춤형 설정</div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="text-center p-3 bg-light rounded-3">
+                            <i class="fas fa-money-bill-wave text-success fs-3 mb-2"></i>
+                            <div class="small fw-bold">출금요청 시스템</div>
+                            <div class="text-muted small">요청 → 승인 → 완료</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ═══ 4. 광고 분석 & 주문 ═══ -->
+<section class="section-pad bg-light" id="ad">
+    <div class="container">
+        <div class="text-center fade-up mb-5">
+            <span class="badge bg-danger px-3 py-2 mb-3"><i class="fas fa-bullhorn me-1"></i>MARKETING</span>
+            <h2 class="section-title">광고 분석 & 주문 시스템</h2>
+            <p class="section-sub">데이터 기반 마케팅 의사결정과 원클릭 광고 주문</p>
+        </div>
+        <div class="row g-4">
+            <div class="col-lg-6 fade-up">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-body p-4">
+                        <h5 class="fw-bold mb-3"><i class="fas fa-chart-line text-info me-2"></i>광고 분석 대시보드</h5>
+                        <p class="text-muted">네이버 플레이스 순위, 블로그 리뷰 수, 방문자 리뷰 수를 기간별로 추적하고 경쟁업체와 비교합니다.</p>
+                        <ul class="list-unstyled">
+                            <li class="mb-2"><i class="fas fa-check-circle text-success me-2"></i>우리 매장 vs 경쟁 매장 비교</li>
+                            <li class="mb-2"><i class="fas fa-check-circle text-success me-2"></i>날짜별 순위 변동 추적</li>
+                            <li class="mb-2"><i class="fas fa-check-circle text-success me-2"></i>블로그/방문자 리뷰 수 기록</li>
+                            <li class="mb-2"><i class="fas fa-check-circle text-success me-2"></i>관리자 직접 지표 입력</li>
+                        </ul>
+                        <div class="bg-light rounded-3 p-3 mt-3">
+                            <div class="row text-center g-2">
+                                <div class="col-4"><div class="fw-bold text-primary">12위</div><small class="text-muted">플레이스 순위</small></div>
+                                <div class="col-4"><div class="fw-bold text-success">156건</div><small class="text-muted">블로그 리뷰</small></div>
+                                <div class="col-4"><div class="fw-bold text-warning">89건</div><small class="text-muted">방문자 리뷰</small></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-6 fade-up">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-body p-4">
+                        <h5 class="fw-bold mb-3"><i class="fas fa-shopping-cart text-danger me-2"></i>광고 주문 시스템</h5>
+                        <p class="text-muted">블로그 배포, 플레이스 유입 요청을 시스템으로 접수하고 워크플로우로 관리합니다.</p>
+                        
+                        <h6 class="fw-bold mt-3 mb-2">블로그 배포 주문</h6>
+                        <p class="text-muted small">캠페인명, 주소, 키워드, 해시태그, 업체소개, 이미지 링크를 입력하여 블로그 리뷰 작성을 주문합니다.</p>
+                        
+                        <h6 class="fw-bold mt-3 mb-2">플레이스 유입 주문</h6>
+                        <p class="text-muted small">네이버 플레이스명, 검색 키워드(최대 3개)를 입력하여 유입 주문을 접수합니다.</p>
+                        
+                        <div class="mt-3">
+                            <h6 class="fw-bold mb-2">워크플로우 상태</h6>
+                            <div class="d-flex gap-2 flex-wrap">
+                                <span class="badge bg-warning px-3 py-2">요청됨</span>
+                                <i class="fas fa-arrow-right text-muted align-self-center"></i>
+                                <span class="badge bg-info px-3 py-2">검토중</span>
+                                <i class="fas fa-arrow-right text-muted align-self-center"></i>
+                                <span class="badge bg-primary px-3 py-2">집행중</span>
+                                <i class="fas fa-arrow-right text-muted align-self-center"></i>
+                                <span class="badge bg-success px-3 py-2">완료</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ═══ 5. 단말기 결제 수집 ═══ -->
+<section class="section-pad" id="terminal">
+    <div class="container">
+        <div class="row align-items-center g-5">
+            <div class="col-lg-6 order-lg-2 fade-up">
+                <img src="https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=700&h=450&fit=crop&q=80" alt="카드 결제" class="img-fluid rounded-4 shadow">
+            </div>
+            <div class="col-lg-6 order-lg-1 fade-up">
+                <span class="badge bg-dark mb-3 px-3 py-2"><i class="fas fa-terminal me-1"></i>Terminal API</span>
+                <h2 class="fw-bold mb-3">단말기 결제 수집 API</h2>
+                <p class="text-muted fs-5 mb-4">카드 단말기에서 결제 데이터를 실시간으로 수신합니다. API Key 인증으로 보안을 확보하고, staff_code로 직원 매출을 자동 분리합니다.</p>
+                
+                <div class="api-card mb-3">
+                    <div class="mb-2"><span class="api-method api-post">POST</span> <span class="ms-2">/api/terminal/transactions</span></div>
+                    <div style="color:#94a3b8; font-size:.8rem;">
+                        {<br>
+                        &nbsp;&nbsp;"merchant_id": 1,<br>
+                        &nbsp;&nbsp;"terminal_id": 1,<br>
+                        &nbsp;&nbsp;"amount": 55000,<br>
+                        &nbsp;&nbsp;"installment_months": 3,<br>
+                        &nbsp;&nbsp;"staff_code": "1",<br>
+                        &nbsp;&nbsp;"card_brand": "KB"<br>
+                        }
+                    </div>
+                </div>
+                
+                <div class="row g-3">
+                    <div class="col-6"><div class="d-flex align-items-center"><i class="fas fa-shield-alt text-primary fs-5 me-2"></i><small class="fw-bold">API Key 인증</small></div></div>
+                    <div class="col-6"><div class="d-flex align-items-center"><i class="fas fa-bolt text-warning fs-5 me-2"></i><small class="fw-bold">실시간 처리</small></div></div>
+                    <div class="col-6"><div class="d-flex align-items-center"><i class="fas fa-user-tag text-success fs-5 me-2"></i><small class="fw-bold">자동 직원 귀속</small></div></div>
+                    <div class="col-6"><div class="d-flex align-items-center"><i class="fas fa-clipboard-list text-info fs-5 me-2"></i><small class="fw-bold">상세 로깅</small></div></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ═══ 6. RBAC 역할 관리 ═══ -->
+<section class="section-pad bg-light" id="rbac">
+    <div class="container">
+        <div class="text-center fade-up mb-5">
+            <span class="badge bg-dark px-3 py-2 mb-3"><i class="fas fa-shield-alt me-1"></i>RBAC</span>
+            <h2 class="section-title">4가지 역할별 맞춤 대시보드</h2>
+            <p class="section-sub">각 사용자의 역할에 최적화된 화면과 기능을 제공합니다</p>
+        </div>
+        <div class="row g-4">
+            <div class="col-lg-3 col-md-6 fade-up">
+                <div class="card border-0 shadow-sm h-100" style="border-top:4px solid #1b3a5c !important;">
+                    <div class="card-body p-4">
+                        <div class="text-center mb-3">
+                            <div class="bg-dark bg-opacity-10 rounded-circle d-inline-flex align-items-center justify-content-center" style="width:64px;height:64px;"><i class="fas fa-crown fa-2x text-dark"></i></div>
+                        </div>
+                        <h5 class="fw-bold text-center">최고관리자</h5>
+                        <p class="text-muted small text-center">전체 시스템 총괄</p>
+                        <hr>
+                        <ul class="list-unstyled small">
+                            <li class="mb-1"><i class="fas fa-check text-primary me-1"></i>가맹점 CRUD 관리</li>
+                            <li class="mb-1"><i class="fas fa-check text-primary me-1"></i>PG 등록/테스트</li>
+                            <li class="mb-1"><i class="fas fa-check text-primary me-1"></i>전체 결제/정산</li>
+                            <li class="mb-1"><i class="fas fa-check text-primary me-1"></i>출금요청 승인/거절</li>
+                            <li class="mb-1"><i class="fas fa-check text-primary me-1"></i>광고 주문 관리</li>
+                            <li class="mb-1"><i class="fas fa-check text-primary me-1"></i>Metrics 등록</li>
+                            <li class="mb-1"><i class="fas fa-check text-primary me-1"></i>영업배정 관리</li>
+                            <li class="mb-1"><i class="fas fa-check text-primary me-1"></i>수수료 정책 설정</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-3 col-md-6 fade-up">
+                <div class="card border-0 shadow-sm h-100" style="border-top:4px solid #0ea5e9 !important;">
+                    <div class="card-body p-4">
+                        <div class="text-center mb-3">
+                            <div class="bg-info bg-opacity-10 rounded-circle d-inline-flex align-items-center justify-content-center" style="width:64px;height:64px;"><i class="fas fa-handshake fa-2x text-info"></i></div>
+                        </div>
+                        <h5 class="fw-bold text-center">영업관리자</h5>
+                        <p class="text-muted small text-center">영업/커미션 관리</p>
+                        <hr>
+                        <ul class="list-unstyled small">
+                            <li class="mb-1"><i class="fas fa-check text-info me-1"></i>담당 가맹점 현황</li>
+                            <li class="mb-1"><i class="fas fa-check text-info me-1"></i>기간별 매출 통계</li>
+                            <li class="mb-1"><i class="fas fa-check text-info me-1"></i>커미션 내역 조회</li>
+                            <li class="mb-1"><i class="fas fa-check text-info me-1"></i>출금요청 및 조회</li>
+                            <li class="mb-1"><i class="fas fa-check text-info me-1"></i>PG 수수료 확인</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-3 col-md-6 fade-up">
+                <div class="card border-0 shadow-sm h-100" style="border-top:4px solid #22c55e !important;">
+                    <div class="card-body p-4">
+                        <div class="text-center mb-3">
+                            <div class="bg-success bg-opacity-10 rounded-circle d-inline-flex align-items-center justify-content-center" style="width:64px;height:64px;"><i class="fas fa-store fa-2x text-success"></i></div>
+                        </div>
+                        <h5 class="fw-bold text-center">원장님</h5>
+                        <p class="text-muted small text-center">매장/직원/광고 관리</p>
+                        <hr>
+                        <ul class="list-unstyled small">
+                            <li class="mb-1"><i class="fas fa-check text-success me-1"></i>결제 내역 조회</li>
+                            <li class="mb-1"><i class="fas fa-check text-success me-1"></i>직원 등록/관리</li>
+                            <li class="mb-1"><i class="fas fa-check text-success me-1"></i>직원별 매출 분석</li>
+                            <li class="mb-1"><i class="fas fa-check text-success me-1"></i>광고 분석</li>
+                            <li class="mb-1"><i class="fas fa-check text-success me-1"></i>블로그/플레이스 주문</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-3 col-md-6 fade-up">
+                <div class="card border-0 shadow-sm h-100" style="border-top:4px solid #f59e0b !important;">
+                    <div class="card-body p-4">
+                        <div class="text-center mb-3">
+                            <div class="bg-warning bg-opacity-10 rounded-circle d-inline-flex align-items-center justify-content-center" style="width:64px;height:64px;"><i class="fas fa-paint-brush fa-2x text-warning"></i></div>
+                        </div>
+                        <h5 class="fw-bold text-center">디자이너</h5>
+                        <p class="text-muted small text-center">개인 매출 확인</p>
+                        <hr>
+                        <ul class="list-unstyled small">
+                            <li class="mb-1"><i class="fas fa-check text-warning me-1"></i>본인 결제 내역</li>
+                            <li class="mb-1"><i class="fas fa-check text-warning me-1"></i>매출 합계/통계</li>
+                            <li class="mb-1"><i class="fas fa-check text-warning me-1"></i>기간별 필터</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ═══ API Endpoints Summary ═══ -->
+<section class="section-pad">
+    <div class="container">
+        <div class="text-center fade-up mb-5">
+            <span class="badge bg-primary px-3 py-2 mb-3"><i class="fas fa-code me-1"></i>API</span>
+            <h2 class="section-title">RESTful API 엔드포인트</h2>
+            <p class="section-sub">모든 기능은 REST API로 접근 가능합니다</p>
+        </div>
+        <div class="row g-4 fade-up">
+            <div class="col-md-4">
+                <div class="api-card h-100">
+                    <h6 class="text-white mb-3"><i class="fas fa-lock me-1"></i> Auth</h6>
+                    <div class="mb-2"><span class="api-method api-post">POST</span> /api/auth/login</div>
+                    <div class="mb-2"><span class="api-method api-post">POST</span> /api/auth/register</div>
+                    <div class="mb-2"><span class="api-method api-post">POST</span> /api/auth/test-login</div>
+                    <div class="mb-2"><span class="api-method api-get">GET</span> /api/me</div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="api-card h-100">
+                    <h6 class="text-white mb-3"><i class="fas fa-crown me-1"></i> Admin</h6>
+                    <div class="mb-2"><span class="api-method api-get">GET</span> /api/admin/merchants</div>
+                    <div class="mb-2"><span class="api-method api-post">POST</span> /api/admin/merchants/{id}/pg-config</div>
+                    <div class="mb-2"><span class="api-method api-post">POST</span> /api/admin/merchants/{id}/pg-test</div>
+                    <div class="mb-2"><span class="api-method api-get">GET</span> /api/admin/transactions</div>
+                    <div class="mb-2"><span class="api-method api-post">POST</span> /api/admin/payout-requests/{id}/approve</div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="api-card h-100">
+                    <h6 class="text-white mb-3"><i class="fas fa-terminal me-1"></i> Terminal & More</h6>
+                    <div class="mb-2"><span class="api-method api-post">POST</span> /api/terminal/transactions</div>
+                    <div class="mb-2"><span class="api-method api-get">GET</span> /api/owner/transactions</div>
+                    <div class="mb-2"><span class="api-method api-get">GET</span> /api/sales/merchants</div>
+                    <div class="mb-2"><span class="api-method api-post">POST</span> /api/owner/ad/blog-orders</div>
+                    <div class="mb-2"><span class="api-method api-get">GET</span> /api/designer/transactions</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- CTA -->
+<section class="section-pad cta-gradient text-white text-center">
+    <div class="container fade-up">
+        <h2 class="display-5 fw-bold mb-3">지금 바로 체험해보세요</h2>
+        <p class="lead opacity-80 mb-4">테스트 계정으로 모든 기능을 즉시 둘러볼 수 있습니다</p>
+        <a href="/static/login.html" class="btn btn-light btn-lg px-5 py-3 fw-bold" style="border-radius:50px;"><i class="fas fa-sign-in-alt me-2"></i>시작하기</a>
+    </div>
+</section>
+
+<!-- Footer -->
+<footer class="footer-dark text-light">
+    <div class="container">
+        <div class="row py-5">
+            <div class="col-lg-4 mb-4 mb-lg-0">
+                <h5 class="fw-bold mb-3"><i class="fas fa-credit-card me-2" style="color:#0ea5e9"></i>ADPAY</h5>
+                <p class="text-white-50 small">오프라인 매장을 위한 올인원 결제, 정산, 마케팅 플랫폼.</p>
+            </div>
+            <div class="col-lg-2 col-md-4 col-6">
+                <h6 class="fw-bold mb-3">서비스</h6>
+                <ul class="list-unstyled"><li class="mb-2"><a href="/static/landing/features.html" class="footer-link">기능소개</a></li></ul>
+            </div>
+            <div class="col-lg-2 col-md-4 col-6">
+                <h6 class="fw-bold mb-3">지원</h6>
+                <ul class="list-unstyled"><li class="mb-2"><a href="#" class="footer-link">고객센터</a></li><li class="mb-2"><a href="#" class="footer-link">API 문서</a></li></ul>
+            </div>
+            <div class="col-lg-2 col-md-4 col-6">
+                <h6 class="fw-bold mb-3">법적 고지</h6>
+                <ul class="list-unstyled"><li class="mb-2"><a href="#" class="footer-link">이용약관</a></li><li class="mb-2"><a href="#" class="footer-link">개인정보처리방침</a></li></ul>
+            </div>
+        </div>
+        <div class="border-top border-secondary py-3">
+            <p class="mb-0 text-white-50 small text-center">&copy; 2025 ADPAY Inc. All rights reserved.</p>
+        </div>
+    </div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+window.addEventListener('scroll', () => { document.getElementById('mainNav').classList.toggle('scrolled', window.scrollY > 50); });
+const observer = new IntersectionObserver((entries) => { entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); }); }, { threshold: 0.1 });
+document.querySelectorAll('.fade-up').forEach(el => observer.observe(el));
+</script>
+</body>
+</html>

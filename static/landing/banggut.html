@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+    <title>방긋페이 - 월세를 카드로 간편하게 | Bang Good Pay</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    <style>
+        :root { --warm: #ff9f1c; --orange: #ff6b35; --dark: #1a1a2e; --darker: #0f0f1a; --card-bg: #16213e; --text: #e8e8e8; --text-muted: #b0b0c8; }
+        * { font-family: 'Noto Sans KR', sans-serif; margin: 0; padding: 0; box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+        body { background: var(--darker); color: var(--text); min-height: 100vh; overflow-x: hidden; -webkit-text-size-adjust: 100%; }
+
+        /* ─── Navbar ─── */
+        .navbar-bg { background: rgba(15,15,26,.88); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-bottom: 1px solid rgba(255,159,28,.06); position: fixed; top: 0; left: 0; right: 0; z-index: 100; padding: 12px 0; transition: all .3s; }
+        .navbar-bg.scrolled { background: rgba(15,15,26,.98); box-shadow: 0 4px 40px rgba(0,0,0,.4); }
+        .nav-inner { max-width: 1280px; margin: 0 auto; padding: 0 2rem; display: flex; align-items: center; justify-content: space-between; }
+        .nav-brand { font-size: 1.5rem; font-weight: 900; color: #fff; text-decoration: none; display: flex; align-items: center; gap: 10px; }
+        .nav-brand .icon { width: 40px; height: 40px; border-radius: 12px; background: linear-gradient(135deg, var(--orange), var(--warm)); display: flex; align-items: center; justify-content: center; font-size: 1.1rem; }
+        .nav-links { display: flex; gap: 2.5rem; align-items: center; }
+        .nav-links a { color: var(--text-muted); text-decoration: none; font-size: .9rem; font-weight: 500; transition: color .3s; }
+        .nav-links a:hover { color: var(--warm); }
+        .nav-cta { background: linear-gradient(135deg, var(--orange), var(--warm)); color: #fff; padding: 10px 28px; border-radius: 50px; font-weight: 700; font-size: .88rem; text-decoration: none; transition: all .3s; white-space: nowrap; }
+        .nav-cta:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(255,107,53,.4); color: #fff; }
+        /* Mobile hamburger */
+        .nav-toggle { display: none; width: 36px; height: 36px; border-radius: 8px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.1); color: #fff; font-size: 1rem; cursor: pointer; align-items: center; justify-content: center; }
+
+        /* ─── Hero Slider ─── */
+        .hero-slider { height: 100vh; min-height: 600px; width: 100%; position: relative; overflow: hidden; margin-bottom: 0; }
+        .slide-container { display: flex; height: 100%; transition: transform .7s cubic-bezier(.25,.46,.45,.94); will-change: transform; }
+        .slide { flex: 0 0 100%; width: 100%; height: 100%; position: relative; }
+        .slide img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .slide-overlay { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(15,15,26,.65) 0%, rgba(15,15,26,.45) 40%, rgba(15,15,26,.75) 100%); }
+        .slide-content { position: absolute; top: 50%; left: 0; right: 0; transform: translateY(-50%); padding: 0 8%; z-index: 2; }
+        .hero-badge { display: inline-block; padding: 8px 22px; border-radius: 50px; font-size: .72rem; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; background: rgba(255,159,28,.15); color: var(--warm); border: 1px solid rgba(255,159,28,.25); margin-bottom: 1.2rem; }
+        .hero-title { font-size: clamp(1.8rem, 5vw, 3.8rem); font-weight: 900; line-height: 1.2; color: #fff; text-shadow: 0 4px 30px rgba(0,0,0,.5); margin-bottom: 1rem; }
+        .hero-title .highlight { background: linear-gradient(135deg, var(--orange), var(--warm)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+        .hero-sub { font-size: clamp(.88rem, 2vw, 1.2rem); font-weight: 400; color: rgba(255,255,255,.85); max-width: 560px; line-height: 1.8; margin-bottom: 2rem; }
+        .hero-cta { display: inline-flex; align-items: center; gap: 8px; padding: 14px 32px; border-radius: 50px; font-weight: 700; font-size: .95rem; border: none; cursor: pointer; transition: all .3s; text-decoration: none; background: linear-gradient(135deg, var(--orange), var(--warm)); color: #fff; box-shadow: 0 8px 30px rgba(255,107,53,.3); }
+        .hero-cta:hover { transform: translateY(-3px); box-shadow: 0 12px 40px rgba(255,107,53,.5); color: #fff; }
+
+        /* Slider dots & arrows */
+        .slider-dots { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 5; display: flex; gap: 10px; }
+        .slider-dots .dot { width: 12px; height: 12px; border-radius: 50%; background: rgba(255,255,255,.3); cursor: pointer; transition: all .3s; }
+        .slider-dots .dot.active { background: var(--warm); width: 36px; border-radius: 6px; }
+        .slider-arrow { position: absolute; top: 50%; transform: translateY(-50%); z-index: 5; width: 50px; height: 50px; border-radius: 50%; background: rgba(255,255,255,.08); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,.1); color: #fff; font-size: 1.1rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all .3s; }
+        .slider-arrow:hover { background: rgba(255,159,28,.3); border-color: var(--warm); }
+        .slider-arrow.prev { left: 20px; }
+        .slider-arrow.next { right: 20px; }
+
+        /* ─── Sections ─── */
+        .section { padding: 80px 2rem; max-width: 1200px; margin: 0 auto; }
+        .section-full { padding: 80px 2rem; }
+        .section-title { text-align: center; font-size: clamp(1.5rem, 3vw, 2.4rem); font-weight: 900; margin-bottom: .6rem; color: #fff; }
+        .section-sub { text-align: center; font-size: clamp(.88rem, 1.5vw, 1rem); color: var(--text-muted); margin-bottom: 3rem; line-height: 1.7; }
+
+        /* ─── Stats bar ─── */
+        .stat-bar { background: linear-gradient(135deg, var(--card-bg), rgba(255,159,28,.06)); border: 1px solid rgba(255,159,28,.08); border-radius: 20px; padding: 2.5rem 2rem; max-width: 1100px; margin: -50px auto 0; position: relative; z-index: 10; }
+        .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.5rem; }
+        .stat-item { text-align: center; }
+        .stat-num { font-size: clamp(1.6rem, 3vw, 2.6rem); font-weight: 900; color: var(--warm); }
+        .stat-label { font-size: .82rem; color: var(--text-muted); margin-top: .3rem; }
+
+        /* ─── Steps ─── */
+        .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.5rem; }
+        .step-card { background: var(--card-bg); border: 1px solid rgba(255,159,28,.06); border-radius: 18px; padding: 2rem 1.5rem; text-align: center; transition: all .4s; position: relative; overflow: hidden; }
+        .step-card:hover { transform: translateY(-6px); border-color: rgba(255,159,28,.2); box-shadow: 0 16px 50px rgba(0,0,0,.3); }
+        .step-num { position: absolute; top: 10px; right: 16px; font-size: 3rem; font-weight: 900; color: rgba(255,159,28,.06); line-height: 1; }
+        .step-icon { width: 56px; height: 56px; border-radius: 16px; margin: 0 auto 1rem; display: flex; align-items: center; justify-content: center; font-size: 1.4rem; }
+        .step-card h4 { font-size: 1rem; font-weight: 700; margin-bottom: .5rem; color: #fff; }
+        .step-card p { font-size: .82rem; color: var(--text-muted); line-height: 1.7; }
+
+        /* ─── Features grid ─── */
+        .feat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.5rem; max-width: 1100px; margin: 0 auto; }
+        .feat-card { background: var(--card-bg); border: 1px solid rgba(255,159,28,.06); border-radius: 18px; padding: 2rem; transition: all .4s; display: flex; gap: 1.2rem; align-items: flex-start; }
+        .feat-card:hover { transform: translateY(-4px); border-color: rgba(255,159,28,.2); box-shadow: 0 12px 40px rgba(0,0,0,.2); }
+        .feat-icon { width: 50px; height: 50px; min-width: 50px; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; }
+        .feat-card h4 { font-size: 1.05rem; font-weight: 700; margin-bottom: .4rem; color: #fff; }
+        .feat-card p { font-size: .85rem; color: var(--text-muted); line-height: 1.7; margin-bottom: .4rem; }
+        .feat-card ul { list-style: none; padding: 0; margin: 0; }
+        .feat-card li { padding: 2px 0; font-size: .8rem; color: var(--text-muted); display: flex; align-items: center; gap: 8px; }
+        .feat-card li i { color: var(--warm); font-size: .7rem; }
+
+        /* ─── Property Types ─── */
+        .prop-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.5rem; max-width: 900px; margin: 0 auto; }
+        .prop-card { background: var(--card-bg); border: 1px solid rgba(255,159,28,.06); border-radius: 18px; padding: 1.8rem 1.2rem; text-align: center; transition: all .3s; }
+        .prop-card:hover { border-color: rgba(255,159,28,.25); transform: translateY(-4px); box-shadow: 0 10px 30px rgba(0,0,0,.2); }
+        .prop-emoji { font-size: 2.5rem; margin-bottom: .6rem; display: block; }
+        .prop-card h5 { font-weight: 700; font-size: .95rem; margin-bottom: .3rem; color: #fff; }
+        .prop-card p { font-size: .78rem; color: var(--text-muted); line-height: 1.5; }
+
+        /* ─── Testimonials ─── */
+        .testi-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; max-width: 1100px; margin: 0 auto; }
+        .testi-card { background: var(--card-bg); border: 1px solid rgba(255,159,28,.06); border-radius: 18px; padding: 1.8rem; position: relative; }
+        .testi-card::before { content: '\201C'; position: absolute; top: 12px; left: 18px; font-size: 3.5rem; color: rgba(255,159,28,.1); line-height: 1; font-family: serif; }
+        .testi-text { font-size: .88rem; color: var(--text-muted); line-height: 1.7; margin-bottom: 1rem; padding-top: 1.2rem; }
+        .testi-author { display: flex; align-items: center; gap: 10px; }
+        .testi-avatar { width: 38px; height: 38px; border-radius: 50%; background: linear-gradient(135deg, var(--orange), var(--warm)); display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: .85rem; flex-shrink: 0; }
+        .testi-name { font-weight: 600; font-size: .82rem; color: #fff; }
+        .testi-role { font-size: .72rem; color: var(--text-muted); }
+
+        /* ─── FAQ ─── */
+        .faq-list { max-width: 750px; margin: 0 auto; }
+        .faq-item { background: var(--card-bg); border: 1px solid rgba(255,159,28,.06); border-radius: 14px; margin-bottom: .8rem; overflow: hidden; }
+        .faq-q { padding: 1rem 1.2rem; cursor: pointer; font-weight: 600; font-size: .9rem; display: flex; justify-content: space-between; align-items: center; transition: color .3s; color: #fff; gap: 12px; }
+        .faq-q:hover { color: var(--warm); }
+        .faq-q i { transition: transform .3s; color: var(--text-muted); flex-shrink: 0; }
+        .faq-a { padding: 0 1.2rem; max-height: 0; overflow: hidden; transition: max-height .4s ease, padding .3s; font-size: .85rem; color: var(--text-muted); line-height: 1.8; }
+        .faq-item.open .faq-a { max-height: 400px; padding: 0 1.2rem 1rem; }
+        .faq-item.open .faq-q i { transform: rotate(180deg); }
+
+        /* ─── CTA ─── */
+        .cta-section { text-align: center; padding: 80px 2rem; position: relative; overflow: hidden; }
+        .cta-section::before { content: ''; position: absolute; inset: 0; background: radial-gradient(ellipse at center, rgba(255,107,53,.08) 0%, transparent 70%); }
+        .cta-section h2 { font-size: clamp(1.5rem, 3vw, 2.4rem); font-weight: 900; margin-bottom: 1rem; position: relative; color: #fff; }
+        .cta-section p { font-size: clamp(.88rem, 1.5vw, 1.05rem); color: var(--text-muted); margin-bottom: 2rem; position: relative; line-height: 1.7; }
+
+        /* ─── Footer ─── */
+        .footer { background: #0a0a14; border-top: 1px solid rgba(255,159,28,.04); padding: 2.5rem 1.5rem 2rem; }
+        .footer-inner { max-width: 1200px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; }
+        .footer p { font-size: .78rem; color: rgba(255,255,255,.35); margin: 0; }
+        .footer a { color: rgba(255,255,255,.45); text-decoration: none; transition: color .3s; font-size: .82rem; }
+        .footer a:hover { color: var(--warm); }
+        .footer-links { display: flex; gap: 1.5rem; }
+        .footer-sub { text-align: center; margin-top: .8rem; }
+        .footer-sub p { font-size: .7rem; color: rgba(255,255,255,.2); margin: 0; }
+
+        /* ─── Mobile Nav Dropdown ─── */
+        .mobile-nav { display: none; position: fixed; top: 64px; left: 0; right: 0; background: rgba(15,15,26,.98); backdrop-filter: blur(20px); z-index: 99; padding: 1rem 1.5rem 1.5rem; border-bottom: 1px solid rgba(255,159,28,.1); transform: translateY(-110%); transition: transform .3s; }
+        .mobile-nav.open { transform: translateY(0); }
+        .mobile-nav a { display: block; padding: .8rem 0; color: var(--text-muted); text-decoration: none; font-size: .95rem; font-weight: 500; border-bottom: 1px solid rgba(255,255,255,.04); }
+        .mobile-nav a:last-child { border: none; }
+        .mobile-nav a:hover, .mobile-nav a:active { color: var(--warm); }
+
+        /* ═══════════════════════════════════════════════════════ */
+        /* TABLET (max-width: 992px)                              */
+        /* ═══════════════════════════════════════════════════════ */
+        @media (max-width: 992px) {
+            .nav-links { display: none; }
+            .nav-toggle { display: flex; }
+            .steps { grid-template-columns: repeat(2, 1fr); }
+            .feat-grid { grid-template-columns: 1fr; }
+            .testi-grid { grid-template-columns: 1fr; }
+            .mobile-nav { display: block; }
+        }
+
+        /* ═══════════════════════════════════════════════════════ */
+        /* MOBILE (max-width: 768px)                              */
+        /* ═══════════════════════════════════════════════════════ */
+        @media (max-width: 768px) {
+            .nav-inner { padding: 0 1rem; }
+            .nav-brand { font-size: 1.2rem; gap: 8px; }
+            .nav-brand .icon { width: 34px; height: 34px; font-size: .95rem; border-radius: 10px; }
+            .nav-cta { padding: 8px 18px; font-size: .78rem; }
+
+            .hero-slider { height: auto; min-height: 70svh; }
+            .slide { min-height: 70svh; }
+            .slide-content { padding: 0 1.2rem; top: 40%; }
+            .hero-badge { font-size: .65rem; padding: 6px 16px; margin-bottom: .8rem; letter-spacing: 1.5px; }
+            .hero-title { font-size: 1.6rem; line-height: 1.3; margin-bottom: .8rem; }
+            .hero-sub { font-size: .82rem; line-height: 1.7; margin-bottom: 1.5rem; max-width: 100%; }
+            .hero-cta { padding: 12px 24px; font-size: .85rem; }
+            .slider-arrow { display: none; }
+            .slider-dots { bottom: 20px; gap: 8px; }
+            .slider-dots .dot { width: 10px; height: 10px; }
+            .slider-dots .dot.active { width: 28px; }
+
+            .stat-bar { margin: -40px 1rem 0; padding: 1.2rem .8rem; border-radius: 16px; }
+            .stat-grid { grid-template-columns: repeat(2, 1fr); gap: 1rem; }
+            .stat-num { font-size: 1.4rem; }
+            .stat-label { font-size: .72rem; }
+
+            .section { padding: 40px 1rem; }
+            .section-full { padding: 40px 1rem; }
+            .section-title { font-size: 1.3rem; margin-bottom: .5rem; }
+            .section-sub { font-size: .82rem; margin-bottom: 2rem; }
+
+            .steps { grid-template-columns: 1fr 1fr; gap: 1rem; }
+            .step-card { padding: 1.5rem 1rem; border-radius: 14px; }
+            .step-num { font-size: 2.5rem; top: 6px; right: 10px; }
+            .step-icon { width: 48px; height: 48px; border-radius: 12px; font-size: 1.2rem; margin-bottom: .8rem; }
+            .step-card h4 { font-size: .88rem; }
+            .step-card p { font-size: .76rem; }
+
+            .feat-grid { grid-template-columns: 1fr; gap: 1rem; }
+            .feat-card { padding: 1.5rem; border-radius: 14px; gap: 1rem; flex-direction: row; }
+            .feat-icon { width: 44px; height: 44px; min-width: 44px; border-radius: 12px; font-size: 1.1rem; }
+            .feat-card h4 { font-size: .95rem; }
+            .feat-card p { font-size: .8rem; margin-bottom: .3rem; }
+            .feat-card li { font-size: .75rem; }
+
+            .prop-grid { grid-template-columns: repeat(2, 1fr); gap: 1rem; }
+            .prop-card { padding: 1.5rem 1rem; border-radius: 14px; }
+            .prop-emoji { font-size: 2rem; margin-bottom: .5rem; }
+            .prop-card h5 { font-size: .88rem; }
+            .prop-card p { font-size: .72rem; }
+
+            .testi-grid { grid-template-columns: 1fr; gap: 1rem; }
+            .testi-card { padding: 1.5rem; border-radius: 14px; }
+            .testi-card::before { font-size: 3rem; top: 8px; left: 14px; }
+            .testi-text { font-size: .82rem; padding-top: 1rem; }
+
+            .faq-item { border-radius: 12px; margin-bottom: .6rem; }
+            .faq-q { padding: .9rem 1rem; font-size: .85rem; }
+            .faq-a { padding: 0 1rem; font-size: .8rem; }
+            .faq-item.open .faq-a { padding: 0 1rem .8rem; }
+
+            .cta-section { padding: 60px 1.2rem; }
+            .cta-section h2 { font-size: 1.3rem; }
+            .cta-section p { font-size: .85rem; margin-bottom: 1.5rem; }
+
+            .footer { padding: 2rem 1rem 1.5rem; }
+            .footer-inner { flex-direction: column; text-align: center; gap: .8rem; }
+            .footer-links { gap: 1.2rem; justify-content: center; }
+            .footer p { font-size: .72rem; }
+            .footer a { font-size: .76rem; }
+        }
+
+        /* ═══════════════════════════════════════════════════════ */
+        /* SMALL MOBILE (max-width: 420px)                        */
+        /* ═══════════════════════════════════════════════════════ */
+        @media (max-width: 420px) {
+            .hero-slider { min-height: 60svh; }
+            .slide { min-height: 60svh; }
+            .slide-content { top: 35%; }
+            .hero-title { font-size: 1.35rem; }
+            .hero-sub { font-size: .78rem; line-height: 1.6; margin-bottom: 1.2rem; }
+            .hero-cta { padding: 11px 20px; font-size: .8rem; }
+            .stat-bar { margin: -35px .6rem 0; padding: 1rem .6rem; }
+            .stat-num { font-size: 1.2rem; }
+            .stat-label { font-size: .68rem; }
+            .section { padding: 30px .8rem; }
+            .section-full { padding: 30px .8rem; }
+            .section-title { font-size: 1.15rem; }
+            .section-sub { font-size: .78rem; margin-bottom: 1.5rem; }
+            .steps { gap: .8rem; }
+            .step-card { padding: 1.2rem .8rem; }
+            .step-card h4 { font-size: .82rem; }
+            .step-card p { font-size: .72rem; }
+            .prop-card { padding: 1.2rem .8rem; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- ─── Navbar ─── -->
+<div class="navbar-bg" id="navBg">
+    <div class="nav-inner">
+        <a href="#" class="nav-brand" onclick="event.preventDefault();window.scrollTo({top:0,behavior:'smooth'})">
+            <div class="icon"><i class="fas fa-building"></i></div>
+            방긋페이
+        </a>
+        <div class="nav-links">
+            <a href="#how">이용방법</a>
+            <a href="#features">주요기능</a>
+            <a href="#property">지원유형</a>
+            <a href="#reviews">후기</a>
+            <a href="#faq">FAQ</a>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;">
+            <a href="/static/login.html" class="nav-cta"><i class="fas fa-sign-in-alt me-1"></i>시작하기</a>
+            <button class="nav-toggle" onclick="toggleMobileNav()" aria-label="메뉴"><i class="fas fa-bars"></i></button>
+        </div>
+    </div>
+</div>
+
+<!-- Mobile Nav -->
+<div class="mobile-nav" id="mobileNav">
+    <a href="#how" onclick="closeMobileNav()">이용방법</a>
+    <a href="#features" onclick="closeMobileNav()">주요기능</a>
+    <a href="#property" onclick="closeMobileNav()">지원유형</a>
+    <a href="#reviews" onclick="closeMobileNav()">후기</a>
+    <a href="#faq" onclick="closeMobileNav()">FAQ</a>
+    <a href="/static/login.html" style="color:var(--warm);font-weight:700;">로그인 / 시작하기</a>
+</div>
+
+<!-- ─── Hero Slider ─── -->
+<section class="hero-slider" id="heroSlider">
+    <div class="slide-container" id="slideContainer">
+        <!-- Slide 1 -->
+        <div class="slide">
+            <img src="https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=1600&q=80" alt="아파트 건물" loading="eager">
+            <div class="slide-overlay"></div>
+            <div class="slide-content">
+                <span class="hero-badge">Bang Good Pay</span>
+                <h1 class="hero-title">월세를 <span class="highlight">카드로 간편하게</span><br>방긋 웃는 임대관리</h1>
+                <p class="hero-sub">임차인별 전용 QR코드 발급, 신용카드 일반결제 & 정기결제, 실시간 수금 현황 대시보드. 이제 월세도 스마트하게 받으세요.</p>
+                <a href="/static/login.html" class="hero-cta"><i class="fas fa-rocket"></i>무료로 시작하기</a>
+            </div>
+        </div>
+        <!-- Slide 2 -->
+        <div class="slide">
+            <img src="https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=1600&q=80" alt="도시 빌딩" loading="lazy">
+            <div class="slide-overlay"></div>
+            <div class="slide-content">
+                <span class="hero-badge">QR 결제 시스템</span>
+                <h1 class="hero-title">임차인별 <span class="highlight">전용 QR코드</span><br>스캔 한 번으로 결제 완료</h1>
+                <p class="hero-sub">아파트, 오피스텔, 상가 등 물건 유형과 호수가 표기된 전용 QR코드를 발급하세요. 임차인이 스마트폰으로 스캔하면 즉시 결제됩니다.</p>
+                <a href="#how" class="hero-cta"><i class="fas fa-qrcode"></i>이용방법 보기</a>
+            </div>
+        </div>
+        <!-- Slide 3 -->
+        <div class="slide">
+            <img src="https://images.unsplash.com/photo-1554224155-6726b3ff858f?w=1600&q=80" alt="재무 관리" loading="lazy">
+            <div class="slide-overlay"></div>
+            <div class="slide-content">
+                <span class="hero-badge">수금 대시보드</span>
+                <h1 class="hero-title">실시간 <span class="highlight">수금 현황</span><br>한눈에 파악하세요</h1>
+                <p class="hero-sub">이번 달 수금률, 월별 추이 차트, 임차인별 납부 이력을 대시보드에서 한눈에 확인하세요. 미납 현황도 즉시 파악됩니다.</p>
+                <a href="#features" class="hero-cta"><i class="fas fa-chart-bar"></i>주요기능 보기</a>
+            </div>
+        </div>
+        <!-- Slide 4 -->
+        <div class="slide">
+            <img src="https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=1600&q=80" alt="주거 공간" loading="lazy">
+            <div class="slide-overlay"></div>
+            <div class="slide-content">
+                <span class="hero-badge">정기결제</span>
+                <h1 class="hero-title">매달 <span class="highlight">자동결제</span>로<br>수금 누락 제로</h1>
+                <p class="hero-sub">정기결제를 설정하면 임차인의 카드에서 매달 자동으로 월세가 결제됩니다. 더 이상 수금 걱정이 없습니다.</p>
+                <a href="/static/login.html" class="hero-cta"><i class="fas fa-credit-card"></i>시작하기</a>
+            </div>
+        </div>
+        <!-- Slide 5 -->
+        <div class="slide">
+            <img src="https://images.unsplash.com/photo-1560185127-6ed189bf02f4?w=1600&q=80" alt="건물 외관" loading="lazy">
+            <div class="slide-overlay"></div>
+            <div class="slide-content">
+                <span class="hero-badge">다양한 물건 유형</span>
+                <h1 class="hero-title">아파트부터 <span class="highlight">상가까지</span><br>모든 임대물건 관리</h1>
+                <p class="hero-sub">아파트, 오피스텔, 상가, 빌라 등 모든 유형의 임대물건을 하나의 플랫폼에서 통합 관리하세요.</p>
+                <a href="#property" class="hero-cta"><i class="fas fa-building"></i>지원유형 보기</a>
+            </div>
+        </div>
+    </div>
+    <!-- Arrows -->
+    <div class="slider-arrow prev" onclick="moveSlide(-1)"><i class="fas fa-chevron-left"></i></div>
+    <div class="slider-arrow next" onclick="moveSlide(1)"><i class="fas fa-chevron-right"></i></div>
+    <!-- Dots -->
+    <div class="slider-dots" id="sliderDots"></div>
+</section>
+
+<!-- ─── Stats ─── -->
+<div class="section-full" style="padding-top:0;padding-bottom:0;margin-top:0">
+    <div class="stat-bar">
+        <div class="stat-grid">
+            <div class="stat-item"><div class="stat-num" id="cnt1">0</div><div class="stat-label">등록 임대인</div></div>
+            <div class="stat-item"><div class="stat-num" id="cnt2">0</div><div class="stat-label">관리 중인 임차인</div></div>
+            <div class="stat-item"><div class="stat-num" id="cnt3">0%</div><div class="stat-label">수금 성공률</div></div>
+            <div class="stat-item"><div class="stat-num" id="cnt4">0</div><div class="stat-label">누적 결제 금액</div></div>
+        </div>
+    </div>
+</div>
+
+<!-- ─── How it works ─── -->
+<section class="section" id="how">
+    <h2 class="section-title">이렇게 <span style="color:var(--warm)">간단</span>합니다</h2>
+    <p class="section-sub">4단계만으로 월세 카드 결제 시스템을 완성하세요</p>
+    <div class="steps">
+        <div class="step-card">
+            <span class="step-num">01</span>
+            <div class="step-icon" style="background:rgba(255,107,53,.12)"><i class="fas fa-user-plus" style="color:var(--orange)"></i></div>
+            <h4>임대인 가입</h4>
+            <p>건물 정보, 계좌 정보를 등록하고 임대인 프로필을 완성합니다.</p>
+        </div>
+        <div class="step-card">
+            <span class="step-num">02</span>
+            <div class="step-icon" style="background:rgba(255,159,28,.12)"><i class="fas fa-users" style="color:var(--warm)"></i></div>
+            <h4>임차인 등록</h4>
+            <p>임차인 정보, 호수, 월세 금액, 납부일을 입력하면 전용 QR코드가 자동 생성됩니다.</p>
+        </div>
+        <div class="step-card">
+            <span class="step-num">03</span>
+            <div class="step-icon" style="background:rgba(255,107,53,.12)"><i class="fas fa-qrcode" style="color:var(--orange)"></i></div>
+            <h4>QR코드 전달</h4>
+            <p>생성된 QR코드를 인쇄하거나 카카오톡 등으로 임차인에게 전달합니다.</p>
+        </div>
+        <div class="step-card">
+            <span class="step-num">04</span>
+            <div class="step-icon" style="background:rgba(255,159,28,.12)"><i class="fas fa-credit-card" style="color:var(--warm)"></i></div>
+            <h4>자동 수금</h4>
+            <p>임차인이 QR을 스캔하여 카드 결제하면 자동으로 수금 내역이 기록됩니다.</p>
+        </div>
+    </div>
+</section>
+
+<!-- ─── Features ─── -->
+<section class="section" id="features">
+    <h2 class="section-title">왜 <span style="color:var(--warm)">방긋페이</span>인가요?</h2>
+    <p class="section-sub">임대 관리에 필요한 모든 기능을 한 곳에서 제공합니다</p>
+    <div class="feat-grid">
+        <div class="feat-card">
+            <div class="feat-icon" style="background:rgba(255,107,53,.12)"><i class="fas fa-qrcode" style="color:var(--orange)"></i></div>
+            <div>
+                <h4>임차인별 전용 QR코드</h4>
+                <p>각 임차인에게 고유한 QR코드를 발급합니다. 물건 유형과 호수가 QR에 표기됩니다.</p>
+                <ul>
+                    <li><i class="fas fa-check-circle"></i>물건 유형 & 호수 자동 표기</li>
+                    <li><i class="fas fa-check-circle"></i>QR코드 재발급 지원</li>
+                    <li><i class="fas fa-check-circle"></i>인쇄 & 모바일 공유 기능</li>
+                </ul>
+            </div>
+        </div>
+        <div class="feat-card">
+            <div class="feat-icon" style="background:rgba(255,159,28,.12)"><i class="fas fa-credit-card" style="color:var(--warm)"></i></div>
+            <div>
+                <h4>일반결제 & 정기결제</h4>
+                <p>임차인이 원하는 방식으로 결제할 수 있습니다. 매달 자동결제로 수금 누락을 방지합니다.</p>
+                <ul>
+                    <li><i class="fas fa-check-circle"></i>신용카드 일반결제(1회)</li>
+                    <li><i class="fas fa-check-circle"></i>신용카드 정기결제(매월 자동)</li>
+                    <li><i class="fas fa-check-circle"></i>결제일 자유 설정</li>
+                </ul>
+            </div>
+        </div>
+        <div class="feat-card">
+            <div class="feat-icon" style="background:rgba(255,107,53,.12)"><i class="fas fa-chart-line" style="color:var(--orange)"></i></div>
+            <div>
+                <h4>수금 현황 대시보드</h4>
+                <p>이번 달 수금률, 월별 추이, 미납 현황을 실시간으로 한눈에 파악할 수 있습니다.</p>
+                <ul>
+                    <li><i class="fas fa-check-circle"></i>실시간 수금률 모니터링</li>
+                    <li><i class="fas fa-check-circle"></i>월별 수금 추이 차트</li>
+                    <li><i class="fas fa-check-circle"></i>임차인별 상세 납부 이력</li>
+                </ul>
+            </div>
+        </div>
+        <div class="feat-card">
+            <div class="feat-icon" style="background:rgba(255,159,28,.12)"><i class="fas fa-shield-alt" style="color:var(--warm)"></i></div>
+            <div>
+                <h4>안전한 결제 시스템</h4>
+                <p>PG사 연동을 통한 안전한 카드결제. 결제 정보는 암호화되어 보관됩니다.</p>
+                <ul>
+                    <li><i class="fas fa-check-circle"></i>PG사 공인인증 카드 결제</li>
+                    <li><i class="fas fa-check-circle"></i>결제 정보 AES 암호화 보관</li>
+                    <li><i class="fas fa-check-circle"></i>결제 승인번호 자동 발급</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ─── Property Types ─── -->
+<section class="section" id="property">
+    <h2 class="section-title">다양한 <span style="color:var(--warm)">물건 유형</span> 지원</h2>
+    <p class="section-sub">아파트부터 상가까지, 모든 임대물건을 하나의 플랫폼에서 관리하세요</p>
+    <div class="prop-grid">
+        <div class="prop-card">
+            <span class="prop-emoji">🏢</span>
+            <h5>아파트</h5>
+            <p>대단지 아파트 단지의<br>월세 관리</p>
+        </div>
+        <div class="prop-card">
+            <span class="prop-emoji">🏠</span>
+            <h5>오피스텔</h5>
+            <p>원룸·투룸 오피스텔<br>월세 관리</p>
+        </div>
+        <div class="prop-card">
+            <span class="prop-emoji">🏪</span>
+            <h5>상가</h5>
+            <p>상가·사무실의<br>월 임대료 관리</p>
+        </div>
+        <div class="prop-card">
+            <span class="prop-emoji">🏘️</span>
+            <h5>빌라 · 다세대</h5>
+            <p>빌라 및 다세대 주택의<br>월세 관리</p>
+        </div>
+    </div>
+</section>
+
+<!-- ─── Testimonials ─── -->
+<section class="section" id="reviews">
+    <h2 class="section-title">임대인들의 <span style="color:var(--warm)">생생한 후기</span></h2>
+    <p class="section-sub">방긋페이를 사용하고 있는 임대인들의 이야기를 들어보세요</p>
+    <div class="testi-grid">
+        <div class="testi-card">
+            <p class="testi-text">오피스텔 30세대를 관리하는데, 매달 월세 수금이 정말 힘들었어요. 방긋페이 도입 후 QR코드만 보내면 끝! 수금률이 98%까지 올랐습니다.</p>
+            <div class="testi-author">
+                <div class="testi-avatar">김</div>
+                <div><div class="testi-name">김OO 임대인</div><div class="testi-role">역삼 오피스텔 30세대</div></div>
+            </div>
+        </div>
+        <div class="testi-card">
+            <p class="testi-text">상가 임대료를 카드로 받을 수 있다니 놀라웠어요. 임차인도 카드 포인트를 쌓을 수 있어 만족하고, 저도 정시에 수금되니 윈윈입니다.</p>
+            <div class="testi-author">
+                <div class="testi-avatar">박</div>
+                <div><div class="testi-name">박OO 임대인</div><div class="testi-role">강남 상가 8개 호수</div></div>
+            </div>
+        </div>
+        <div class="testi-card">
+            <p class="testi-text">정기결제 설정해두니 매달 자동으로 수금돼요. 대시보드에서 누가 납부했는지 바로 확인되고, 미납자에게 알림도 보낼 수 있어 편리합니다.</p>
+            <div class="testi-author">
+                <div class="testi-avatar">이</div>
+                <div><div class="testi-name">이OO 임대인</div><div class="testi-role">송파 아파트 12세대</div></div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ─── FAQ ─── -->
+<section class="section" id="faq">
+    <h2 class="section-title">자주 묻는 <span style="color:var(--warm)">질문</span></h2>
+    <p class="section-sub">궁금한 점을 빠르게 해결하세요</p>
+    <div class="faq-list">
+        <div class="faq-item">
+            <div class="faq-q" onclick="toggleFaq(this)">임차인은 어떻게 결제하나요? <i class="fas fa-chevron-down"></i></div>
+            <div class="faq-a">임대인이 발급한 QR코드를 임차인이 스마트폰으로 스캔하면 결제 페이지가 열립니다. 카드 정보를 입력하여 일반결제하거나, 정기결제를 설정하면 매달 자동으로 결제됩니다.</div>
+        </div>
+        <div class="faq-item">
+            <div class="faq-q" onclick="toggleFaq(this)">임차인을 몇 명까지 등록할 수 있나요? <i class="fas fa-chevron-down"></i></div>
+            <div class="faq-a">등록할 수 있는 임차인 수에 제한이 없습니다. 소규모 오피스텔부터 대형 아파트 단지까지, 원하는 만큼 등록하고 관리할 수 있습니다.</div>
+        </div>
+        <div class="faq-item">
+            <div class="faq-q" onclick="toggleFaq(this)">수수료는 얼마인가요? <i class="fas fa-chevron-down"></i></div>
+            <div class="faq-a">기본 PG 수수료만 적용됩니다. 별도의 플랫폼 이용료 없이 월세 수금 시스템을 사용할 수 있습니다. 자세한 수수료는 PG사별로 상이하니 상담을 통해 확인해주세요.</div>
+        </div>
+        <div class="faq-item">
+            <div class="faq-q" onclick="toggleFaq(this)">다른 건물도 등록할 수 있나요? <i class="fas fa-chevron-down"></i></div>
+            <div class="faq-a">네, 하나의 계정으로 여러 건물의 임차인을 등록하고 관리할 수 있습니다. 물건별로 다른 유형(아파트, 오피스텔, 상가 등)을 지정할 수 있습니다.</div>
+        </div>
+        <div class="faq-item">
+            <div class="faq-q" onclick="toggleFaq(this)">결제 금액은 어떻게 설정하나요? <i class="fas fa-chevron-down"></i></div>
+            <div class="faq-a">임차인 등록 시 월세 금액을 설정합니다. 설정된 금액이 QR코드에 연동되어 임차인은 정해진 금액만 결제할 수 있습니다. 월세 변경 시 관리 페이지에서 수정하면 즉시 반영됩니다.</div>
+        </div>
+        <div class="faq-item">
+            <div class="faq-q" onclick="toggleFaq(this)">보안은 안전한가요? <i class="fas fa-chevron-down"></i></div>
+            <div class="faq-a">모든 결제는 PG사 공인인증 시스템을 통해 처리되며, 카드 정보는 PG사에서 안전하게 관리합니다. MID/SECRET 키는 AES 암호화되어 보관됩니다.</div>
+        </div>
+    </div>
+</section>
+
+<!-- ─── CTA ─── -->
+<section class="cta-section">
+    <h2>지금 바로 <span style="color:var(--warm)">방긋페이</span>를 시작하세요</h2>
+    <p>월세 수금의 새로운 기준, 방긋페이와 함께<br>편안한 임대관리를 경험하세요.</p>
+    <a href="/static/login.html" class="hero-cta" style="position:relative"><i class="fas fa-rocket"></i>무료로 시작하기</a>
+</section>
+
+<!-- ─── Footer ─── -->
+<footer class="footer">
+    <div class="footer-inner">
+        <p>&copy; 2025 방긋페이(Bang Good Pay). ADPAY Inc. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="/static/landing/splash.html">홈</a>
+            <a href="/static/landing/index.html">ADPAY</a>
+            <a href="/static/login.html">로그인</a>
+        </div>
+    </div>
+    <div class="footer-sub"><p>서울 강남구 역삼로 456 | 고객센터: 02-1234-5678</p></div>
+</footer>
+
+<script>
+// ─── Mobile Nav ───
+function toggleMobileNav() {
+    const nav = document.getElementById('mobileNav');
+    nav.classList.toggle('open');
+}
+function closeMobileNav() {
+    document.getElementById('mobileNav').classList.remove('open');
+}
+
+// ─── Navbar scroll ───
+window.addEventListener('scroll', () => {
+    document.getElementById('navBg').classList.toggle('scrolled', window.scrollY > 60);
+    // Close mobile nav on scroll
+    document.getElementById('mobileNav').classList.remove('open');
+});
+
+// ─── Slider ───
+let currentSlide = 0;
+const totalSlides = 5;
+const container = document.getElementById('slideContainer');
+const dotsWrap = document.getElementById('sliderDots');
+let autoTimer;
+
+for (let i = 0; i < totalSlides; i++) {
+    const d = document.createElement('div');
+    d.className = 'dot' + (i === 0 ? ' active' : '');
+    d.onclick = () => goSlide(i);
+    dotsWrap.appendChild(d);
+}
+
+function goSlide(n) {
+    currentSlide = ((n % totalSlides) + totalSlides) % totalSlides;
+    container.style.transform = `translateX(-${currentSlide * 100}%)`;
+    dotsWrap.querySelectorAll('.dot').forEach((d, i) => d.classList.toggle('active', i === currentSlide));
+    resetAuto();
+}
+function moveSlide(dir) { goSlide(currentSlide + dir); }
+function resetAuto() { clearInterval(autoTimer); autoTimer = setInterval(() => moveSlide(1), 5000); }
+resetAuto();
+
+// Touch support
+let touchX = 0;
+document.getElementById('heroSlider').addEventListener('touchstart', e => { touchX = e.touches[0].clientX; }, { passive: true });
+document.getElementById('heroSlider').addEventListener('touchend', e => {
+    const diff = touchX - e.changedTouches[0].clientX;
+    if (Math.abs(diff) > 50) moveSlide(diff > 0 ? 1 : -1);
+});
+
+// ─── FAQ ───
+function toggleFaq(el) { el.parentElement.classList.toggle('open'); }
+
+// ─── Counter animation ───
+function animateCount(el, target, suffix = '', duration = 2000) {
+    const isFloat = String(target).includes('.');
+    let start = 0;
+    const step = target / (duration / 16);
+    const timer = setInterval(() => {
+        start += step;
+        if (start >= target) { start = target; clearInterval(timer); }
+        el.textContent = (isFloat ? start.toFixed(1) : Math.floor(start).toLocaleString()) + suffix;
+    }, 16);
+}
+
+const observer = new IntersectionObserver(entries => {
+    entries.forEach(entry => {
+        if (entry.isIntersecting) {
+            animateCount(document.getElementById('cnt1'), 500, '+');
+            animateCount(document.getElementById('cnt2'), 2000, '+');
+            animateCount(document.getElementById('cnt3'), 98.5, '%');
+            animateCount(document.getElementById('cnt4'), 120, '억+');
+            observer.disconnect();
+        }
+    });
+}, { threshold: .2 });
+observer.observe(document.querySelector('.stat-bar'));
+</script>
+</body>
+</html>

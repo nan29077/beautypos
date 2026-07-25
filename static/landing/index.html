@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ADPAY - 오프라인 결제의 새로운 기준</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    <style>
+        :root { --primary: #1b3a5c; --accent: #0ea5e9; --dark: #0d1b2a; --success-g: #22c55e; }
+        * { font-family: 'Noto Sans KR', sans-serif; margin: 0; padding: 0; box-sizing: border-box; }
+        body { overflow-x: hidden; min-height: 100vh; margin: 0; background: #070b14; }
+        html { min-height: 100vh; }
+
+        /* ─── Navbar ─── */
+        .navbar-adpay { background: rgba(13,27,42,0.85) !important; backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); transition: all .4s; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .navbar-adpay.scrolled { background: rgba(13,27,42,0.98) !important; box-shadow: 0 4px 30px rgba(0,0,0,.3); }
+        .navbar-adpay .navbar-brand { font-size: 1.6rem; letter-spacing: -0.5px; }
+        .nav-link { font-weight: 500; font-size: 0.95rem; }
+
+        /* ─── Hero Slider ─── */
+        .hero-slider { height: 100vh; width: 100%; position: relative; overflow: hidden; }
+        .hero-slider .slide-container { display: flex; height: 100%; transition: transform 0.7s cubic-bezier(0.25,0.46,0.45,0.94); will-change: transform; }
+        .hero-slider .slide { flex: 0 0 100%; width: 100%; height: 100%; position: relative; }
+        .hero-slider .slide img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .hero-slider .slide-overlay { position: absolute; inset: 0; background: linear-gradient(135deg, rgba(13,27,42,0.75) 0%, rgba(13,27,42,0.3) 50%, rgba(13,27,42,0.6) 100%); }
+        .hero-slider .slide-content { position: absolute; top: 50%; left: 0; right: 0; transform: translateY(-50%); padding: 0 8%; z-index: 2; }
+        .hero-title { font-size: clamp(2.2rem, 5vw, 4.2rem); font-weight: 900; line-height: 1.15; color: #fff; text-shadow: 0 4px 30px rgba(0,0,0,.4); margin-bottom: 1.2rem; }
+        .hero-sub { font-size: clamp(1rem, 2vw, 1.35rem); font-weight: 300; color: rgba(255,255,255,0.9); max-width: 600px; line-height: 1.8; }
+        .hero-btn { display: inline-block; padding: 14px 36px; font-size: 1.05rem; font-weight: 700; border-radius: 50px; text-decoration: none; transition: all .3s; }
+        .hero-btn-primary { background: var(--accent); color: #fff; border: 2px solid var(--accent); }
+        .hero-btn-primary:hover { background: #0284c7; border-color: #0284c7; color: #fff; transform: translateY(-2px); box-shadow: 0 8px 25px rgba(14,165,233,.4); }
+        .hero-btn-outline { background: transparent; color: #fff; border: 2px solid rgba(255,255,255,.5); }
+        .hero-btn-outline:hover { border-color: #fff; background: rgba(255,255,255,.1); color: #fff; }
+
+        /* Slider Controls */
+        .slider-dots { position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; z-index: 10; }
+        .slider-dot { width: 40px; height: 4px; border-radius: 2px; background: rgba(255,255,255,.35); cursor: pointer; transition: all .4s; border: none; }
+        .slider-dot.active { background: #fff; width: 60px; }
+        .slider-arrows { position: absolute; top: 50%; width: 100%; display: flex; justify-content: space-between; padding: 0 20px; z-index: 10; transform: translateY(-50%); pointer-events: none; }
+        .slider-arrow { width: 50px; height: 50px; border-radius: 50%; background: rgba(255,255,255,.15); backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,.2); color: #fff; font-size: 1.2rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all .3s; pointer-events: auto; }
+        .slider-arrow:hover { background: rgba(255,255,255,.3); }
+
+        /* ─── Stats Counter Bar ─── */
+        .stats-bar { background: var(--dark); }
+        .stat-item { text-align: center; padding: 2.5rem 1rem; }
+        .stat-number { font-size: 2.8rem; font-weight: 900; background: linear-gradient(135deg, #0ea5e9, #38bdf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .stat-label { font-size: 0.85rem; color: rgba(255,255,255,.55); margin-top: 0.3rem; letter-spacing: .5px; }
+
+        /* ─── Section Defaults ─── */
+        .section-title { font-size: 2.2rem; font-weight: 800; margin-bottom: 0.5rem; color: #1a1a2e; }
+        .section-sub { color: #6b7280; font-size: 1.05rem; margin-bottom: 3rem; }
+        .section-pad { padding: 5.5rem 0; }
+        .section-badge { display: inline-block; padding: 6px 18px; font-size: 0.8rem; font-weight: 700; border-radius: 50px; letter-spacing: 1px; text-transform: uppercase; }
+
+        /* ─── Features Grid ─── */
+        .feature-card { border: none; border-radius: 1.2rem; transition: transform .3s, box-shadow .3s; overflow: hidden; background: #fff; }
+        .feature-card:hover { transform: translateY(-8px); box-shadow: 0 20px 50px rgba(0,0,0,.1); }
+        .feature-icon { width: 64px; height: 64px; border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; }
+
+        /* ─── How It Works ─── */
+        .step-circle { width: 80px; height: 80px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2rem; font-weight: 900; margin: 0 auto 1rem; transition: transform .3s; }
+        .step-circle:hover { transform: scale(1.1); }
+
+        /* ─── Feature Showcase rows ─── */
+        .showcase-img { border-radius: 1rem; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,.1); }
+        .showcase-img img { width: 100%; height: 350px; object-fit: cover; display: block; transition: transform .5s; }
+        .showcase-img:hover img { transform: scale(1.03); }
+
+        /* ─── Testimonials ─── */
+        .testimonial-card { border: none; border-radius: 1.2rem; position: relative; overflow: hidden; transition: transform .3s; }
+        .testimonial-card:hover { transform: translateY(-4px); }
+        .testimonial-card::before { content: '\201C'; position: absolute; top: -5px; left: 20px; font-size: 5rem; color: rgba(14,165,233,.08); font-family: Georgia, serif; }
+
+
+
+        /* ─── CTA ─── */
+        .cta-gradient { background: linear-gradient(135deg, #0d1b2a 0%, #1b3a5c 50%, #0ea5e9 100%); }
+
+        /* ─── Footer ─── */
+        .footer-dark { background: #070b14; }
+        .footer-link { color: rgba(255,255,255,.5); text-decoration: none; transition: color .2s; font-size: 0.9rem; }
+        .footer-link:hover { color: #0ea5e9; }
+
+        /* ─── Number Banner ─── */
+        .number-banner { background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); }
+        .number-item { text-align: center; padding: 2rem; }
+        .number-big { font-size: 3rem; font-weight: 900; color: var(--primary); }
+        .number-label { font-size: 0.9rem; color: #6b7280; }
+
+        /* ─── Animations ─── */
+        .fade-up { opacity: 0; transform: translateY(30px); transition: all 0.7s ease; }
+        .fade-up.visible { opacity: 1; transform: translateY(0); }
+        .fade-left { opacity: 0; transform: translateX(-30px); transition: all 0.7s ease; }
+        .fade-left.visible { opacity: 1; transform: translateX(0); }
+        .fade-right { opacity: 0; transform: translateX(30px); transition: all 0.7s ease; }
+        .fade-right.visible { opacity: 1; transform: translateX(0); }
+
+        @media (max-width: 768px) {
+            .hero-slider .slide-content { padding: 0 5%; text-align: center; }
+            .hero-title { font-size: 1.8rem; }
+            .stat-number { font-size: 2rem; }
+            .section-title { font-size: 1.6rem; }
+            .slider-arrows { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- ═══ Navbar ═══ -->
+<nav class="navbar navbar-expand-lg navbar-dark fixed-top navbar-adpay" id="mainNav">
+    <div class="container">
+        <a class="navbar-brand fw-bold" href="/static/landing/index.html">
+            <i class="fas fa-credit-card me-2" style="color:#0ea5e9"></i>ADPAY
+        </a>
+        <button class="navbar-toggler border-0" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav ms-auto align-items-center">
+                <li class="nav-item"><a class="nav-link px-3" href="#features">기능</a></li>
+                <li class="nav-item"><a class="nav-link px-3" href="#how-it-works">이용방법</a></li>
+                <li class="nav-item"><a class="nav-link px-3" href="#testimonials">후기</a></li>
+                <li class="nav-item"><a class="nav-link px-3" href="/static/landing/features.html">상세기능</a></li>
+
+                <li class="nav-item ms-2" id="navAuthBtn">
+                    <a class="btn btn-primary px-4 py-2 fw-bold" href="/static/login.html" style="border-radius:50px; font-size:.9rem;">
+                        <i class="fas fa-sign-in-alt me-1"></i>로그인
+                    </a>
+                </li>
+            </ul>
+        </div>
+    </div>
+</nav>
+
+<!-- ═══ Hero Full-Screen Photo Slider (5 slides, horizontal swipe) ═══ -->
+<section class="hero-slider" id="heroSlider">
+    <div class="slide-container" id="slideContainer">
+        <!-- Slide 1: Payment Terminal Close-up -->
+        <div class="slide">
+            <img src="https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=1920&h=1080&fit=crop&q=85" alt="카드 결제 터미널">
+            <div class="slide-overlay"></div>
+            <div class="slide-content">
+                <h1 class="hero-title">오프라인 결제의<br>새로운 기준</h1>
+                <p class="hero-sub">카드 단말기 결제부터 직원별 매출 관리, 정산, 광고 분석까지<br>하나의 플랫폼에서 모든 것을 해결하세요</p>
+                <div class="mt-4 d-flex gap-3 flex-wrap">
+                    <a href="/static/login.html" class="hero-btn hero-btn-primary"><i class="fas fa-rocket me-2"></i>무료로 시작하기</a>
+                    <a href="#features" class="hero-btn hero-btn-outline">자세히 보기 <i class="fas fa-chevron-down ms-1"></i></a>
+                </div>
+            </div>
+        </div>
+        <!-- Slide 2: Beautiful Hair Salon Interior -->
+        <div class="slide">
+            <img src="https://images.unsplash.com/photo-1560066984-138dadb4c035?w=1920&h=1080&fit=crop&q=85" alt="헤어살롱 인테리어">
+            <div class="slide-overlay"></div>
+            <div class="slide-content">
+                <h1 class="hero-title">헤어살롱, 네일샵<br>매출 관리의 정답</h1>
+                <p class="hero-sub">디자이너 코드 하나로 결제가 직원에게 자동 귀속됩니다<br>엑셀 없이도 정확한 성과 관리가 가능합니다</p>
+                <div class="mt-4">
+                    <a href="/static/login.html" class="hero-btn hero-btn-primary"><i class="fas fa-play-circle me-2"></i>지금 체험하기</a>
+                </div>
+            </div>
+        </div>
+        <!-- Slide 3: Team working with data/analytics -->
+        <div class="slide">
+            <img src="https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=1920&h=1080&fit=crop&q=85" alt="데이터 분석 대시보드">
+            <div class="slide-overlay"></div>
+            <div class="slide-content">
+                <h1 class="hero-title">다중 PG사<br>통합 관리</h1>
+                <p class="hero-sub">주요 PG사를 가맹점별로 등록하고<br>MID/SECRET 암호화 보관. 원클릭 연동 테스트</p>
+                <div class="mt-4">
+                    <a href="/static/landing/features.html" class="hero-btn hero-btn-outline"><i class="fas fa-network-wired me-2"></i>기능 알아보기</a>
+                </div>
+            </div>
+        </div>
+        <!-- Slide 4: Marketing / Digital Advertising -->
+        <div class="slide">
+            <img src="https://images.unsplash.com/photo-1432888498266-38ffec3eaf0a?w=1920&h=1080&fit=crop&q=85" alt="마케팅 분석">
+            <div class="slide-overlay"></div>
+            <div class="slide-content">
+                <h1 class="hero-title">광고 분석부터<br>주문까지 원스톱</h1>
+                <p class="hero-sub">네이버 플레이스 순위, 블로그 리뷰 분석으로<br>경쟁업체 대비 현황을 실시간 파악하세요</p>
+                <div class="mt-4">
+                    <a href="/static/login.html" class="hero-btn hero-btn-primary"><i class="fas fa-chart-line me-2"></i>분석 시작하기</a>
+                </div>
+            </div>
+        </div>
+        <!-- Slide 5: Business Growth / Success -->
+        <div class="slide">
+            <img src="https://images.unsplash.com/photo-1553877522-43269d4ea984?w=1920&h=1080&fit=crop&q=85" alt="비즈니스 성장">
+            <div class="slide-overlay"></div>
+            <div class="slide-content">
+                <h1 class="hero-title">매장 성장의<br>든든한 파트너</h1>
+                <p class="hero-sub">정산, 커미션, 출금 요청까지 자동 워크플로우로<br>사장님은 매장 운영에만 집중하세요</p>
+                <div class="mt-4 d-flex gap-3 flex-wrap">
+                    <a href="/static/landing/features.html" class="hero-btn hero-btn-outline"><i class="fas fa-info-circle me-2"></i>상세 기능</a>
+                    <a href="/static/login.html" class="hero-btn hero-btn-primary"><i class="fas fa-user-plus me-2"></i>무료 가입하기</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- Dots -->
+    <div class="slider-dots" id="sliderDots">
+        <button class="slider-dot active" data-idx="0"></button>
+        <button class="slider-dot" data-idx="1"></button>
+        <button class="slider-dot" data-idx="2"></button>
+        <button class="slider-dot" data-idx="3"></button>
+        <button class="slider-dot" data-idx="4"></button>
+    </div>
+    <!-- Arrows -->
+    <div class="slider-arrows">
+        <button class="slider-arrow" id="prevSlide"><i class="fas fa-chevron-left"></i></button>
+        <button class="slider-arrow" id="nextSlide"><i class="fas fa-chevron-right"></i></button>
+    </div>
+</section>
+
+<!-- ═══ Stats Counter Bar ═══ -->
+<section class="stats-bar">
+    <div class="container">
+        <div class="row">
+            <div class="col-6 col-md-3">
+                <div class="stat-item">
+                    <div class="stat-number" id="stat-merchants">0</div>
+                    <div class="stat-label"><i class="fas fa-store me-1"></i>가입 가맹점</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="stat-item">
+                    <div class="stat-number" id="stat-transactions">0</div>
+                    <div class="stat-label"><i class="fas fa-receipt me-1"></i>누적 결제 건수</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="stat-item">
+                    <div class="stat-number" id="stat-adorders">0</div>
+                    <div class="stat-label"><i class="fas fa-bullhorn me-1"></i>광고 집행 수</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="stat-item">
+                    <div class="stat-number" id="stat-volume">0</div>
+                    <div class="stat-label"><i class="fas fa-won-sign me-1"></i>총 결제 금액</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ═══ Features Grid ═══ -->
+<section class="section-pad bg-white" id="features">
+    <div class="container">
+        <div class="text-center fade-up">
+            <span class="section-badge bg-primary bg-opacity-10 text-primary mb-3"><i class="fas fa-th-large me-1"></i>CORE FEATURES</span>
+            <h2 class="section-title mt-3">ADPAY가 제공하는 핵심 기능</h2>
+            <p class="section-sub">오프라인 매장 운영에 필요한 모든 기능을 하나의 플랫폼에서 관리하세요</p>
+        </div>
+        <div class="row g-4">
+            <div class="col-md-4 col-sm-6 fade-up">
+                <div class="card feature-card shadow-sm h-100 p-4">
+                    <div class="card-body">
+                        <div class="feature-icon bg-primary bg-opacity-10 text-primary mb-3"><i class="fas fa-credit-card"></i></div>
+                        <h5 class="fw-bold">PG 통합 관리</h5>
+                        <p class="text-muted small">주요 PG사를 가맹점별로 등록하고 MID/SECRET 암호화 보관. 원클릭 연동 테스트.</p>
+                        <ul class="list-unstyled small text-muted mt-3">
+                            <li class="mb-1"><i class="fas fa-check text-success me-1"></i>가맹점별 PG 설정</li>
+                            <li class="mb-1"><i class="fas fa-check text-success me-1"></i>민감정보 암호화 보관</li>
+                            <li class="mb-1"><i class="fas fa-check text-success me-1"></i>실시간 연동 테스트</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 col-sm-6 fade-up">
+                <div class="card feature-card shadow-sm h-100 p-4">
+                    <div class="card-body">
+                        <div class="feature-icon bg-success bg-opacity-10 text-success mb-3"><i class="fas fa-users-cog"></i></div>
+                        <h5 class="fw-bold">직원별 매출 분리</h5>
+                        <p class="text-muted small">직원 코드(staff_code) 기반으로 단말기 결제가 자동으로 해당 직원의 매출로 귀속됩니다.</p>
+                        <ul class="list-unstyled small text-muted mt-3">
+                            <li class="mb-1"><i class="fas fa-check text-success me-1"></i>직원별 고유 코드 부여</li>
+                            <li class="mb-1"><i class="fas fa-check text-success me-1"></i>자동 매출 귀속 로직</li>
+                            <li class="mb-1"><i class="fas fa-check text-success me-1"></i>기간별 매출 통계</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 col-sm-6 fade-up">
+                <div class="card feature-card shadow-sm h-100 p-4">
+                    <div class="card-body">
+                        <div class="feature-icon bg-warning bg-opacity-10 text-warning mb-3"><i class="fas fa-calculator"></i></div>
+                        <h5 class="fw-bold">정산 & 수수료 자동화</h5>
+                        <p class="text-muted small">결제 누적 데이터를 기반으로 PG 수수료, 영업관리자 커미션을 자동 계산합니다.</p>
+                        <ul class="list-unstyled small text-muted mt-3">
+                            <li class="mb-1"><i class="fas fa-check text-success me-1"></i>PG 수수료 자동 계산</li>
+                            <li class="mb-1"><i class="fas fa-check text-success me-1"></i>영업 커미션 관리</li>
+                            <li class="mb-1"><i class="fas fa-check text-success me-1"></i>출금요청 워크플로우</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 col-sm-6 fade-up">
+                <div class="card feature-card shadow-sm h-100 p-4">
+                    <div class="card-body">
+                        <div class="feature-icon bg-info bg-opacity-10 text-info mb-3"><i class="fas fa-chart-line"></i></div>
+                        <h5 class="fw-bold">광고 분석 대시보드</h5>
+                        <p class="text-muted small">네이버 플레이스 순위, 블로그/방문자 리뷰 수를 기간별로 추적하고 경쟁업체와 비교 분석.</p>
+                        <ul class="list-unstyled small text-muted mt-3">
+                            <li class="mb-1"><i class="fas fa-check text-success me-1"></i>경쟁업체 비교 분석</li>
+                            <li class="mb-1"><i class="fas fa-check text-success me-1"></i>기간별 트렌드 추적</li>
+                            <li class="mb-1"><i class="fas fa-check text-success me-1"></i>순위 변동 알림</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 col-sm-6 fade-up">
+                <div class="card feature-card shadow-sm h-100 p-4">
+                    <div class="card-body">
+                        <div class="feature-icon bg-danger bg-opacity-10 text-danger mb-3"><i class="fas fa-bullhorn"></i></div>
+                        <h5 class="fw-bold">광고 주문 시스템</h5>
+                        <p class="text-muted small">블로그 배포, 플레이스 유입 요청을 시스템으로 접수. 워크플로우로 투명하게 관리.</p>
+                        <ul class="list-unstyled small text-muted mt-3">
+                            <li class="mb-1"><i class="fas fa-check text-success me-1"></i>블로그 배포 주문</li>
+                            <li class="mb-1"><i class="fas fa-check text-success me-1"></i>플레이스 유입 주문</li>
+                            <li class="mb-1"><i class="fas fa-check text-success me-1"></i>상태 실시간 추적</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 col-sm-6 fade-up">
+                <div class="card feature-card shadow-sm h-100 p-4">
+                    <div class="card-body">
+                        <div class="feature-icon bg-dark bg-opacity-10 text-dark mb-3"><i class="fas fa-shield-alt"></i></div>
+                        <h5 class="fw-bold">역할별 권한 관리</h5>
+                        <p class="text-muted small">최고관리자, 영업관리자, 원장님, 디자이너 - 4가지 역할에 맞춤화된 대시보드.</p>
+                        <ul class="list-unstyled small text-muted mt-3">
+                            <li class="mb-1"><i class="fas fa-check text-success me-1"></i>RBAC 기반 접근통제</li>
+                            <li class="mb-1"><i class="fas fa-check text-success me-1"></i>역할별 맞춤 메뉴</li>
+                            <li class="mb-1"><i class="fas fa-check text-success me-1"></i>보안 JWT 인증</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ═══ How It Works ═══ -->
+<section class="section-pad" style="background: #f8fafc;" id="how-it-works">
+    <div class="container">
+        <div class="text-center fade-up">
+            <span class="section-badge bg-success bg-opacity-10 text-success mb-3"><i class="fas fa-route me-1"></i>HOW IT WORKS</span>
+            <h2 class="section-title mt-3">4단계로 시작하는 ADPAY</h2>
+            <p class="section-sub">복잡한 설정 없이 빠르게 시작할 수 있습니다</p>
+        </div>
+        <div class="row g-4 position-relative">
+            <div class="col-md-3 col-6 text-center fade-up" style="z-index:1;">
+                <div class="step-circle bg-primary text-white shadow-lg">1</div>
+                <h6 class="fw-bold mt-2">회원 가입</h6>
+                <p class="text-muted small px-2">이메일 또는 카카오/네이버/구글 소셜 로그인으로 간편하게 가입하세요</p>
+            </div>
+            <div class="col-md-3 col-6 text-center fade-up" style="z-index:1;">
+                <div class="step-circle bg-success text-white shadow-lg">2</div>
+                <h6 class="fw-bold mt-2">가맹점 등록</h6>
+                <p class="text-muted small px-2">매장 정보와 단말기를 등록하고 PG사를 연동하세요</p>
+            </div>
+            <div class="col-md-3 col-6 text-center fade-up" style="z-index:1;">
+                <div class="step-circle bg-warning text-white shadow-lg">3</div>
+                <h6 class="fw-bold mt-2">결제 시작</h6>
+                <p class="text-muted small px-2">단말기로 결제하면 실시간으로 매출이 자동 기록됩니다</p>
+            </div>
+            <div class="col-md-3 col-6 text-center fade-up" style="z-index:1;">
+                <div class="step-circle bg-danger text-white shadow-lg">4</div>
+                <h6 class="fw-bold mt-2">분석 & 성장</h6>
+                <p class="text-muted small px-2">매출 통계와 광고 분석으로 매장 성장을 가속하세요</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+
+
+<!-- ═══ Detailed Feature Showcase ═══ -->
+<section class="section-pad" style="background: linear-gradient(180deg, #f0f9ff 0%, #ffffff 100%);">
+    <div class="container">
+        <!-- Feature Row 1: 단말기 연동 -->
+        <div class="row align-items-center g-5 mb-5">
+            <div class="col-lg-6 fade-left">
+                <div class="showcase-img" style="border-left: 4px solid var(--accent);">
+                    <img src="https://images.unsplash.com/photo-1556742393-d75f468bfcb0?w=800&h=500&fit=crop&q=80" alt="POS 단말기">
+                </div>
+            </div>
+            <div class="col-lg-6 fade-right">
+                <span class="badge bg-primary mb-3 px-3 py-2">결제 인프라</span>
+                <h3 class="fw-bold mb-3">카드 단말기와<br>완벽하게 연동</h3>
+                <p class="text-muted">ADPAY는 오프라인 매장의 카드 단말기에서 발생하는 모든 결제를 실시간으로 수신합니다. 단말기별 API Key 인증으로 보안을 강화하고, 금액/할부/카드사/직원코드까지 상세하게 기록됩니다.</p>
+                <div class="row g-3 mt-3">
+                    <div class="col-6">
+                        <div class="d-flex align-items-center">
+                            <i class="fas fa-bolt text-warning fs-4 me-2"></i>
+                            <div><strong class="small">실시간 수신</strong><br><small class="text-muted">결제 즉시 기록</small></div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="d-flex align-items-center">
+                            <i class="fas fa-lock text-success fs-4 me-2"></i>
+                            <div><strong class="small">API Key 인증</strong><br><small class="text-muted">단말기별 보안</small></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- Feature Row 2: 매출 관리 -->
+        <div class="row align-items-center g-5 mb-5">
+            <div class="col-lg-6 order-lg-2 fade-right">
+                <div class="showcase-img" style="border-right: 4px solid var(--success-g);">
+                    <img src="https://images.unsplash.com/photo-1551836022-d5d88e9218df?w=800&h=500&fit=crop&q=80" alt="헤어살롱 작업">
+                </div>
+            </div>
+            <div class="col-lg-6 order-lg-1 fade-left">
+                <span class="badge bg-success mb-3 px-3 py-2">매출 관리</span>
+                <h3 class="fw-bold mb-3">헤어살롱, 네일샵에<br>딱 맞는 매출 관리</h3>
+                <p class="text-muted">미용실, 네일샵 등 직원마다 매출을 따로 관리해야 하는 매장에 최적화되었습니다. 원장님은 전체 매출과 직원별 매출을 한눈에 비교하고, 디자이너는 본인의 성과만 확인할 수 있습니다.</p>
+                <div class="row g-3 mt-3">
+                    <div class="col-6">
+                        <div class="d-flex align-items-center">
+                            <i class="fas fa-chart-pie text-primary fs-4 me-2"></i>
+                            <div><strong class="small">직원별 비교</strong><br><small class="text-muted">한눈에 분석</small></div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="d-flex align-items-center">
+                            <i class="fas fa-calendar-alt text-info fs-4 me-2"></i>
+                            <div><strong class="small">기간 필터</strong><br><small class="text-muted">일/주/월/전체</small></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- Feature Row 3: 마케팅 -->
+        <div class="row align-items-center g-5">
+            <div class="col-lg-6 fade-left">
+                <div class="showcase-img" style="border-left: 4px solid #f59e0b;">
+                    <img src="https://images.unsplash.com/photo-1533750349088-cd871a92f312?w=800&h=500&fit=crop&q=80" alt="디지털 마케팅 분석">
+                </div>
+            </div>
+            <div class="col-lg-6 fade-right">
+                <span class="badge bg-warning text-dark mb-3 px-3 py-2">마케팅</span>
+                <h3 class="fw-bold mb-3">데이터 기반<br>마케팅 전략 수립</h3>
+                <p class="text-muted">네이버 플레이스 순위, 블로그 리뷰 수, 방문자 리뷰 수를 날짜별로 기록하고 경쟁업체와 비교합니다. 부족한 부분을 발견하면 블로그 배포나 플레이스 유입 주문을 바로 접수하세요.</p>
+                <div class="row g-3 mt-3">
+                    <div class="col-6">
+                        <div class="d-flex align-items-center">
+                            <i class="fas fa-search-location text-danger fs-4 me-2"></i>
+                            <div><strong class="small">경쟁 분석</strong><br><small class="text-muted">주변 업체 비교</small></div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="d-flex align-items-center">
+                            <i class="fas fa-paper-plane text-success fs-4 me-2"></i>
+                            <div><strong class="small">즉시 주문</strong><br><small class="text-muted">분석에서 주문 연결</small></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ═══ Number Banner ═══ -->
+<section class="number-banner py-5">
+    <div class="container">
+        <div class="row g-4 fade-up">
+            <div class="col-md-3 col-6">
+                <div class="number-item">
+                    <div class="number-big">99.9%</div>
+                    <div class="number-label">시스템 가동률</div>
+                </div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="number-item">
+                    <div class="number-big">3초</div>
+                    <div class="number-label">평균 결제 처리</div>
+                </div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="number-item">
+                    <div class="number-big">90%</div>
+                    <div class="number-label">정산 시간 절감</div>
+                </div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="number-item">
+                    <div class="number-big">24/7</div>
+                    <div class="number-label">실시간 모니터링</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ═══ Testimonials ═══ -->
+<section class="section-pad bg-white" id="testimonials">
+    <div class="container">
+        <div class="text-center fade-up">
+            <span class="section-badge bg-warning bg-opacity-10 text-warning mb-3"><i class="fas fa-comments me-1"></i>TESTIMONIALS</span>
+            <h2 class="section-title mt-3">고객님들의 생생한 후기</h2>
+            <p class="section-sub">ADPAY를 사용하는 사장님들의 이야기</p>
+        </div>
+        <div class="row g-4">
+            <div class="col-lg-4 col-md-6 fade-up">
+                <div class="card testimonial-card shadow-sm h-100 p-4">
+                    <div class="card-body">
+                        <div class="text-warning mb-3"><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i></div>
+                        <p class="text-muted">"직원이 5명인 헤어살롱을 운영하는데, 매달 엑셀로 정산하느라 고생했어요. ADPAY 도입 후 직원별 매출이 자동 분리되니 정산 시간이 90% 줄었습니다."</p>
+                        <hr>
+                        <div class="d-flex align-items-center">
+                            <div class="bg-primary rounded-circle text-white d-flex align-items-center justify-content-center" style="width:44px;height:44px;"><i class="fas fa-user"></i></div>
+                            <div class="ms-3"><strong>김미영</strong><br><small class="text-muted">뷰티헤어살롱 강남점 원장</small></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-4 col-md-6 fade-up">
+                <div class="card testimonial-card shadow-sm h-100 p-4">
+                    <div class="card-body">
+                        <div class="text-warning mb-3"><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i></div>
+                        <p class="text-muted">"광고 분석 기능이 정말 유용해요. 경쟁업체 플레이스 순위랑 비교해서 어디에 투자해야 할지 바로 알 수 있고, 블로그 주문도 간편하게 합니다."</p>
+                        <hr>
+                        <div class="d-flex align-items-center">
+                            <div class="bg-success rounded-circle text-white d-flex align-items-center justify-content-center" style="width:44px;height:44px;"><i class="fas fa-user"></i></div>
+                            <div class="ms-3"><strong>이준호</strong><br><small class="text-muted">청담 네일아트 대표</small></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-4 col-md-6 fade-up">
+                <div class="card testimonial-card shadow-sm h-100 p-4">
+                    <div class="card-body">
+                        <div class="text-warning mb-3"><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star-half-alt"></i></div>
+                        <p class="text-muted">"영업관리자로서 10개 가맹점을 담당하는데, 각 가맹점 매출과 커미션을 한 화면에서 볼 수 있어서 업무 효율이 크게 올랐습니다."</p>
+                        <hr>
+                        <div class="d-flex align-items-center">
+                            <div class="bg-warning rounded-circle text-white d-flex align-items-center justify-content-center" style="width:44px;height:44px;"><i class="fas fa-user"></i></div>
+                            <div class="ms-3"><strong>박상현</strong><br><small class="text-muted">ADPAY 영업팀장</small></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-4 col-md-6 fade-up">
+                <div class="card testimonial-card shadow-sm h-100 p-4">
+                    <div class="card-body">
+                        <div class="text-warning mb-3"><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i></div>
+                        <p class="text-muted">"PG사를 변경했는데, ADPAY에서 5분이면 새 PG 등록하고 테스트까지 끝나요. 예전에는 개발팀에 요청해야 했는데 이제 직접 합니다."</p>
+                        <hr>
+                        <div class="d-flex align-items-center">
+                            <div class="bg-info rounded-circle text-white d-flex align-items-center justify-content-center" style="width:44px;height:44px;"><i class="fas fa-user"></i></div>
+                            <div class="ms-3"><strong>최수진</strong><br><small class="text-muted">피부관리실 원장</small></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-4 col-md-6 fade-up">
+                <div class="card testimonial-card shadow-sm h-100 p-4">
+                    <div class="card-body">
+                        <div class="text-warning mb-3"><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i></div>
+                        <p class="text-muted">"디자이너로 일하면서 내 매출을 정확히 몰랐는데, ADPAY에서 오늘/이번달 매출을 바로 확인할 수 있어서 동기부여가 됩니다."</p>
+                        <hr>
+                        <div class="d-flex align-items-center">
+                            <div class="bg-danger rounded-circle text-white d-flex align-items-center justify-content-center" style="width:44px;height:44px;"><i class="fas fa-user"></i></div>
+                            <div class="ms-3"><strong>홍길동</strong><br><small class="text-muted">뷰티헤어살롱 수석 디자이너</small></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-4 col-md-6 fade-up">
+                <div class="card testimonial-card shadow-sm h-100 p-4">
+                    <div class="card-body">
+                        <div class="text-warning mb-3"><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i></div>
+                        <p class="text-muted">"카페 3개 지점을 운영하는데, 각 지점 매출을 실시간으로 비교할 수 있어서 좋습니다. 정산도 자동이라 회계사에게 보낼 자료 만들기도 쉬워요."</p>
+                        <hr>
+                        <div class="d-flex align-items-center">
+                            <div class="bg-secondary rounded-circle text-white d-flex align-items-center justify-content-center" style="width:44px;height:44px;"><i class="fas fa-user"></i></div>
+                            <div class="ms-3"><strong>정민우</strong><br><small class="text-muted">카페 프랜차이즈 대표</small></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ═══ FAQ ═══ -->
+<section class="section-pad bg-white">
+    <div class="container" style="max-width:800px;">
+        <div class="text-center fade-up">
+            <span class="section-badge bg-danger bg-opacity-10 text-danger mb-3"><i class="fas fa-question-circle me-1"></i>FAQ</span>
+            <h2 class="section-title mt-3">자주 묻는 질문</h2>
+            <p class="section-sub">궁금한 점을 빠르게 확인하세요</p>
+        </div>
+        <div class="accordion fade-up" id="faqAcc">
+            <div class="accordion-item border-0 mb-2 shadow-sm rounded-3 overflow-hidden">
+                <h2 class="accordion-header"><button class="accordion-button fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#faq1">ADPAY를 사용하려면 별도 단말기가 필요한가요?</button></h2>
+                <div id="faq1" class="accordion-collapse collapse show" data-bs-parent="#faqAcc"><div class="accordion-body text-muted">기존에 사용하시던 카드 단말기를 그대로 사용하실 수 있습니다. ADPAY는 단말기에서 발생하는 결제 데이터를 API로 수신하므로, 별도 하드웨어 구매 없이 바로 시작 가능합니다.</div></div>
+            </div>
+            <div class="accordion-item border-0 mb-2 shadow-sm rounded-3 overflow-hidden">
+                <h2 class="accordion-header"><button class="accordion-button collapsed fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#faq2">PG사를 변경하거나 여러 개 동시에 사용할 수 있나요?</button></h2>
+                <div id="faq2" class="accordion-collapse collapse" data-bs-parent="#faqAcc"><div class="accordion-body text-muted">네, 가맹점별로 여러 PG사를 동시에 등록할 수 있습니다. 원하는 PG사를 선택하고, 언제든지 추가/변경/비활성화가 가능합니다.</div></div>
+            </div>
+            <div class="accordion-item border-0 mb-2 shadow-sm rounded-3 overflow-hidden">
+                <h2 class="accordion-header"><button class="accordion-button collapsed fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#faq3">직원이 없는 1인 매장에서도 사용 가능한가요?</button></h2>
+                <div id="faq3" class="accordion-collapse collapse" data-bs-parent="#faqAcc"><div class="accordion-body text-muted">물론입니다! 직원 코드 없이 결제하면 모든 매출이 원장님 이름으로 자동 기록됩니다. 결제 관리, 정산, 광고 분석 기능은 직원 수와 관계없이 모두 사용 가능합니다.</div></div>
+            </div>
+            <div class="accordion-item border-0 mb-2 shadow-sm rounded-3 overflow-hidden">
+                <h2 class="accordion-header"><button class="accordion-button collapsed fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#faq4">정산은 어떻게 이루어지나요?</button></h2>
+                <div id="faq4" class="accordion-collapse collapse" data-bs-parent="#faqAcc"><div class="accordion-body text-muted">관리자가 원하는 기간을 선택하면 해당 기간의 총 매출에서 PG 수수료와 영업 커미션을 자동으로 계산합니다. 영업관리자는 커미션을 확인한 후 출금 요청을 보낼 수 있고, 최고관리자가 승인/거절 처리합니다.</div></div>
+            </div>
+            <div class="accordion-item border-0 mb-2 shadow-sm rounded-3 overflow-hidden">
+                <h2 class="accordion-header"><button class="accordion-button collapsed fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#faq5">광고 분석 데이터는 어떻게 수집되나요?</button></h2>
+                <div id="faq5" class="accordion-collapse collapse" data-bs-parent="#faqAcc"><div class="accordion-body text-muted">현재 MVP에서는 관리자 또는 원장님이 직접 수치를 입력하거나 리포트를 업로드하는 방식입니다. 향후 네이버 공식 API 등 외부 데이터 소스 연동을 위한 인터페이스가 준비되어 있습니다.</div></div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ═══ CTA ═══ -->
+<section class="section-pad cta-gradient text-white text-center">
+    <div class="container fade-up">
+        <h2 class="display-5 fw-bold mb-3">지금 바로 ADPAY를 시작하세요</h2>
+        <p class="lead opacity-80 mb-4">가입 즉시 모든 기능을 무료로 체험해보세요.</p>
+        <div class="d-flex justify-content-center gap-3 flex-wrap">
+            <a href="/static/login.html" class="hero-btn hero-btn-primary" style="background:#fff;color:var(--primary);border-color:#fff;"><i class="fas fa-sign-in-alt me-2"></i>무료 가입하기</a>
+            <a href="/static/landing/features.html" class="hero-btn hero-btn-outline"><i class="fas fa-info-circle me-2"></i>기능 둘러보기</a>
+        </div>
+    </div>
+</section>
+
+<!-- ═══ Footer ═══ -->
+<footer class="footer-dark text-light">
+    <div class="container">
+        <div class="row py-5">
+            <div class="col-lg-4 mb-4 mb-lg-0">
+                <h5 class="fw-bold mb-3"><i class="fas fa-credit-card me-2" style="color:#0ea5e9"></i>ADPAY</h5>
+                <p class="text-white-50 small">오프라인 매장을 위한 올인원 결제, 정산, 마케팅 플랫폼. 단말기 결제부터 직원별 매출 관리, 광고 분석까지 하나로 해결합니다.</p>
+                <div class="d-flex gap-3 mt-3">
+                    <a href="#" class="text-white-50 fs-5"><i class="fab fa-instagram"></i></a>
+                    <a href="#" class="text-white-50 fs-5"><i class="fab fa-facebook"></i></a>
+                    <a href="#" class="text-white-50 fs-5"><i class="fab fa-youtube"></i></a>
+                    <a href="#" class="text-white-50 fs-5"><i class="fas fa-blog"></i></a>
+                </div>
+            </div>
+            <div class="col-lg-2 col-md-4 col-6 mb-4 mb-lg-0">
+                <h6 class="fw-bold mb-3">서비스</h6>
+                <ul class="list-unstyled">
+                    <li class="mb-2"><a href="/static/landing/features.html" class="footer-link">기능소개</a></li>
+
+                    <li class="mb-2"><a href="#" class="footer-link">업데이트</a></li>
+                </ul>
+            </div>
+            <div class="col-lg-2 col-md-4 col-6 mb-4 mb-lg-0">
+                <h6 class="fw-bold mb-3">회사</h6>
+                <ul class="list-unstyled">
+                    <li class="mb-2"><a href="#" class="footer-link">회사소개</a></li>
+                    <li class="mb-2"><a href="#" class="footer-link">채용정보</a></li>
+                    <li class="mb-2"><a href="#" class="footer-link">블로그</a></li>
+                </ul>
+            </div>
+            <div class="col-lg-2 col-md-4 col-6 mb-4 mb-lg-0">
+                <h6 class="fw-bold mb-3">지원</h6>
+                <ul class="list-unstyled">
+                    <li class="mb-2"><a href="#" class="footer-link">고객센터</a></li>
+                    <li class="mb-2"><a href="#" class="footer-link">도움말</a></li>
+                    <li class="mb-2"><a href="#" class="footer-link">API 문서</a></li>
+                </ul>
+            </div>
+            <div class="col-lg-2 col-md-4 col-6">
+                <h6 class="fw-bold mb-3">법적 고지</h6>
+                <ul class="list-unstyled">
+                    <li class="mb-2"><a href="#" class="footer-link">이용약관</a></li>
+                    <li class="mb-2"><a href="#" class="footer-link">개인정보처리방침</a></li>
+                    <li class="mb-2"><a href="#" class="footer-link">사업자정보</a></li>
+                </ul>
+            </div>
+        </div>
+        <div class="border-top border-secondary py-3">
+            <div class="row align-items-center">
+                <div class="col-md-6"><p class="mb-0 text-white-50 small">&copy; 2025 ADPAY Inc. All rights reserved.</p></div>
+                <div class="col-md-6 text-md-end"><p class="mb-0 text-white-50 small">서울특별시 강남구 테헤란로 123 | 대표전화 02-1234-5678</p></div>
+            </div>
+        </div>
+    </div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+// ─── Custom Horizontal Slider ───
+(function() {
+    const container = document.getElementById('slideContainer');
+    const dots = document.querySelectorAll('.slider-dot');
+    const totalSlides = 5;
+    let current = 0;
+    let autoTimer;
+    let startX = 0, isDragging = false;
+
+    function goTo(idx) {
+        current = ((idx % totalSlides) + totalSlides) % totalSlides;
+        container.style.transform = `translateX(-${current * 100}%)`;
+        dots.forEach((d, i) => d.classList.toggle('active', i === current));
+    }
+
+    function next() { goTo(current + 1); }
+    function prev() { goTo(current - 1); }
+
+    function startAuto() { autoTimer = setInterval(next, 5000); }
+    function stopAuto() { clearInterval(autoTimer); }
+
+    document.getElementById('nextSlide').addEventListener('click', () => { stopAuto(); next(); startAuto(); });
+    document.getElementById('prevSlide').addEventListener('click', () => { stopAuto(); prev(); startAuto(); });
+    dots.forEach(dot => {
+        dot.addEventListener('click', () => { stopAuto(); goTo(parseInt(dot.dataset.idx)); startAuto(); });
+    });
+
+    // Touch / Mouse drag support
+    const slider = document.getElementById('heroSlider');
+    slider.addEventListener('touchstart', e => { startX = e.touches[0].clientX; isDragging = true; stopAuto(); }, { passive: true });
+    slider.addEventListener('touchend', e => {
+        if (!isDragging) return; isDragging = false;
+        const diff = startX - e.changedTouches[0].clientX;
+        if (Math.abs(diff) > 50) { diff > 0 ? next() : prev(); }
+        startAuto();
+    });
+    slider.addEventListener('mousedown', e => { startX = e.clientX; isDragging = true; stopAuto(); });
+    slider.addEventListener('mouseup', e => {
+        if (!isDragging) return; isDragging = false;
+        const diff = startX - e.clientX;
+        if (Math.abs(diff) > 50) { diff > 0 ? next() : prev(); }
+        startAuto();
+    });
+
+    // Keyboard
+    document.addEventListener('keydown', e => {
+        if (e.key === 'ArrowRight') { stopAuto(); next(); startAuto(); }
+        if (e.key === 'ArrowLeft') { stopAuto(); prev(); startAuto(); }
+    });
+
+    startAuto();
+})();
+
+// ─── Navbar scroll effect ───
+window.addEventListener('scroll', () => {
+    document.getElementById('mainNav').classList.toggle('scrolled', window.scrollY > 50);
+});
+
+// ─── Load landing stats with animation ───
+function animateCounter(el, target, prefix, suffix) {
+    prefix = prefix || ''; suffix = suffix || '';
+    let current = 0;
+    const step = Math.max(1, Math.floor(target / 40));
+    const timer = setInterval(() => {
+        current += step;
+        if (current >= target) { current = target; clearInterval(timer); }
+        el.textContent = prefix + current.toLocaleString() + suffix;
+    }, 30);
+}
+
+fetch('/api/stats/landing')
+    .then(r => r.json())
+    .then(data => {
+        animateCounter(document.getElementById('stat-merchants'), data.total_merchants);
+        animateCounter(document.getElementById('stat-transactions'), data.total_transactions);
+        animateCounter(document.getElementById('stat-adorders'), data.total_ad_orders);
+        animateCounter(document.getElementById('stat-volume'), Math.floor(data.total_volume), '\u20A9');
+    })
+    .catch(() => {});
+
+// ─── Scroll fade animations ───
+const observer = new IntersectionObserver((entries) => {
+    entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); });
+}, { threshold: 0.1 });
+document.querySelectorAll('.fade-up,.fade-left,.fade-right').forEach(el => observer.observe(el));
+
+// ─── 로그인 상태 확인: 로그인 시 '관리자 바로가기'로 변경 ───
+(function() {
+    const token = localStorage.getItem('access_token');
+    if (token) {
+        const navBtn = document.getElementById('navAuthBtn');
+        if (navBtn) {
+            navBtn.innerHTML = `<a class="btn btn-success px-4 py-2 fw-bold" href="/static/dashboard.html" style="border-radius:50px; font-size:.9rem;"><i class="fas fa-tachometer-alt me-1"></i>관리자 바로가기</a>`;
+        }
+        // CTA 및 히어로 버튼도 변경
+        document.querySelectorAll('a[href="/static/login.html"]').forEach(a => {
+            if (a.textContent.includes('무료') || a.textContent.includes('가입') || a.textContent.includes('로그인') || a.textContent.includes('시작') || a.textContent.includes('체험')) {
+                a.href = '/static/dashboard.html';
+                a.innerHTML = '<i class="fas fa-tachometer-alt me-2"></i>대시보드 바로가기';
+            }
+        });
+    }
+})();
+</script>
+</body>
+</html>
