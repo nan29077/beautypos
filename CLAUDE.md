@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-ADPAY는 오프라인 가맹점을 위한 한국 핀테크 플랫폼으로, 결제 단말기 관리, 직원별 매출 귀속, 정산/수수료 관리, 광고 플랫폼, 임대인 월세 수금(방긋페이), 명품 마켓플레이스, 영수증 리뷰 시스템을 제공한다.
+ADPAY는 오프라인 가맹점을 위한 한국 핀테크 플랫폼으로, 결제 단말기 관리, 직원별 매출 귀속, 정산/수수료 관리, 광고 플랫폼, CRM, 영수증 리뷰 시스템을 제공한다.
 
 ## Commands
 
@@ -36,11 +36,11 @@ alembic upgrade head
 
 ### 인증 & 권한 (RBAC)
 
-5개 역할: `ADMIN`, `SALES`, `OWNER`, `DESIGNER`, `LANDLORD`
+4개 역할: `ADMIN`, `SALES`, `OWNER`, `DESIGNER`
 
 - `app/auth/jwt_handler.py` — 토큰 생성/검증, bcrypt 비밀번호 해싱
 - `app/auth/dependencies.py` — `get_current_user` 미들웨어, `require_roles()` 데코레이터 팩토리
-- 각 라우터는 `require_admin`, `require_sales`, `require_owner`, `require_designer`, `require_landlord` 사용
+- 각 라우터는 `require_admin`, `require_sales`, `require_owner`, `require_designer` 사용
 - 단말기 인증은 별도로 `X-Terminal-Key` 헤더 사용 (bcrypt 해시 또는 DEV_MODE에서 평문 비교)
 
 ### API 라우터 (app/api/)
@@ -49,10 +49,9 @@ alembic upgrade head
 |--------|--------|------|
 | auth_routes | /api/auth | 회원가입, 로그인, OAuth, test-login |
 | admin_routes | /api/admin | 가맹점/PG/정산/광고/페이아웃 관리 |
-| owner_routes | /api/owner | 가맹점주 대시보드, 직원/광고/리뷰/명품 |
+| owner_routes | /api/owner | 가맹점주 대시보드, 직원/광고/리뷰 |
 | sales_routes | /api/sales | 영업담당 가맹점 현황, 정산 요청 |
 | designer_routes | /api/designer | 디자이너 매출/대시보드 |
-| landlord_routes | /api/landlord | 임대인 세입자/월세/QR 관리 |
 | terminal_routes | /api/terminal | 단말기 거래 수신 |
 
 ### 서비스 (app/services/)
@@ -68,7 +67,6 @@ alembic upgrade head
 
 **페이아웃:** Owner/Sales가 PayoutRequest 생성 → Admin이 승인/거절
 
-**방긋페이(월세):** 임대인이 세입자 등록 → QR 토큰 생성 → 세입자 QR 스캔 → `GET /pay/{token}` 결제 페이지 → `POST /api/public/rent-qr/{token}/pay` 결제 처리
 
 ### 환경 변수
 
@@ -96,4 +94,3 @@ alembic upgrade head
 | sales@test.com | Test1234! | SALES |
 | owner@test.com | Test1234! | OWNER |
 | designer@test.com | Test1234! | DESIGNER |
-| landlord@test.com | Test1234! | LANDLORD |

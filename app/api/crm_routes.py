@@ -78,6 +78,12 @@ def _staff_name_map(db: Session, merchant_id: int) -> dict:
     return {s.id: s.name for s in rows}
 
 
+def _require_crm_management(ctx: CrmContext) -> None:
+    """Keep merchant-wide configuration changes owner/admin only."""
+    if ctx.is_designer:
+        raise HTTPException(status_code=403, detail="매장 공통 설정은 원장 계정에서 관리해 주세요.")
+
+
 def _customer_grade(visit_count: int, total_spent: float) -> str:
     if total_spent >= 1_000_000 or visit_count >= 20:
         return "VIP"
@@ -501,6 +507,7 @@ def list_services(ctx: CrmContext = Depends(get_crm_context), db: Session = Depe
 
 @router.post("/services")
 def create_service(req: ServiceIn, ctx: CrmContext = Depends(get_crm_context), db: Session = Depends(get_db)):
+    _require_crm_management(ctx)
     s = CrmService(merchant_id=ctx.merchant_id, name=req.name, category=req.category,
                    price=req.price, duration_min=req.duration_min)
     db.add(s); db.commit(); db.refresh(s)
@@ -509,6 +516,7 @@ def create_service(req: ServiceIn, ctx: CrmContext = Depends(get_crm_context), d
 
 @router.put("/services/{sid}")
 def update_service(sid: int, req: ServiceUpdate, ctx: CrmContext = Depends(get_crm_context), db: Session = Depends(get_db)):
+    _require_crm_management(ctx)
     s = db.query(CrmService).filter(CrmService.id == sid, CrmService.merchant_id == ctx.merchant_id).first()
     if not s:
         raise HTTPException(404, "시술을 찾을 수 없습니다")
@@ -520,6 +528,7 @@ def update_service(sid: int, req: ServiceUpdate, ctx: CrmContext = Depends(get_c
 
 @router.delete("/services/{sid}")
 def delete_service(sid: int, ctx: CrmContext = Depends(get_crm_context), db: Session = Depends(get_db)):
+    _require_crm_management(ctx)
     s = db.query(CrmService).filter(CrmService.id == sid, CrmService.merchant_id == ctx.merchant_id).first()
     if not s:
         raise HTTPException(404, "시술을 찾을 수 없습니다")
@@ -538,6 +547,7 @@ def list_service_prices(sid: int, ctx: CrmContext = Depends(get_crm_context), db
 
 @router.post("/services/{sid}/prices")
 def set_service_price(sid: int, req: ServicePriceIn, ctx: CrmContext = Depends(get_crm_context), db: Session = Depends(get_db)):
+    _require_crm_management(ctx)
     s = db.query(CrmService).filter(CrmService.id == sid, CrmService.merchant_id == ctx.merchant_id).first()
     if not s:
         raise HTTPException(404, "시술을 찾을 수 없습니다")
@@ -552,6 +562,7 @@ def set_service_price(sid: int, req: ServicePriceIn, ctx: CrmContext = Depends(g
 
 @router.delete("/service-prices/{pid}")
 def delete_service_price(pid: int, ctx: CrmContext = Depends(get_crm_context), db: Session = Depends(get_db)):
+    _require_crm_management(ctx)
     p = db.query(CrmServicePrice).filter(CrmServicePrice.id == pid, CrmServicePrice.merchant_id == ctx.merchant_id).first()
     if not p:
         raise HTTPException(404, "단가를 찾을 수 없습니다")

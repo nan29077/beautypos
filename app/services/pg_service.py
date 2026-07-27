@@ -59,33 +59,11 @@ class TossMock(PGProviderBase):
         return {"success": True, "approval_code": f"TOSS-{random.randint(100000,999999)}"}
 
 
-class OngiProvider(PGProviderBase):
-    """ONGI (위아오너) — 내통장 결제. 실제 결제는 ongi_service의 결제창 리다이렉트 + 콜백 흐름으로 진행."""
-
-    def test_connection(self, mid: str, secret: str) -> Dict[str, Any]:
-        from app.config import get_settings
-        settings = get_settings()
-        configured = bool(settings.ONGI_QR_TOKEN)
-        return {
-            "success": configured,
-            "message": "ONGI 연동 준비 완료" if configured else "ONGI_QR_TOKEN이 설정되지 않았습니다",
-            "tested_at": datetime.utcnow().isoformat(),
-        }
-
-    def process_payment(self, mid, secret, amount, **kw):
-        # ONGI는 결제창 리다이렉트 방식 — 동기 process_payment는 지원하지 않음
-        return {
-            "success": False,
-            "message": "ONGI는 결제창 리다이렉트 방식입니다. /api/public/rent-qr/{token}/ongi/initiate 를 사용하세요.",
-        }
-
-
 # Provider registry
 PG_PROVIDERS: Dict[str, PGProviderBase] = {
     "seedpayments": SeedPaymentsMock(),
     "kiwoompay": KiwoomPayMock(),
     "toss": TossMock(),
-    "ongi": OngiProvider(),
 }
 
 

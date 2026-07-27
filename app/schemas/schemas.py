@@ -13,7 +13,6 @@ class RegisterRequest(BaseModel):
     email: str
     password: str = Field(min_length=6)
     name: str
-    role: str = "owner"  # default
 
 
 class LoginRequest(BaseModel):
@@ -112,19 +111,19 @@ class PayoutRequestCreate(BaseModel):
 # ─── Ad Orders ───────────────────────────────────────────────
 
 class AdBlogOrderCreate(BaseModel):
-    campaign_name: str
+    campaign_name: str = Field(min_length=2, max_length=300)
     address: Optional[str] = None
     contact: Optional[str] = None
-    links: List[str] = []
-    main_keywords: List[str] = Field(default=[], max_length=5)
-    hashtags: List[str] = Field(default=[], max_length=5)
+    links: List[str] = Field(default_factory=list, max_length=10)
+    main_keywords: List[str] = Field(default_factory=list, min_length=1, max_length=5)
+    hashtags: List[str] = Field(default_factory=list, max_length=5)
     description: Optional[str] = None
     extra_image_link: Optional[str] = None
 
 
 class AdPlaceTrafficOrderCreate(BaseModel):
-    place_name_or_id: str
-    search_keywords: List[str] = Field(default=[], max_length=3)
+    place_name_or_id: str = Field(min_length=2, max_length=300)
+    search_keywords: List[str] = Field(default_factory=list, min_length=1, max_length=3)
 
 
 class AdOrderStatusUpdate(BaseModel):
@@ -141,6 +140,7 @@ class AdMetricCreate(BaseModel):
     blog_review_count: int = 0
     visitor_review_count: int = 0
     place_rank: Optional[int] = None
+    search_keyword: Optional[str] = Field(default=None, max_length=200)
     source: str = "manual"
 
 
@@ -150,11 +150,12 @@ class AdPlaceProfileCreate(BaseModel):
     place_url: Optional[str] = None
     place_id: Optional[str] = None
     nickname: Optional[str] = None
+    analysis_keyword: Optional[str] = Field(default=None, max_length=200)
 
 
 class AdCompetitorCreate(BaseModel):
-    competitor_place_url: str
-    memo: Optional[str] = None
+    competitor_place_url: str = Field(min_length=5, max_length=500)
+    memo: Optional[str] = Field(default=None, max_length=200)
 
 
 # ─── Fee Policy ──────────────────────────────────────────────

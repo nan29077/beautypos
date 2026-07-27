@@ -21,7 +21,6 @@ from app.models.ad import (
     AdOrder, AdOrderType, AdOrderStatus,
     AdOrderBlogDetail, AdOrderPlaceTrafficDetail,
 )
-from app.models.landlord import LandlordProfile, Tenant, RentPayment, PropertyType, RentPaymentStatus, RentPaymentMethod
 from app.models.crm import (CrmCustomer, CrmService, CrmVisit, CrmReservation, CrmPointLog,
                             CrmMessageTemplate, CrmCoupon, ReservationStatus, MessageChannel)
 
@@ -70,7 +69,6 @@ def run_seed(db: Session):
         merchant_id=merchant.id,
         terminal_serial="TERM001",
         api_key_hash=pwd_context.hash(TERMINAL_API_KEY),
-        api_key_plain=TERMINAL_API_KEY,
         memo="메인 카운터 단말기",
     )
     db.add(terminal)
@@ -80,8 +78,7 @@ def run_seed(db: Session):
     pg1 = PGProvider(code="seedpayments", name="씨드페이먼츠")
     pg2 = PGProvider(code="kiwoompay", name="키움페이")
     pg3 = PGProvider(code="toss", name="토스")
-    pg4 = PGProvider(code="ongi", name="ONGI(위아오너)")
-    db.add_all([pg1, pg2, pg3, pg4])
+    db.add_all([pg1, pg2, pg3])
     db.flush()
 
     # ─── 6. Merchant PG Config (sample) ─────────────────────
@@ -213,71 +210,17 @@ def run_seed(db: Session):
     )
     db.add(place_detail)
 
-    # ─── Commit All ──────────────────────────────────────────
-    # ─── 13. Landlord (방긋페이) ──────────────────────────────
-    landlord_user = User(email="landlord@test.com", password_hash=pw_hash, name="김임대", role=UserRole.LANDLORD)
-    db.add(landlord_user)
-    db.flush()
-
-    landlord_profile = LandlordProfile(
-        user_id=landlord_user.id,
-        building_name="강남 센트럴 오피스텔",
-        business_no="987-65-43210",
-        address="서울 강남구 역삼로 456",
-        phone="010-9876-5432",
-        bank_name="국민은행",
-        bank_account="123-456-789012",
-        bank_holder="김임대",
-    )
-    db.add(landlord_profile)
-    db.flush()
-
-    # 임차인 4명
-    tenants_data = [
-        {"name": "박세입", "phone": "010-1111-2222", "property_type": PropertyType.OFFICETEL, "property_name": "강남 센트럴 오피스텔", "unit_number": "301호", "monthly_rent": 800000, "deposit": 10000000, "rent_due_day": 25},
-        {"name": "이세입", "phone": "010-3333-4444", "property_type": PropertyType.OFFICETEL, "property_name": "강남 센트럴 오피스텔", "unit_number": "502호", "monthly_rent": 950000, "deposit": 15000000, "rent_due_day": 25},
-        {"name": "최세입", "phone": "010-5555-6666", "property_type": PropertyType.APARTMENT, "property_name": "래미안 역삼", "unit_number": "1203호", "monthly_rent": 1500000, "deposit": 30000000, "rent_due_day": 1},
-        {"name": "정세입", "phone": "010-7777-8888", "property_type": PropertyType.COMMERCIAL, "property_name": "역삼역 상가", "unit_number": "B102호", "monthly_rent": 2000000, "deposit": 50000000, "rent_due_day": 5},
-    ]
-    tenant_objs = []
-    for td in tenants_data:
-        t = Tenant(landlord_user_id=landlord_user.id, **td)
-        db.add(t)
-        tenant_objs.append(t)
-    db.flush()
-
-    # 임차인별 최근 3개월 결제 데이터
-    card_brands_rent = ["VISA", "MASTER", "삼성카드", "현대카드"]
-    for t_obj in tenant_objs:
-        for m in range(3):
-            pay_date = now - timedelta(days=30 * m + random.randint(0, 5))
-            pay_month = (now - timedelta(days=30 * m)).strftime("%Y-%m")
-            rp = RentPayment(
-                tenant_id=t_obj.id,
-                landlord_user_id=landlord_user.id,
-                amount=t_obj.monthly_rent,
-                payment_method=RentPaymentMethod.CARD_RECURRING if t_obj.is_recurring else RentPaymentMethod.CARD_ONCE,
-                status=RentPaymentStatus.PAID,
-                card_brand=random.choice(card_brands_rent),
-                approval_code=f"RENT-{random.randint(100000, 999999)}",
-                payment_month=pay_month,
-                paid_at=pay_date,
-                created_at=pay_date,
-            )
-            db.add(rp)
 
     db.commit()
 
-    # ─── 14. CRM 데모 데이터 ────────────────────────────────
+    # ─── 13. CRM 데모 데이터 ────────────────────────────────
     seed_crm_demo(db)
 
-    print(f"   Created users: admin/sales/owner/designer x2/landlord")
+    print("   Created users: admin/sales/owner/designer x2")
     print(f"   Created merchant: {merchant.name}")
     print(f"   Created 2 staff, 1 terminal, 3 PG providers")
     print(f"   Created 10 sample transactions")
     print(f"   Created 2 ad orders + 7 days of metrics")
-    print(f"   Created landlord profile: {landlord_profile.building_name}")
-    print(f"   Created {len(tenant_objs)} tenants + rent payments")
     print(f"   Terminal API Key: {TERMINAL_API_KEY}")
 
 

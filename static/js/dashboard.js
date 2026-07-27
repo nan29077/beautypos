@@ -5,6 +5,28 @@
 let currentUser = null;
 let currentPage = 'home';
 let adFeatureFlags = { ad_order_mgmt_enabled: false, ad_blog_enabled: false, ad_place_traffic_enabled: false };
+const roleMobileQuery = window.matchMedia('(max-width: 767.98px)');
+let mobileEnhanceObserver = null;
+let mobileEnhanceScheduled = false;
+let adminMetricTargets = [];
+const mobilePageMeta = {
+    home: ['대시보드', 'fas fa-home'],
+    'owner-transactions': ['결제 내역', 'fas fa-receipt'],
+    'owner-staff': ['직원 관리', 'fas fa-users'],
+    'owner-staff-sales': ['직원별 매출', 'fas fa-chart-bar'],
+    'owner-settlement': ['정산 분배', 'fas fa-coins'],
+    'owner-daily-summary': ['일별 결제내역', 'fas fa-calendar-day'],
+    'owner-receipt-review': ['영수증 리뷰', 'fas fa-qrcode'],
+    'owner-analysis': ['광고 분석', 'fas fa-chart-line'],
+    'owner-adorders': ['광고 주문 내역', 'fas fa-bullhorn'],
+    'owner-adorder-new': ['새 광고 주문', 'fas fa-plus-circle'],
+    crm: ['미용실 관리', 'fas fa-user-friends'],
+    'owner-info': ['매장 정보', 'fas fa-store'],
+    'designer-transactions': ['결제 내역', 'fas fa-receipt'],
+    'designer-monthly': ['월별 통계', 'fas fa-calendar-alt'],
+    'designer-settlement': ['정산 분배', 'fas fa-coins'],
+    'designer-profile': ['내 정보', 'fas fa-id-badge']
+};
 
 // ─── Init ──────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
@@ -23,13 +45,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             ownerMerchantInfo = await apiGet('/api/owner/merchant-info');
         } catch(e) { ownerMerchantInfo = null; }
     }
-    // 임대인 프로필 로드
-    if (currentUser.role === 'landlord') {
-        try {
-            landlordProfileInfo = await apiGet('/api/landlord/profile');
-        } catch(e) { landlordProfileInfo = null; }
-    }
-
     // 광고 기능 플래그 로드 (사장님 계정에서 사이드바 메뉴 표시 제어)
     if (currentUser.role === 'owner') {
         try {
@@ -39,8 +54,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const displayName = (currentUser.role === 'owner' && ownerMerchantInfo)
         ? ownerDisplayName(currentUser, ownerMerchantInfo.name)
-        : (currentUser.role === 'landlord' && landlordProfileInfo && landlordProfileInfo.building_name)
-        ? landlordProfileInfo.building_name + ' 임대인'
         : currentUser.name;
     document.getElementById('sidebarUserName').textContent = displayName;
     const roleEl = document.getElementById('sidebarRole');
@@ -57,20 +70,23 @@ document.addEventListener('DOMContentLoaded', async () => {
         const brandEl = document.getElementById('sidebarBrand');
         if (brandEl) brandEl.textContent = ownerMerchantInfo.name;
     }
-    // 임대인일 때 브랜드를 방긋페이로 변경
-    if (currentUser.role === 'landlord') {
-        const brandEl = document.getElementById('sidebarBrand');
-        if (brandEl) brandEl.textContent = '방긋페이';
-        const mobileBrandEl = document.getElementById('mobileBrand');
-        if (mobileBrandEl) mobileBrandEl.textContent = '방긋페이';
-    }
-
     buildSidebar();
-    navigate('home');
+    setupRoleMobileUI();
+    const requestedPage = location.hash.replace(/^#/, '');
+    navigate(mobilePageMeta[requestedPage] ? requestedPage : 'home', { replaceHistory: true });
 });
 
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+}
+
 function roleLabel(r) {
-    return {admin:'최고관리자', sales:'영업관리자', owner:'사장님(원장님)', designer:'직원(디자이너)', landlord:'임대인'}[r] || r;
+    return {admin:'최고관리자', sales:'영업관리자', owner:'사장님(원장님)', designer:'직원(디자이너)'}[r] || r;
 }
 
 /**
@@ -84,7 +100,6 @@ function ownerDisplayName(user, merchantName) {
 }
 
 let ownerMerchantInfo = null; // 원장님의 매장 정보 캐시
-let landlordProfileInfo = null; // 임대인의 프로필 정보 캐시
 
 function toggleSidebar() {
     const sidebar = document.getElementById('sidebar');
@@ -92,6 +107,183 @@ function toggleSidebar() {
     sidebar.classList.toggle('show');
     if (overlay) overlay.classList.toggle('show', sidebar.classList.contains('show'));
 }
+
+function resetFormModalFooter(showSave = true) {
+    const footer = document.getElementById('formModalFooter');
+    if (!footer) return null;
+    footer.innerHTML = `
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">닫기</button>
+        <button type="button" class="btn btn-primary" id="formModalSave">저장</button>`;
+    const save = document.getElementById('formModalSave');
+    save.style.display = showSave ? '' : 'none';
+    return save;
+}
+
+function adStatusOptions(allowedStatuses, includePlaceholder = true) {
+    const labels = {
+        requested: '요청됨',
+        reviewing: '검토중',
+        running: '집행중',
+        done: '완료',
+        rejected: '반려'
+    };
+    const allowed = allowedStatuses || [];
+    return `${includePlaceholder ? '<option value="" selected disabled>다음 상태</option>' : ''}${
+        allowed.map(status => `<option value="${status}">${labels[status] || status}</option>`).join('')
+    }`;
+}
+
+function isRoleMobile() {
+    if (!currentUser || !['owner', 'designer'].includes(currentUser.role)) return false;
+    const forcedMobile = new URLSearchParams(location.search).get('view') === 'mobile';
+    return forcedMobile || roleMobileQuery.matches;
+}
+
+function ownerMobilePages() {
+    const needsStaff = ownerMerchantInfo ? ownerMerchantInfo.needs_staff_management : true;
+    const pages = ['home', 'owner-transactions'];
+    if (needsStaff) {
+        pages.push('owner-staff', 'owner-staff-sales', 'owner-settlement');
+    }
+    pages.push('owner-daily-summary', 'owner-receipt-review', 'owner-analysis');
+    if (adFeatureFlags.ad_order_mgmt_enabled) {
+        pages.push('owner-adorders', 'owner-adorder-new');
+    }
+    pages.push('crm', 'owner-info');
+    return pages;
+}
+
+function roleMobilePages() {
+    return currentUser.role === 'owner'
+        ? ownerMobilePages()
+        : ['home', 'designer-transactions', 'designer-monthly', 'designer-settlement', 'crm', 'designer-profile'];
+}
+
+function setupRoleMobileUI() {
+    document.body.classList.toggle('role-mobile-ui', isRoleMobile());
+    document.body.dataset.role = currentUser.role;
+    if (!isRoleMobile()) {
+        mobileEnhanceObserver?.disconnect();
+        mobileEnhanceObserver = null;
+        return;
+    }
+
+    const roleLabelEl = document.getElementById('mobileRoleLabel');
+    if (roleLabelEl) {
+        const merchantName = currentUser.role === 'owner' && ownerMerchantInfo?.name;
+        roleLabelEl.textContent = merchantName || (currentUser.role === 'designer' ? `${currentUser.name} 디자이너` : 'BEAUTYPOS');
+    }
+    buildMobileNavigation();
+    observeRoleMobileContent();
+}
+
+function observeRoleMobileContent() {
+    const container = document.getElementById('pageContent');
+    mobileEnhanceObserver?.disconnect();
+    mobileEnhanceObserver = new MutationObserver(() => {
+        if (mobileEnhanceScheduled) return;
+        mobileEnhanceScheduled = true;
+        requestAnimationFrame(() => {
+            mobileEnhanceScheduled = false;
+            enhanceRoleMobilePage(container);
+        });
+    });
+    mobileEnhanceObserver.observe(container, { childList: true, subtree: true });
+}
+
+function buildMobileNavigation() {
+    if (!isRoleMobile()) return;
+    const pages = roleMobilePages();
+    const bottomPages = currentUser.role === 'owner'
+        ? ['home', 'owner-transactions', pages.includes('owner-staff') ? 'owner-staff' : 'owner-daily-summary', 'crm']
+        : ['home', 'designer-transactions', 'designer-monthly', 'crm'];
+    const nav = document.getElementById('mobileBottomNav');
+    nav.innerHTML = bottomPages.map(page => {
+        const [label, icon] = mobilePageMeta[page];
+        return `<button type="button" data-mobile-page="${page}" onclick="navigate('${page}')">
+            <i class="${icon}"></i><span>${label}</span>
+        </button>`;
+    }).join('') + `<button type="button" data-mobile-action="more" onclick="openMobileMenu()">
+        <i class="fas fa-ellipsis-h"></i><span>전체</span>
+    </button>`;
+
+    const grid = document.getElementById('mobileMenuGrid');
+    grid.innerHTML = pages.filter(page => page !== 'home').map(page => {
+        const [label, icon] = mobilePageMeta[page];
+        return `<button type="button" data-mobile-page="${page}" onclick="navigate('${page}')">
+            <span class="role-mobile-menu-icon"><i class="${icon}"></i></span>
+            <span>${label}</span>
+        </button>`;
+    }).join('');
+    updateMobileNavigation(currentPage);
+}
+
+function openMobileMenu() {
+    if (!isRoleMobile()) return;
+    const sheet = document.getElementById('mobileMenuSheet');
+    sheet.classList.add('show');
+    sheet.setAttribute('aria-hidden', 'false');
+    document.getElementById('mobileSheetBackdrop').classList.add('show');
+    document.body.classList.add('mobile-menu-open');
+}
+
+function closeMobileMenu() {
+    const sheet = document.getElementById('mobileMenuSheet');
+    if (!sheet) return;
+    sheet.classList.remove('show');
+    sheet.setAttribute('aria-hidden', 'true');
+    document.getElementById('mobileSheetBackdrop')?.classList.remove('show');
+    document.body.classList.remove('mobile-menu-open');
+}
+
+function updateMobileNavigation(page) {
+    if (!isRoleMobile()) return;
+    const title = mobilePageMeta[page]?.[0] || 'BEAUTYPOS';
+    const titleEl = document.getElementById('mobilePageTitle');
+    if (titleEl) titleEl.textContent = title;
+    document.querySelectorAll('[data-mobile-page]').forEach(el => {
+        const active = el.dataset.mobilePage === page;
+        el.classList.toggle('active', active);
+        if (active) el.setAttribute('aria-current', 'page');
+        else el.removeAttribute('aria-current');
+    });
+    const moreButton = document.querySelector('[data-mobile-action="more"]');
+    if (moreButton) {
+        const primaryPages = [...document.querySelectorAll('#mobileBottomNav [data-mobile-page]')].map(el => el.dataset.mobilePage);
+        moreButton.classList.toggle('active', !primaryPages.includes(page));
+    }
+}
+
+function enhanceRoleMobilePage(container) {
+    if (!isRoleMobile()) return;
+    container.querySelectorAll('.table').forEach(table => {
+        if (table.classList.contains('mobile-keep-table')) return;
+        const labels = [...table.querySelectorAll('thead th')].map(th => th.textContent.trim());
+        if (!labels.length) return;
+        table.classList.add('mobile-card-table');
+        table.querySelectorAll('tbody tr').forEach(row => {
+            [...row.children].forEach((cell, index) => {
+                if (cell.tagName === 'TD') cell.dataset.label = labels[index] || '';
+            });
+        });
+    });
+    container.querySelectorAll('.table-responsive').forEach(wrapper => {
+        wrapper.setAttribute('tabindex', '0');
+        wrapper.setAttribute('role', 'region');
+        wrapper.setAttribute('aria-label', '목록');
+    });
+}
+
+roleMobileQuery.addEventListener?.('change', () => {
+    if (!currentUser) return;
+    setupRoleMobileUI();
+    enhanceRoleMobilePage(document.getElementById('pageContent'));
+});
+
+window.addEventListener('popstate', event => {
+    const page = event.state?.page || location.hash.replace(/^#/, '') || 'home';
+    if (page !== currentPage && mobilePageMeta[page]) navigate(page, { skipHistory: true });
+});
 
 // ─── Enhanced Sidebar ────────────────────────────────────────
 function buildSidebar() {
@@ -113,25 +305,11 @@ function buildSidebar() {
         <a class="nav-link" href="#" data-page="admin-payouts"><i class="fas fa-money-bill-wave"></i>출금요청 관리</a>
         <div class="nav-section"><i class="fas fa-bullhorn me-1" style="font-size:.6rem"></i>광고 · 마케팅</div>
         <a class="nav-link" href="#" data-page="admin-adorders"><i class="fas fa-bullhorn"></i>광고주문 관리</a>
-        <a class="nav-link" href="#" data-page="admin-metrics"><i class="fas fa-chart-bar"></i>광고 지표 입력</a>
+        <a class="nav-link" href="#" data-page="admin-metrics"><i class="fas fa-chart-bar"></i>광고 분석 관리</a>
         <div class="nav-section"><i class="fas fa-user-tie me-1" style="font-size:.6rem"></i>ADPAY 영업 · 인력</div>
         <a class="nav-link" href="#" data-page="admin-sales-managers"><i class="fas fa-user-tie"></i>영업관리자 관리</a>
         <a class="nav-link" href="#" data-page="admin-sales-assign"><i class="fas fa-handshake"></i>영업관리자 연결</a>
         <a class="nav-link" href="#" data-page="admin-users"><i class="fas fa-users-cog"></i>사용자 목록</a>`;
-        // ─── 방긋페이 메뉴 (당분간 숨김) ──────────────
-        // 복원 시 아래 블록 주석만 해제하면 됨.
-        /*
-        html += `
-        <div class="nav-divider"></div>
-        <div class="nav-section" style="color:#ff9f1c"><i class="fas fa-smile me-1" style="font-size:.6rem"></i>방긋페이</div>
-        <a class="nav-link" href="#" data-page="admin-landlords"><i class="fas fa-building" style="color:#ff9f1c"></i>임대인 관리</a>
-        <a class="nav-link" href="#" data-page="admin-tenants"><i class="fas fa-users" style="color:#ff9f1c"></i>임차인 현황</a>
-        <a class="nav-link" href="#" data-page="admin-rent-payments"><i class="fas fa-money-check-alt" style="color:#ff9f1c"></i>월세 결제 내역</a>
-        <a class="nav-link" href="#" data-page="admin-pg-landlord"><i class="fas fa-key" style="color:#ff9f1c"></i>PG 설정 (임대인)</a>
-        <div class="nav-section" style="color:#ff9f1c"><i class="fas fa-user-tie me-1" style="font-size:.6rem"></i>방긋 영업</div>
-        <a class="nav-link" href="#" data-page="admin-banggut-sales"><i class="fas fa-user-tie" style="color:#ff9f1c"></i>영업관리자 관리</a>
-        <a class="nav-link" href="#" data-page="admin-banggut-sales-assign"><i class="fas fa-handshake" style="color:#ff9f1c"></i>영업관리자 연결</a>`;
-        */
     } else if (role === 'sales') {
         html += `
         <div class="nav-section">영업 관리</div>
@@ -170,16 +348,6 @@ function buildSidebar() {
         <a class="nav-link" href="#" data-page="crm"><i class="fas fa-user-friends"></i>미용실 관리 프로그램</a>
         <div class="nav-section">설정</div>
         <a class="nav-link" href="#" data-page="owner-info"><i class="fas fa-cog"></i>매장 정보</a>`;
-    } else if (role === 'landlord') {
-        html += `
-        <div class="nav-section">임차인 관리</div>
-        <a class="nav-link" href="#" data-page="landlord-tenants"><i class="fas fa-users"></i>임차인 목록</a>
-        <a class="nav-link" href="#" data-page="landlord-qr"><i class="fas fa-qrcode"></i>QR코드 관리</a>
-        <div class="nav-section">결제 관리</div>
-        <a class="nav-link" href="#" data-page="landlord-payments"><i class="fas fa-credit-card"></i>결제 내역</a>
-        <a class="nav-link" href="#" data-page="landlord-monthly"><i class="fas fa-chart-bar"></i>월별 수금 현황</a>
-        <div class="nav-section">설정</div>
-        <a class="nav-link" href="#" data-page="landlord-profile"><i class="fas fa-cog"></i>내 정보 관리</a>`;
     } else if (role === 'designer') {
         html += `
         <div class="nav-section">내 매출</div>
@@ -202,7 +370,7 @@ function buildSidebar() {
     });
 }
 
-function navigate(page) {
+function navigate(page, options = {}) {
     currentPage = page;
     document.querySelectorAll('#sidebarNav .nav-link').forEach(l => {
         l.classList.toggle('active', l.dataset.page === page);
@@ -210,6 +378,13 @@ function navigate(page) {
     document.getElementById('sidebar').classList.remove('show');
     const overlay = document.getElementById('sidebarOverlay');
     if (overlay) overlay.classList.remove('show');
+    closeMobileMenu();
+    updateMobileNavigation(page);
+    if (isRoleMobile() && !options.skipHistory) {
+        const url = `${location.pathname}${location.search}#${page}`;
+        if (options.replaceHistory) history.replaceState({ page }, '', url);
+        else if (location.hash !== `#${page}`) history.pushState({ page }, '', url);
+    }
     loadPage(page);
 }
 
@@ -259,23 +434,11 @@ async function loadPage(page) {
             case 'designer-monthly': await loadDesignerMonthly(c, t); break;
             case 'designer-settlement': await loadDesignerSettlement(c, t); break;
             case 'designer-profile': await loadDesignerProfile(c, t); break;
-            // Landlord (방긋페이)
-            case 'landlord-tenants': await loadLandlordTenants(c, t); break;
-            case 'landlord-qr': await loadLandlordQR(c, t); break;
-            case 'landlord-payments': await loadLandlordPayments(c, t); break;
-            case 'landlord-monthly': await loadLandlordMonthly(c, t); break;
-            case 'landlord-profile': await loadLandlordProfile(c, t); break;
-            // Admin - BangGutPay
-            case 'admin-landlords': await loadAdminLandlords(c, t); break;
-            case 'admin-tenants': await loadAdminTenants(c, t); break;
-            case 'admin-rent-payments': await loadAdminRentPayments(c, t); break;
-            case 'admin-pg-landlord': await loadAdminPGLandlord(c, t); break;
-            case 'admin-banggut-sales': await loadAdminBanggutSales(c, t); break;
-            case 'admin-banggut-sales-assign': await loadAdminBanggutSalesAssign(c, t); break;
             default: c.innerHTML = '<div class="alert alert-warning"><i class="fas fa-exclamation-triangle me-2"></i>페이지를 찾을 수 없습니다.</div>';
         }
+        enhanceRoleMobilePage(c);
     } catch (e) {
-        c.innerHTML = `<div class="alert alert-danger"><i class="fas fa-exclamation-circle me-2"></i>${e.message}</div>`;
+        c.innerHTML = `<div class="alert alert-danger"><i class="fas fa-exclamation-circle me-2"></i>${escapeHtml(e.message)}</div>`;
     }
 }
 
@@ -353,18 +516,6 @@ async function loadHomePage(c, t) {
                     <div class="fw-bold text-warning">${stats.pending_ad_orders}</div><small class="text-muted" style="font-size:.7rem">대기 광고</small>
                 </div></div>
             </div>
-            <!-- 방긋페이 KPI 카드 (당분간 숨김)
-            <div class="col-6 col-md-4 col-lg-2">
-                <div class="card shadow-sm border-0" style="border-radius:12px;border-left:3px solid #ff9f1c"><div class="card-body py-2 px-3 text-center">
-                    <div class="fw-bold" style="color:#ff9f1c">${stats.total_landlords}</div><small class="text-muted" style="font-size:.7rem">임대인</small>
-                </div></div>
-            </div>
-            <div class="col-6 col-md-4 col-lg-2">
-                <div class="card shadow-sm border-0" style="border-radius:12px;border-left:3px solid #ff6b35"><div class="card-body py-2 px-3 text-center">
-                    <div class="fw-bold" style="color:#ff6b35">${stats.total_tenants}</div><small class="text-muted" style="font-size:.7rem">임차인</small>
-                </div></div>
-            </div>
-            -->
         </div>
 
         <!-- 차트 + 최근결제 -->
@@ -394,25 +545,8 @@ async function loadHomePage(c, t) {
             </div>
         </div>
 
-        <!-- 빠른 바로가기 (방긋페이 현황 카드는 당분간 숨김) -->
+        <!-- 빠른 바로가기 -->
         <div class="row g-3 mb-4">
-            <!--
-            <div class="col-lg-4">
-                <div class="card data-card shadow-sm h-100" style="border-radius:14px;border-top:3px solid #ff9f1c">
-                    <div class="card-header"><h5 class="mb-0"><i class="fas fa-building me-2" style="color:#ff9f1c"></i>방긋페이 현황</h5></div>
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between mb-2"><span class="text-muted">결제완료</span><strong class="text-success">${stats.rent_paid}건</strong></div>
-                        <div class="d-flex justify-content-between mb-2"><span class="text-muted">대기/미납</span><strong class="text-danger">${stats.rent_pending}건</strong></div>
-                        <div class="d-flex justify-content-between mb-3"><span class="text-muted">총 수금액</span><strong style="color:#ff9f1c">${formatMoney(stats.rent_total_amount)}</strong></div>
-                        <hr>
-                        <div class="d-grid gap-2">
-                            <a href="#" onclick="navigate('admin-landlords')" class="btn btn-sm btn-outline-warning"><i class="fas fa-building me-1"></i>임대인 관리</a>
-                            <a href="#" onclick="navigate('admin-rent-payments')" class="btn btn-sm btn-outline-warning"><i class="fas fa-money-check-alt me-1"></i>월세 결제</a>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            -->
             <div class="col-12">
                 <div class="card data-card shadow-sm h-100" style="border-radius:14px">
                     <div class="card-header"><h5 class="mb-0"><i class="fas fa-th-large text-primary me-2"></i>빠른 바로가기</h5></div>
@@ -486,7 +620,7 @@ async function loadHomePage(c, t) {
         // Enhanced stats (알림, 월별 추이, TOP 가맹점 등)
         try {
             const enhanced = await apiGet('/api/admin/stats/enhanced');
-            
+
             // 월별 추이 차트
             setTimeout(() => {
                 const mCtx = document.getElementById('adminMonthlyTrend');
@@ -505,7 +639,7 @@ async function loadHomePage(c, t) {
                     });
                 }
             }, 200);
-            
+
             // TOP 가맹점
             const topEl = document.getElementById('topMerchantsList');
             if (topEl) {
@@ -526,7 +660,7 @@ async function loadHomePage(c, t) {
                     `).join('');
                 }
             }
-            
+
             // 알림 & 최근활동
             const actEl = document.getElementById('adminAlertActivity');
             if (actEl) {
@@ -554,7 +688,7 @@ async function loadHomePage(c, t) {
                 `).join('') || '<div class="p-3 text-center text-muted">활동 내역 없음</div>';
                 actEl.innerHTML = alertHtml;
             }
-            
+
             // 신규 사용자
             const newEl = document.getElementById('newUsersMonth');
             if (newEl) newEl.textContent = (enhanced.new_users_month || 0) + '명';
@@ -902,132 +1036,6 @@ async function loadHomePage(c, t) {
             document.getElementById('dashCalNext').onclick = () => { dcMonth++; if (dcMonth > 12) { dcMonth = 1; dcYear++; } renderDashCal(); };
             renderDashCal();
         }, 200);
-    } else if (role === 'landlord') {
-        stats = await apiGet('/api/landlord/dashboard-stats');
-        const collRate = stats.collection_rate || 0;
-        const recentPayments = stats.recent_payments || [];
-        const trend = stats.monthly_trend || [];
-
-        html = `
-        <!-- 건물 정보 배너 -->
-        <div class="card border-0 shadow-sm mb-4" style="border-radius:14px;overflow:hidden;background:linear-gradient(135deg,#2d1b03 0%,#5a3408 50%,#ff9f1c 100%);">
-            <div class="card-body py-3 px-4 d-flex align-items-center justify-content-between flex-wrap gap-2">
-                <div class="d-flex align-items-center gap-3">
-                    <div style="width:44px;height:44px;border-radius:12px;background:rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;">
-                        <i class="fas fa-building text-white"></i>
-                    </div>
-                    <div>
-                        <div class="text-white fw-bold">${stats.building_name || '내 건물'}</div>
-                        <div style="color:rgba(255,255,255,.65);font-size:.8rem;">${stats.address || ''}</div>
-                    </div>
-                </div>
-                <span class="badge" style="background:rgba(255,255,255,.2);color:#fff;padding:6px 14px;border-radius:50px;font-size:.78rem;">
-                    <i class="fas fa-smile me-1" style="color:#ff9f1c"></i>방긋페이
-                </span>
-            </div>
-        </div>
-
-        <!-- KPI Cards -->
-        <div class="row g-3 mb-4">
-            <div class="col-lg-3 col-md-6 col-6"><div class="card kpi-card shadow-sm">
-                <div class="card-body"><div class="d-flex align-items-center">
-                    <div class="kpi-icon bg-warning bg-opacity-10 me-3"><i class="fas fa-users text-warning"></i></div>
-                    <div><div class="kpi-value">${stats.tenant_count || 0}명</div><div class="kpi-label">활성 임차인</div></div>
-                </div></div></div></div>
-            <div class="col-lg-3 col-md-6 col-6"><div class="card kpi-card shadow-sm">
-                <div class="card-body"><div class="d-flex align-items-center">
-                    <div class="kpi-icon bg-info bg-opacity-10 me-3"><i class="fas fa-won-sign text-info"></i></div>
-                    <div><div class="kpi-value">${formatMoney(stats.total_monthly_rent)}</div><div class="kpi-label">월 예정 수금액</div></div>
-                </div></div></div></div>
-            <div class="col-lg-3 col-md-6 col-6"><div class="card kpi-card shadow-sm">
-                <div class="card-body"><div class="d-flex align-items-center">
-                    <div class="kpi-icon bg-success bg-opacity-10 me-3"><i class="fas fa-check-circle text-success"></i></div>
-                    <div><div class="kpi-value">${formatMoney(stats.month_collected)}</div><div class="kpi-label">이번달 수금액</div></div>
-                </div></div></div></div>
-            <div class="col-lg-3 col-md-6 col-6"><div class="card kpi-card shadow-sm">
-                <div class="card-body"><div class="d-flex align-items-center">
-                    <div class="kpi-icon bg-primary bg-opacity-10 me-3"><i class="fas fa-percentage text-primary"></i></div>
-                    <div><div class="kpi-value">${collRate}%</div><div class="kpi-label">수금률</div></div>
-                </div></div></div></div>
-        </div>
-
-        <div class="row g-3 mb-4">
-            <!-- 월별 수금 추이 차트 -->
-            <div class="col-md-8">
-                <div class="card data-card h-100"><div class="card-header"><h5><i class="fas fa-chart-area me-2" style="color:#ff9f1c"></i>월별 수금 추이</h5></div>
-                <div class="card-body" style="min-height:250px;">
-                    <canvas id="landlordTrendChart"></canvas>
-                </div></div>
-            </div>
-            <!-- 최근 결제 -->
-            <div class="col-md-4">
-                <div class="card data-card h-100"><div class="card-header"><h5><i class="fas fa-history me-2 text-success"></i>최근 결제</h5></div>
-                <div class="card-body p-0">
-                    ${recentPayments.length === 0 ? '<div class="text-center text-muted py-4">결제 내역이 없습니다</div>' :
-                    '<div class="list-group list-group-flush">' + recentPayments.map(p => `
-                        <div class="list-group-item px-3 py-2 border-0" style="border-bottom:1px solid #f0f0f0 !important;">
-                            <div class="d-flex justify-content-between align-items-center">
-                                <div>
-                                    <div class="fw-bold" style="font-size:.85rem">${p.tenant_name}</div>
-                                    <div class="text-muted" style="font-size:.72rem">${p.unit} · ${p.payment_month}</div>
-                                </div>
-                                <div class="text-end">
-                                    <div class="fw-bold" style="font-size:.85rem;color:#ff6b35">${formatMoney(p.amount)}</div>
-                                    <span class="badge bg-${p.status === 'paid' ? 'success' : 'warning'}" style="font-size:.65rem">${p.status === 'paid' ? '완료' : '대기'}</span>
-                                </div>
-                            </div>
-                        </div>
-                    `).join('') + '</div>'}
-                </div></div>
-            </div>
-        </div>
-
-        <!-- 빠른 바로가기 -->
-        <div class="row g-3">
-            <div class="col-12">
-                <div class="card data-card"><div class="card-header"><h5><i class="fas fa-bolt me-2 text-warning"></i>빠른 바로가기</h5></div>
-                <div class="card-body">
-                    <div class="row g-2">
-                        <div class="col-md-2 col-4"><a href="#" onclick="navigate('landlord-tenants')" class="btn w-100 py-3" style="background:rgba(255,159,28,.08);border:1px solid rgba(255,159,28,.15);color:#ff9f1c;border-radius:12px;font-size:.82rem;font-weight:600"><i class="fas fa-users d-block mb-1" style="font-size:1.2rem"></i>임차인 목록</a></div>
-                        <div class="col-md-2 col-4"><a href="#" onclick="navigate('landlord-qr')" class="btn w-100 py-3" style="background:rgba(255,107,53,.08);border:1px solid rgba(255,107,53,.15);color:#ff6b35;border-radius:12px;font-size:.82rem;font-weight:600"><i class="fas fa-qrcode d-block mb-1" style="font-size:1.2rem"></i>QR코드</a></div>
-                        <div class="col-md-2 col-4"><a href="#" onclick="navigate('landlord-payments')" class="btn w-100 py-3" style="background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.15);color:#22c55e;border-radius:12px;font-size:.82rem;font-weight:600"><i class="fas fa-credit-card d-block mb-1" style="font-size:1.2rem"></i>결제 내역</a></div>
-                        <div class="col-md-2 col-4"><a href="#" onclick="navigate('landlord-monthly')" class="btn w-100 py-3" style="background:rgba(14,165,233,.08);border:1px solid rgba(14,165,233,.15);color:#0ea5e9;border-radius:12px;font-size:.82rem;font-weight:600"><i class="fas fa-chart-bar d-block mb-1" style="font-size:1.2rem"></i>월별 현황</a></div>
-                        <div class="col-md-2 col-4"><a href="#" onclick="navigate('landlord-profile')" class="btn w-100 py-3" style="background:rgba(139,92,246,.08);border:1px solid rgba(139,92,246,.15);color:#8b5cf6;border-radius:12px;font-size:.82rem;font-weight:600"><i class="fas fa-cog d-block mb-1" style="font-size:1.2rem"></i>내 정보</a></div>
-                        <div class="col-md-2 col-4"><a href="/static/landing/banggut.html" class="btn w-100 py-3" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);color:#999;border-radius:12px;font-size:.82rem;font-weight:600"><i class="fas fa-external-link-alt d-block mb-1" style="font-size:1.2rem"></i>방긋페이 소개</a></div>
-                    </div>
-                </div></div>
-            </div>
-        </div>`;
-
-        // 차트 렌더링
-        setTimeout(() => {
-            const ctx = document.getElementById('landlordTrendChart');
-            if (ctx && typeof Chart !== 'undefined') {
-                new Chart(ctx, {
-                    type: 'bar',
-                    data: {
-                        labels: trend.map(t => t.month),
-                        datasets: [{
-                            label: '수금액',
-                            data: trend.map(t => t.amount),
-                            backgroundColor: 'rgba(255,159,28,.5)',
-                            borderColor: '#ff9f1c',
-                            borderWidth: 1,
-                            borderRadius: 6
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: { legend: { display: false } },
-                        scales: {
-                            y: { beginAtZero: true, ticks: { callback: v => v >= 10000 ? (v/10000)+'만' : v.toLocaleString() } },
-                            x: { grid: { display: false } }
-                        }
-                    }
-                });
-            }
-        }, 100);
     } else if (role === 'designer') {
         stats = await apiGet('/api/designer/dashboard-stats');
         html = `
@@ -1040,7 +1048,7 @@ async function loadHomePage(c, t) {
         <div class="row g-3">
             <div class="col-12">
                 <div class="card data-card mb-3"><div class="card-body text-center py-3">
-                    <span class="text-muted">직원:</span> <strong>${stats.staff_name}</strong> 
+                    <span class="text-muted">직원:</span> <strong>${stats.staff_name}</strong>
                     <span class="badge bg-secondary ms-2">코드: ${stats.staff_code}</span>
                 </div></div>
             </div>
@@ -1099,6 +1107,7 @@ async function loadAdminMerchants(c, t) {
 }
 
 async function showNewMerchantForm() {
+    resetFormModalFooter(true);
     const body = document.getElementById('formModalBody');
     document.getElementById('formModalTitle').textContent = '새 가맹점 등록';
     body.innerHTML = `
@@ -1163,7 +1172,7 @@ async function savePGConfig() {
         await apiPost(`/api/admin/merchants/${mid}/pg-config`, { provider_id: parseInt(document.getElementById('pgProvider').value), mid: document.getElementById('pgMid').value, secret: document.getElementById('pgSecret').value });
         document.getElementById('pgSaveResult').innerHTML = '<span class="text-success"><i class="fas fa-check-circle"></i> 등록 성공</span>';
         loadPGConfigs();
-    } catch (e) { document.getElementById('pgSaveResult').innerHTML = `<span class="text-danger">${e.message}</span>`; }
+    } catch (e) { document.getElementById('pgSaveResult').innerHTML = `<span class="text-danger">${escapeHtml(e.message)}</span>`; }
 }
 
 async function testPG(mid, configId) {
@@ -1173,7 +1182,7 @@ async function testPG(mid, configId) {
         const res = await apiPost(`/api/admin/merchants/${mid}/pg-test?config_id=${configId}`, {});
         el.innerHTML = res.success ? `<span class="text-success ms-1"><i class="fas fa-check-circle"></i></span>` : `<span class="text-danger ms-1"><i class="fas fa-times-circle"></i></span>`;
         loadPGConfigs();
-    } catch (e) { el.innerHTML = `<span class="text-danger ms-1">${e.message}</span>`; }
+    } catch (e) { el.innerHTML = `<span class="text-danger ms-1">${escapeHtml(e.message)}</span>`; }
 }
 
 async function showPGConfig(mid) { navigate('admin-pg'); setTimeout(() => { const sel = document.getElementById('pgMerchant'); if (sel) { sel.value = mid; loadPGConfigs(); } }, 500); }
@@ -1189,7 +1198,7 @@ async function loadAdminTransactions(c, t) {
     t.textContent = '전체 결제 내역';
     const merchants = await apiGet('/api/admin/merchants');
     let merchOpts = '<option value="">전체 가맹점</option>' + merchants.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
-    
+
     c.innerHTML = `
     <div class="card data-card mb-3">
         <div class="card-body py-2 px-3">
@@ -1210,7 +1219,7 @@ async function loadAdminTransactions(c, t) {
         <h5 class="mb-0"><i class="fas fa-receipt me-2"></i>결제 내역</h5>
         <span class="badge bg-primary" id="txCountBadge">-</span>
     </div><div class="card-body" id="txTableBody"><div class="text-center py-4"><div class="spinner-border text-primary"></div></div></div></div>`;
-    
+
     reloadAdminTransactions();
 }
 
@@ -1219,20 +1228,20 @@ async function reloadAdminTransactions() {
     const from = document.getElementById('txFilterFrom')?.value || '';
     const to = document.getElementById('txFilterTo')?.value || '';
     const limit = document.getElementById('txFilterLimit')?.value || '100';
-    
+
     let url = `/api/admin/transactions?limit=${limit}`;
     if (mid) url += `&merchant_id=${mid}`;
     if (from) url += `&date_from=${from}`;
     if (to) url += `&date_to=${to}`;
-    
+
     try {
         const data = await apiGet(url);
         const txns = data.transactions || data;
         const totalCount = data.total_count || txns.length;
         const totalAmount = data.total_amount || 0;
-        
+
         document.getElementById('txCountBadge').textContent = `${totalCount}건`;
-        
+
         // Summary cards
         document.getElementById('txSummaryRow').innerHTML = `
             <div class="col-md-4"><div class="card border-0 shadow-sm text-center" style="border-radius:12px"><div class="card-body py-2">
@@ -1244,7 +1253,7 @@ async function reloadAdminTransactions() {
             <div class="col-md-4"><div class="card border-0 shadow-sm text-center" style="border-radius:12px"><div class="card-body py-2">
                 <div class="fs-5 fw-bold text-info">${totalCount > 0 ? formatMoney(Math.round(totalAmount/totalCount)) : '0'}</div><small class="text-muted">평균 결제액</small>
             </div></div></div>`;
-        
+
         document.getElementById('txTableBody').innerHTML = `
             <div class="table-responsive"><table class="table table-hover table-sm">
                 <thead><tr><th>ID</th><th>가맹점</th><th>금액</th><th>할부</th><th>카드</th><th>직원</th><th>승인번호</th><th>결제일시</th></tr></thead>
@@ -1256,7 +1265,7 @@ async function reloadAdminTransactions() {
                 </tr>`).join('') : '<tr><td colspan="8" class="text-center text-muted py-4">조건에 맞는 결제 내역이 없습니다</td></tr>'}</tbody>
             </table></div>`;
     } catch(e) {
-        document.getElementById('txTableBody').innerHTML = `<div class="alert alert-danger">${e.message}</div>`;
+        document.getElementById('txTableBody').innerHTML = `<div class="alert alert-danger">${escapeHtml(e.message)}</div>`;
     }
 }
 
@@ -1308,7 +1317,7 @@ async function calcSettlement() {
         const res = await apiPost(`/api/admin/settlements/calculate?merchant_id=${mid}&period_start=${start}&period_end=${end}`, {});
         document.getElementById('settleResult').innerHTML = `<div class="alert alert-success"><strong>정산 완료!</strong><br>총매출: ${formatMoney(res.gross_amount)} | PG수수료: ${formatMoney(res.pg_fee_amount)}<br>커미션: ${formatMoney(res.commission_amount)} | 순매출: <strong>${formatMoney(res.net_amount)}</strong> | ${res.transactions_count}건</div>`;
         navigate('admin-settlements');
-    } catch (e) { document.getElementById('settleResult').innerHTML = `<div class="alert alert-danger">${e.message}</div>`; }
+    } catch (e) { document.getElementById('settleResult').innerHTML = `<div class="alert alert-danger">${escapeHtml(e.message)}</div>`; }
 }
 
 async function loadAdminFeePolicies(c, t) {
@@ -1333,7 +1342,7 @@ async function loadAdminFeePolicies(c, t) {
                 <span class="ms-1 fw-bold">${o.commission_rate_pct}%</span>
                </span>`
             : `<span class="badge bg-secondary bg-opacity-10 text-secondary">미배정</span>`;
-        
+
         const simBreakdown = o.has_sales_manager
             ? `<small class="d-block text-muted">PG ${o.sim_pg_fee.toLocaleString()}원 = ADPAY ${o.sim_platform.toLocaleString()}원 + 영업 <span class="text-primary fw-bold">${o.sim_commission.toLocaleString()}원</span></small>`
             : `<small class="d-block text-muted">PG ${o.sim_pg_fee.toLocaleString()}원 = ADPAY ${o.sim_platform.toLocaleString()}원 (영업 미배정)</small>`;
@@ -1560,7 +1569,7 @@ async function loadAdminPayouts(c, t) {
     const pendingCnt = payouts.filter(p => p.status === 'pending').length;
     const approvedCnt = payouts.filter(p => p.status === 'approved').length;
     const totalAmount = payouts.filter(p => p.status === 'pending').reduce((s,p) => s + p.amount, 0);
-    
+
     c.innerHTML = `
     <div class="row g-3 mb-3">
         <div class="col-md-3"><div class="card border-0 shadow-sm text-center" style="border-radius:12px"><div class="card-body py-2">
@@ -1580,8 +1589,7 @@ async function loadAdminPayouts(c, t) {
     <div class="card data-card">
         <div class="card-body text-center py-5">
             <i class="fas fa-inbox fa-3x mb-3 text-muted" style="opacity:.3"></i>
-            <p class="text-muted mb-3">출금요청 내역이 없습니다</p>
-            <button class="btn btn-outline-primary btn-sm" onclick="seedDummyPayouts()"><i class="fas fa-database me-1"></i>더미 데이터 생성</button>
+            <p class="text-muted mb-0">출금요청 내역이 없습니다</p>
         </div>
     </div>` : `
     <div class="card data-card"><div class="card-header d-flex justify-content-between align-items-center">
@@ -1613,15 +1621,6 @@ function filterPayoutStatus(status, btn) {
     });
 }
 
-async function seedDummyPayouts() {
-    if (!confirm('출금요청 더미 데이터를 생성하시겠습니까?')) return;
-    try {
-        const res = await apiPost('/api/admin/banggut/seed-payout-data', {});
-        alert(res.message || '더미 데이터가 생성되었습니다');
-        navigate('admin-payouts');
-    } catch(e) { alert('생성 실패: ' + e.message); }
-}
-
 async function handlePayout(id, action) { await apiPost(`/api/admin/payout-requests/${id}/${action}`, {}); navigate('admin-payouts'); }
 
 async function loadAdminAdOrders(c, t) {
@@ -1636,7 +1635,7 @@ async function loadAdminAdOrders(c, t) {
     const masterOn = flags.ad_order_mgmt_enabled;
     const blogOn = flags.ad_blog_enabled;
     const placeOn = flags.ad_place_traffic_enabled;
-    
+
     c.innerHTML = `
     <!-- 광고 기능 스위치 -->
     <div class="card border-0 shadow-sm mb-4" style="border-radius:14px;overflow:hidden">
@@ -1739,12 +1738,8 @@ async function loadAdminAdOrders(c, t) {
                 <td style="font-size:.78rem;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${o.admin_memo || '-'}</td>
                 <td>
                     <button class="btn btn-sm btn-outline-primary me-1" onclick="showAdOrderDetail(${o.id})" title="상세보기"><i class="fas fa-eye"></i></button>
-                    <select class="form-select form-select-sm d-inline-block" style="width:100px" id="adStatus${o.id}">
-                        <option value="requested" ${o.status==='requested'?'selected':''}>요청됨</option>
-                        <option value="reviewing" ${o.status==='reviewing'?'selected':''}>검토중</option>
-                        <option value="running" ${o.status==='running'?'selected':''}>집행중</option>
-                        <option value="done" ${o.status==='done'?'selected':''}>완료</option>
-                        <option value="rejected" ${o.status==='rejected'?'selected':''}>반려</option>
+                    <select class="form-select form-select-sm d-inline-block" style="width:110px" id="adStatus${o.id}">
+                        ${adStatusOptions(o.allowed_statuses)}
                     </select>
                     <button class="btn btn-sm btn-primary ms-1" onclick="executeAdOrder(${o.id})"><i class="fas fa-check"></i></button>
                 </td>
@@ -1756,7 +1751,7 @@ async function loadAdminAdOrders(c, t) {
 async function toggleAdFeature(key, enabled) {
     try {
         await apiPut(`/api/admin/ad-feature-flags?${key}=${enabled}`, {});
-        
+
         // 마스터 스위치 시각 업데이트
         if (key === 'ad_order_mgmt_enabled') {
             const masterCard = document.getElementById('masterSwitchCard');
@@ -1775,7 +1770,7 @@ async function toggleAdFeature(key, enabled) {
                 subPanel.style.pointerEvents = enabled ? 'auto' : 'none';
             }
         }
-        
+
         // 하위 스위치(블로그/플레이스) 시각 업데이트
         if (key === 'ad_blog_enabled' || key === 'ad_place_traffic_enabled') {
             const isBlog = key === 'ad_blog_enabled';
@@ -1790,7 +1785,7 @@ async function toggleAdFeature(key, enabled) {
             }
             if (iconEl) iconEl.style.background = enabled ? `linear-gradient(135deg,${gradStart},${gradEnd})` : '#ccc';
         }
-    } catch(e) { 
+    } catch(e) {
         alert('설정 변경 실패: ' + e.message);
         // 실패 시 토글 복원
         const elMap = { ad_order_mgmt_enabled: 'switchAdOrderMgmt', ad_blog_enabled: 'switchBlogAd', ad_place_traffic_enabled: 'switchPlaceAd' };
@@ -1818,11 +1813,11 @@ async function showAdOrderDetail(orderId) {
     document.getElementById('formModalBody').innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary"></div></div>';
     document.getElementById('formModalFooter').innerHTML = '<button class="btn btn-secondary" data-bs-dismiss="modal">닫기</button>';
     new bootstrap.Modal(modal).show();
-    
+
     try {
         const o = await apiGet(`/api/admin/ad/orders/${orderId}`);
         let detailHtml = '';
-        
+
         if (o.type === 'blog' && o.blog_detail) {
             const d = o.blog_detail;
             detailHtml = `
@@ -1850,7 +1845,7 @@ async function showAdOrderDetail(orderId) {
                 </div>
             </div>`;
         }
-        
+
         document.getElementById('formModalBody').innerHTML = `
         <div class="mb-3 p-3 rounded" style="background:linear-gradient(135deg,rgba(14,165,233,.04),rgba(99,102,241,.04))">
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
@@ -1868,11 +1863,7 @@ async function showAdOrderDetail(orderId) {
                 <div class="col-md-6">
                     <label class="form-label small">상태 변경</label>
                     <select class="form-select form-select-sm" id="detailAdStatus">
-                        <option value="requested" ${o.status==='requested'?'selected':''}>요청됨</option>
-                        <option value="reviewing" ${o.status==='reviewing'?'selected':''}>검토중</option>
-                        <option value="running" ${o.status==='running'?'selected':''}>집행중</option>
-                        <option value="done" ${o.status==='done'?'selected':''}>완료</option>
-                        <option value="rejected" ${o.status==='rejected'?'selected':''}>반려</option>
+                        ${adStatusOptions(o.allowed_statuses)}
                     </select>
                 </div>
                 <div class="col-md-6">
@@ -1886,12 +1877,13 @@ async function showAdOrderDetail(orderId) {
         </div>
         ${o.admin_memo ? `<div class="border rounded p-3"><h6 class="fw-bold small mb-1"><i class="fas fa-sticky-note me-1"></i>관리 메모 이력</h6><div style="font-size:.82rem;white-space:pre-line">${o.admin_memo}</div></div>` : ''}`;
     } catch(e) {
-        document.getElementById('formModalBody').innerHTML = `<div class="alert alert-danger">${e.message}</div>`;
+        document.getElementById('formModalBody').innerHTML = `<div class="alert alert-danger">${escapeHtml(e.message)}</div>`;
     }
 }
 
 async function executeAdOrder(orderId) {
     const status = document.getElementById(`adStatus${orderId}`).value;
+    if (!status) { alert('변경할 다음 상태를 선택해주세요'); return; }
     const memo = prompt('관리 메모 (선택사항):');
     try {
         await apiPut(`/api/admin/ad/orders/${orderId}/execute?status=${status}${memo ? '&admin_memo=' + encodeURIComponent(memo) : ''}`, {});
@@ -1901,6 +1893,7 @@ async function executeAdOrder(orderId) {
 
 async function executeAdOrderFromDetail(orderId) {
     const status = document.getElementById('detailAdStatus').value;
+    if (!status) { alert('변경할 다음 상태를 선택해주세요'); return; }
     const memo = document.getElementById('detailAdMemo').value;
     try {
         await apiPut(`/api/admin/ad/orders/${orderId}/execute?status=${status}${memo ? '&admin_memo=' + encodeURIComponent(memo) : ''}`, {});
@@ -1911,27 +1904,132 @@ async function executeAdOrderFromDetail(orderId) {
 }
 
 async function loadAdminMetrics(c, t) {
-    t.textContent = '광고 지표 입력';
+    t.textContent = '광고 분석 관리';
     const merchants = await apiGet('/api/admin/merchants');
     let opts = merchants.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
-    c.innerHTML = `<div class="card data-card"><div class="card-header"><h5>광고 지표 등록</h5></div><div class="card-body">
+    c.innerHTML = `
+    <div class="workspace-hero mb-3">
+        <div>
+            <span class="workspace-eyebrow">AD ANALYTICS</span>
+            <h2>매장별 광고 분석 데이터 관리</h2>
+            <p>원장이 등록한 우리 매장·경쟁업체를 같은 검색 키워드로 확인한 뒤 최신 지표를 기록합니다.</p>
+        </div>
+        <div class="workspace-hero-icon"><i class="fas fa-chart-line"></i></div>
+    </div>
+    <div class="alert alert-info">
+        <i class="fas fa-circle-info me-2"></i>
+        네이버 플레이스의 리뷰 수와 동일 키워드 검색 순위를 확인해 입력하세요. 같은 날짜 데이터는 새로 추가되지 않고 최신 값으로 갱신됩니다.
+    </div>
+    <div class="card data-card mb-3"><div class="card-header"><h5>분석 대상 선택</h5></div><div class="card-body">
         <div class="row g-3">
-            <div class="col-md-4"><label class="form-label">가맹점</label><select class="form-select" id="metricMerch">${opts}</select></div>
-            <div class="col-md-4"><label class="form-label">플레이스 URL</label><input class="form-control" id="metricUrl"></div>
-            <div class="col-md-4"><label class="form-label">날짜</label><input type="date" class="form-control" id="metricDate"></div>
-            <div class="col-md-3"><label class="form-label">블로그 리뷰</label><input type="number" class="form-control" id="metricBlog" value="0"></div>
-            <div class="col-md-3"><label class="form-label">방문자 리뷰</label><input type="number" class="form-control" id="metricVisitor" value="0"></div>
-            <div class="col-md-3"><label class="form-label">플레이스 순위</label><input type="number" class="form-control" id="metricRank"></div>
-            <div class="col-md-3 d-flex align-items-end"><button class="btn btn-primary w-100" onclick="saveMetric()"><i class="fas fa-save me-1"></i>저장</button></div>
+            <div class="col-md-5"><label class="form-label">가맹점</label><select class="form-select" id="metricMerch" onchange="loadAdminMetricTargets()">${opts || '<option value="">가맹점 없음</option>'}</select></div>
+            <div class="col-md-7"><label class="form-label">우리 매장 / 경쟁업체</label><select class="form-select" id="metricTarget" onchange="selectAdminMetricTarget()"><option>가맹점을 먼저 선택하세요</option></select></div>
+        </div>
+        <div id="metricTargetStatus" class="mt-3"></div>
+    </div></div>
+    <div class="card data-card mb-3"><div class="card-header"><h5>확인 지표 입력</h5></div><div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-4"><label class="form-label">공통 검색 키워드</label><input class="form-control" id="metricKeyword" placeholder="예: 강남 미용실"></div>
+            <div class="col-md-4"><label class="form-label">확인 날짜</label><input type="date" class="form-control" id="metricDate"></div>
+            <div class="col-md-4"><label class="form-label">플레이스 순위</label><input type="number" min="1" class="form-control" id="metricRank" placeholder="검색 결과 순위"></div>
+            <div class="col-md-4"><label class="form-label">블로그 리뷰 누적 수</label><input type="number" min="0" class="form-control" id="metricBlog" value="0"></div>
+            <div class="col-md-4"><label class="form-label">방문자 리뷰 누적 수</label><input type="number" min="0" class="form-control" id="metricVisitor" value="0"></div>
+            <div class="col-md-4 d-flex align-items-end"><button class="btn btn-primary w-100" id="metricSaveBtn" onclick="saveMetric()"><i class="fas fa-save me-1"></i>분석 데이터 저장</button></div>
         </div><div id="metricResult" class="mt-3"></div>
-    </div></div>`;
+    </div></div>
+    <div class="card data-card"><div class="card-header"><h5>최근 입력 기록</h5></div><div class="card-body" id="metricHistory"><div class="text-center text-muted py-3">분석 대상을 선택하세요.</div></div></div>`;
+    const today = new Date();
+    today.setMinutes(today.getMinutes() - today.getTimezoneOffset());
+    document.getElementById('metricDate').value = today.toISOString().slice(0, 10);
+    if (merchants.length) await loadAdminMetricTargets();
+}
+
+async function loadAdminMetricTargets() {
+    const merchantId = Number(document.getElementById('metricMerch')?.value);
+    const targetSelect = document.getElementById('metricTarget');
+    if (!merchantId || !targetSelect) return;
+    targetSelect.innerHTML = '<option>불러오는 중...</option>';
+    try {
+        const data = await apiGet(`/api/admin/ad/analysis-targets?merchant_id=${merchantId}`);
+        adminMetricTargets = data.targets || [];
+        targetSelect.innerHTML = adminMetricTargets.length
+            ? adminMetricTargets.map((target, index) => `<option value="${index}">${target.type === 'my' ? '우리 매장' : '경쟁업체'} · ${escapeHtml(target.name)}</option>`).join('')
+            : '<option value="">원장이 등록한 분석 대상이 없습니다</option>';
+        document.getElementById('metricTargetStatus').innerHTML = adminMetricTargets.length
+            ? `<div class="analysis-progress"><strong>${data.ready_count}/${adminMetricTargets.length}</strong><span>개 대상에 분석 데이터가 있습니다</span></div>`
+            : '<div class="alert alert-warning mb-0">원장 계정에서 우리 매장 프로필과 경쟁업체를 먼저 등록해야 합니다.</div>';
+        selectAdminMetricTarget();
+    } catch (e) {
+        adminMetricTargets = [];
+        targetSelect.innerHTML = '<option value="">대상을 불러오지 못했습니다</option>';
+        document.getElementById('metricTargetStatus').innerHTML = `<div class="alert alert-danger mb-0">${escapeHtml(e.message)}</div>`;
+    }
+}
+
+async function selectAdminMetricTarget() {
+    const targetIndex = Number(document.getElementById('metricTarget')?.value);
+    const target = adminMetricTargets[targetIndex];
+    if (!target) {
+        document.getElementById('metricHistory').innerHTML = '<div class="text-center text-muted py-3">등록된 분석 대상이 없습니다.</div>';
+        return;
+    }
+    const latest = target.latest_metric;
+    document.getElementById('metricKeyword').value = target.search_keyword || latest?.search_keyword || '';
+    document.getElementById('metricBlog').value = latest?.blog_review_count ?? 0;
+    document.getElementById('metricVisitor').value = latest?.visitor_review_count ?? 0;
+    document.getElementById('metricRank').value = latest?.place_rank ?? '';
+    await loadAdminMetricHistory();
+}
+
+async function loadAdminMetricHistory() {
+    const merchantId = Number(document.getElementById('metricMerch')?.value);
+    const target = adminMetricTargets[Number(document.getElementById('metricTarget')?.value)];
+    const history = document.getElementById('metricHistory');
+    if (!target || !history) return;
+    try {
+        const rows = await apiGet(`/api/admin/ad/metrics?merchant_id=${merchantId}&place_url=${encodeURIComponent(target.place_url)}`);
+        history.innerHTML = rows.length ? `<div class="table-responsive"><table class="table table-sm align-middle mb-0">
+            <thead><tr><th>날짜</th><th>키워드</th><th>블로그 리뷰</th><th>방문자 리뷰</th><th>순위</th></tr></thead>
+            <tbody>${rows.map(row => `<tr><td>${row.date}</td><td>${escapeHtml(row.search_keyword || '-')}</td><td>${row.blog_review_count}</td><td>${row.visitor_review_count}</td><td>${row.place_rank ? row.place_rank + '위' : '-'}</td></tr>`).join('')}</tbody>
+        </table></div>` : '<div class="text-center text-muted py-3">아직 입력된 데이터가 없습니다.</div>';
+        enhanceRoleMobilePage(history);
+    } catch (e) {
+        history.innerHTML = `<div class="alert alert-danger mb-0">${escapeHtml(e.message)}</div>`;
+    }
 }
 
 async function saveMetric() {
+    const merchantId = Number(document.getElementById('metricMerch').value);
+    const target = adminMetricTargets[Number(document.getElementById('metricTarget').value)];
+    const date = document.getElementById('metricDate').value;
+    const keyword = document.getElementById('metricKeyword').value.trim();
+    const blog = Number(document.getElementById('metricBlog').value);
+    const visitor = Number(document.getElementById('metricVisitor').value);
+    const rankRaw = document.getElementById('metricRank').value;
+    if (!target) { alert('분석 대상을 선택해주세요'); return; }
+    if (!date) { alert('확인 날짜를 입력해주세요'); return; }
+    if (!keyword) { alert('우리 매장과 경쟁업체에 공통으로 적용할 검색 키워드를 입력해주세요'); return; }
+    if (blog < 0 || visitor < 0 || (rankRaw && Number(rankRaw) < 1)) { alert('리뷰 수와 순위를 올바르게 입력해주세요'); return; }
+    const btn = document.getElementById('metricSaveBtn');
+    btn.disabled = true;
     try {
-        await apiPost('/api/admin/ad/metrics', { merchant_id: parseInt(document.getElementById('metricMerch').value), place_url: document.getElementById('metricUrl').value, date: document.getElementById('metricDate').value, blog_review_count: parseInt(document.getElementById('metricBlog').value), visitor_review_count: parseInt(document.getElementById('metricVisitor').value), place_rank: parseInt(document.getElementById('metricRank').value) || null });
-        document.getElementById('metricResult').innerHTML = '<div class="alert alert-success">저장 완료!</div>';
-    } catch (e) { document.getElementById('metricResult').innerHTML = `<div class="alert alert-danger">${e.message}</div>`; }
+        const result = await apiPost('/api/admin/ad/metrics', {
+            merchant_id: merchantId,
+            place_url: target.place_url,
+            date,
+            blog_review_count: blog,
+            visitor_review_count: visitor,
+            place_rank: rankRaw ? Number(rankRaw) : null,
+            search_keyword: keyword,
+            source: 'manual'
+        });
+        document.getElementById('metricResult').innerHTML = `<div class="alert alert-success">${result.updated ? '같은 날짜의 데이터를 갱신했습니다.' : '분석 데이터를 저장했습니다.'}</div>`;
+        await loadAdminMetricTargets();
+    } catch (e) {
+        document.getElementById('metricResult').innerHTML = `<div class="alert alert-danger">${escapeHtml(e.message)}</div>`;
+    } finally {
+        btn.disabled = false;
+    }
 }
 
 async function loadAdminSalesAssign(c, t) {
@@ -1941,10 +2039,10 @@ async function loadAdminSalesAssign(c, t) {
         apiGet('/api/admin/merchants'),
         apiGet('/api/admin/sales-managers'),
     ]);
-    
+
     const merchantOpts = merchants.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
     const salesOpts = salesManagers.map(u => `<option value="${u.id}">${u.name} (${u.email})</option>`).join('');
-    
+
     c.innerHTML = `
     <div class="alert alert-warning mb-3" style="border-radius:12px;border:none;background:rgba(255,193,7,.08)">
         <div class="d-flex align-items-start">
@@ -1959,7 +2057,7 @@ async function loadAdminSalesAssign(c, t) {
             </div>
         </div>
     </div>
-    
+
     <!-- 새 연결 추가 폼 -->
     <div class="card data-card mb-3" style="border-radius:14px">
         <div class="card-header"><h5 class="mb-0"><i class="fas fa-plus-circle me-2"></i>새 영업관리자 연결</h5></div>
@@ -1994,7 +2092,7 @@ async function loadAdminSalesAssign(c, t) {
             <div id="assignResult" class="mt-2"></div>
         </div>
     </div>
-    
+
     <!-- 기존 연결 목록 -->
     <div class="card data-card" style="border-radius:14px">
         <div class="card-header d-flex justify-content-between align-items-center">
@@ -2031,23 +2129,23 @@ async function createSalesAssignment() {
         const salesId = parseInt(document.getElementById('assignSales').value);
         const rate = parseFloat(document.getElementById('assignRate').value) / 100;
         const memo = document.getElementById('assignMemo').value;
-        
+
         if (!merchantId || !salesId) { alert('가맹점과 영업관리자를 선택해주세요.'); return; }
         if (rate < 0 || rate > 0.035) { alert('수익률은 0~3.5% 범위에서 설정해주세요.'); return; }
-        
+
         await apiPost('/api/admin/sales-assignments', {
             merchant_id: merchantId,
             sales_manager_user_id: salesId,
             commission_rate: rate,
             memo: memo || null,
         });
-        
+
         const el = document.getElementById('assignResult');
         el.innerHTML = '<div class="alert alert-success py-2"><i class="fas fa-check-circle me-1"></i>영업관리자 연결 완료!</div>';
         setTimeout(() => navigate('admin-sales-assign'), 1000);
     } catch (e) {
         const el = document.getElementById('assignResult');
-        el.innerHTML = `<div class="alert alert-danger py-2"><i class="fas fa-exclamation-circle me-1"></i>${e.message}</div>`;
+        el.innerHTML = `<div class="alert alert-danger py-2"><i class="fas fa-exclamation-circle me-1"></i>${escapeHtml(e.message)}</div>`;
     }
 }
 
@@ -2288,7 +2386,7 @@ async function loadSalesBreakdown(mid) {
     try {
         const data = await apiGet(`/api/sales/merchants/${mid}/breakdown?range=${range}`);
         el.innerHTML = renderSettlementBreakdown(data);
-    } catch (e) { el.innerHTML = `<div class="alert alert-danger small">${e.message}</div>`; }
+    } catch (e) { el.innerHTML = `<div class="alert alert-danger small">${escapeHtml(e.message)}</div>`; }
 }
 
 async function loadSalesCommission(c, t) {
@@ -2333,7 +2431,7 @@ async function createPayout() {
         await apiPost('/api/sales/payout-requests', { amount: parseFloat(document.getElementById('payoutAmt').value), bank_info: document.getElementById('payoutBank').value, memo: document.getElementById('payoutMemo').value });
         document.getElementById('payoutResult').innerHTML = '<span class="text-success"><i class="fas fa-check-circle"></i> 요청 완료!</span>';
         navigate('sales-payouts');
-    } catch (e) { document.getElementById('payoutResult').innerHTML = `<span class="text-danger">${e.message}</span>`; }
+    } catch (e) { document.getElementById('payoutResult').innerHTML = `<span class="text-danger">${escapeHtml(e.message)}</span>`; }
 }
 
 async function loadSalesPayoutHistory(c, t) {
@@ -2431,6 +2529,7 @@ async function saveStaffShareRate(sid) {
 }
 
 async function showNewStaffForm() {
+    resetFormModalFooter(true);
     const body = document.getElementById('formModalBody');
     document.getElementById('formModalTitle').textContent = '직원 추가';
     body.innerHTML = `<div class="row g-3">
@@ -2451,6 +2550,7 @@ async function showNewStaffForm() {
 async function toggleStaff(sid, active) { await apiPut(`/api/owner/staff/${sid}`, { is_active: active }); navigate('owner-staff'); }
 
 async function showNewDesignerForm() {
+    resetFormModalFooter(true);
     const body = document.getElementById('formModalBody');
     document.getElementById('formModalTitle').textContent = '디자이너 계정 등록';
     body.innerHTML = `<div class="row g-3">
@@ -2478,7 +2578,7 @@ async function showNewDesignerForm() {
             bootstrap.Modal.getInstance(document.getElementById('formModal')).hide();
             alert(res.message || '디자이너 계정이 등록되었습니다.');
             navigate('owner-staff');
-        } catch (e) { result.innerHTML = `<div class="alert alert-danger py-2 mb-0">${e.message}</div>`; }
+        } catch (e) { result.innerHTML = `<div class="alert alert-danger py-2 mb-0">${escapeHtml(e.message)}</div>`; }
     };
     new bootstrap.Modal(document.getElementById('formModal')).show();
 }
@@ -2549,7 +2649,7 @@ async function loadOwnerSettlement(c, t) {
         try {
             const data = await apiGet(`/api/owner/settlement-breakdown?range=${range}`);
             body.innerHTML = renderSettlementBreakdown(data);
-        } catch (e) { body.innerHTML = `<div class="alert alert-danger">${e.message}</div>`; }
+        } catch (e) { body.innerHTML = `<div class="alert alert-danger">${escapeHtml(e.message)}</div>`; }
     };
     document.getElementById('ownerSettleRange').addEventListener('change', render);
     render();
@@ -2579,7 +2679,7 @@ async function loadDesignerSettlement(c, t) {
                 <div class="col-6"><div class="bg-light rounded-3 p-3 text-center"><div class="fs-4 fw-bold text-success">${formatMoney(d.owner_amount)}</div><small class="text-muted">원장 몫</small></div></div>
             </div>
             ${!showComm?'<small class="text-muted mt-2 d-block"><i class="fas fa-eye-slash me-1"></i>영업수수료 항목은 관리자 설정에 의해 표시되지 않습니다.</small>':''}`;
-        } catch (e) { body.innerHTML = `<div class="alert alert-danger">${e.message}</div>`; }
+        } catch (e) { body.innerHTML = `<div class="alert alert-danger">${escapeHtml(e.message)}</div>`; }
     };
     document.getElementById('dsgSettleRange').addEventListener('change', render);
     render();
@@ -2619,6 +2719,10 @@ async function saveCommissionVisibility(role, enabled) {
 async function loadOwnerStaffSales(c, t) {
     t.textContent = '직원별 매출';
     const staff = await apiGet('/api/owner/staff');
+    if (!staff.length) {
+        c.innerHTML = `<div class="empty-state"><i class="fas fa-user-plus"></i><h3>등록된 직원이 없습니다</h3><p>직원을 먼저 등록하면 직원별 결제와 매출을 조회할 수 있습니다.</p><button class="btn btn-primary" onclick="navigate('owner-staff')">직원 등록하기</button></div>`;
+        return;
+    }
     c.innerHTML = `<div class="card data-card"><div class="card-header"><h5>직원별 매출 조회</h5></div><div class="card-body">
         <div class="row g-3 mb-3">
             <div class="col-md-4"><label class="form-label">직원</label><select class="form-select" id="staffSalesSel">${staff.map(s=>`<option value="${s.id}">${s.name} (코드:${s.staff_code})</option>`).join('')}</select></div>
@@ -2626,18 +2730,29 @@ async function loadOwnerStaffSales(c, t) {
             <div class="col-md-4 d-flex align-items-end"><button class="btn btn-primary w-100" onclick="loadStaffSalesData()"><i class="fas fa-search me-1"></i>조회</button></div>
         </div><div id="staffSalesResult"></div>
     </div></div>`;
+    await loadStaffSalesData();
 }
 
 async function loadStaffSalesData() {
     const sid = document.getElementById('staffSalesSel').value;
     const range = document.getElementById('staffSalesRange').value;
-    const data = await apiGet(`/api/owner/staff/${sid}/sales?range=${range}`);
-    document.getElementById('staffSalesResult').innerHTML = `
-    <div class="alert alert-info"><strong>${data.staff_name}</strong> | 기간: ${data.range} | 건수: <strong>${data.count}</strong> | 합계: <strong>${formatMoney(data.total_amount)}</strong></div>
-    <div class="table-responsive"><table class="table table-sm">
-        <thead><tr><th>ID</th><th>금액</th><th>승인일</th><th>등록일</th></tr></thead>
-        <tbody>${data.transactions.map(tx=>`<tr><td>${tx.id}</td><td class="fw-bold">${formatMoney(tx.amount)}</td><td>${formatDate(tx.approved_at)}</td><td>${formatDate(tx.created_at)}</td></tr>`).join('')}</tbody>
-    </table></div>`;
+    const result = document.getElementById('staffSalesResult');
+    result.innerHTML = '<div class="text-center py-4"><div class="spinner-border spinner-border-sm text-primary"></div></div>';
+    try {
+        const data = await apiGet(`/api/owner/staff/${sid}/sales?range=${range}`);
+        result.innerHTML = `
+        <div class="metric-summary mb-3">
+            <div><span>직원</span><strong>${escapeHtml(data.staff_name)}</strong></div>
+            <div><span>결제 건수</span><strong>${data.count}건</strong></div>
+            <div><span>총 매출</span><strong class="text-primary">${formatMoney(data.total_amount)}</strong></div>
+        </div>
+        ${data.transactions.length ? `<div class="table-responsive"><table class="table table-sm">
+            <thead><tr><th>ID</th><th>금액</th><th>승인일</th><th>등록일</th></tr></thead>
+            <tbody>${data.transactions.map(tx=>`<tr><td>${tx.id}</td><td class="fw-bold">${formatMoney(tx.amount)}</td><td>${formatDate(tx.approved_at)}</td><td>${formatDate(tx.created_at)}</td></tr>`).join('')}</tbody>
+        </table></div>` : '<div class="empty-state compact"><i class="fas fa-receipt"></i><p>선택한 기간에 결제 내역이 없습니다.</p></div>'}`;
+    } catch (e) {
+        result.innerHTML = `<div class="alert alert-danger">${escapeHtml(e.message)}</div>`;
+    }
 }
 
 async function loadOwnerDailySummary(c, t) {
@@ -2697,7 +2812,7 @@ async function loadOwnerDailySummary(c, t) {
             html += '</div>';
             grid.innerHTML = html;
         } catch (e) {
-            grid.innerHTML = `<div class="alert alert-danger">${e.message}</div>`;
+            grid.innerHTML = `<div class="alert alert-danger">${escapeHtml(e.message)}</div>`;
         }
     }
 
@@ -2708,6 +2823,7 @@ async function loadOwnerDailySummary(c, t) {
 
 // 날짜 클릭 시 상세 결제내역 팝업
 async function showDailyDetail(dateStr) {
+    resetFormModalFooter(false);
     const modalEl = document.getElementById('formModal');
     const titleEl = document.getElementById('formModalTitle');
     const bodyEl = document.getElementById('formModalBody');
@@ -2740,9 +2856,9 @@ async function showDailyDetail(dateStr) {
                 </table></div>`;
         }
     } catch (e) {
-        bodyEl.innerHTML = `<div class="alert alert-danger">${e.message}</div>`;
+        bodyEl.innerHTML = `<div class="alert alert-danger">${escapeHtml(e.message)}</div>`;
     }
-    saveBtn.style.display = '';
+    saveBtn.style.display = 'none';
 }
 
 async function loadOwnerAnalysis(c, t) {
@@ -2773,8 +2889,11 @@ async function loadOwnerAnalysis(c, t) {
                         <h6 class="fw-bold text-primary mb-2"><i class="fas fa-map-marker-alt me-1"></i>우리 매장 프로필 추가</h6>
                         <div class="input-group input-group-sm mb-2">
                             <input class="form-control" id="newProfileUrl" placeholder="네이버 플레이스 URL">
-                            <input class="form-control" id="newProfileNick" placeholder="별칭 (예: 본점)" style="max-width:120px">
                             <button class="btn btn-primary" onclick="addPlaceProfile()"><i class="fas fa-plus"></i></button>
+                        </div>
+                        <div class="row g-2 mb-2">
+                            <div class="col-5"><input class="form-control form-control-sm" id="newProfileNick" placeholder="매장 별칭"></div>
+                            <div class="col-7"><input class="form-control form-control-sm" id="newProfileKeyword" placeholder="공통 검색어 (예: 강남 미용실)"></div>
                         </div>
                         <div id="profileList"></div>
                     </div>
@@ -2813,7 +2932,10 @@ async function loadManageLists() {
         // 프로필 목록
         let profileHtml = '';
         if (data.profiles && data.profiles.length > 0) {
-            profileHtml = data.profiles.map(p => `<span class="badge bg-primary bg-opacity-10 text-primary me-1 mb-1 px-2 py-1">${p.nickname||p.place_url} <i class="fas fa-times ms-1" style="cursor:pointer" onclick="removePlaceProfile(${p.id})"></i></span>`).join('');
+            profileHtml = data.profiles.map(p => `<div class="analysis-target-chip">
+                <span><strong>${escapeHtml(p.nickname||p.place_url)}</strong>${p.analysis_keyword ? `<small>${escapeHtml(p.analysis_keyword)}</small>` : '<small>검색어 미설정</small>'}</span>
+                <button type="button" onclick="removePlaceProfile(${p.id})" aria-label="우리 매장 프로필 삭제"><i class="fas fa-times"></i></button>
+            </div>`).join('');
         } else {
             profileHtml = '<small class="text-muted">등록된 프로필이 없습니다</small>';
         }
@@ -2822,7 +2944,10 @@ async function loadManageLists() {
         // 경쟁업체 목록
         let compHtml = '';
         if (data.competitor_list && data.competitor_list.length > 0) {
-            compHtml = data.competitor_list.map(c => `<span class="badge bg-danger bg-opacity-10 text-danger me-1 mb-1 px-2 py-1">${c.memo||c.place_url} <i class="fas fa-times ms-1" style="cursor:pointer" onclick="removeCompetitor(${c.id})"></i></span>`).join('');
+            compHtml = data.competitor_list.map(c => `<div class="analysis-target-chip competitor">
+                <span><strong>${escapeHtml(c.memo||c.place_url)}</strong><small>${escapeHtml(c.place_url)}</small></span>
+                <button type="button" onclick="removeCompetitor(${c.id})" aria-label="경쟁업체 삭제"><i class="fas fa-times"></i></button>
+            </div>`).join('');
         } else {
             compHtml = '<small class="text-muted">등록된 경쟁업체가 없습니다</small>';
         }
@@ -2833,11 +2958,14 @@ async function loadManageLists() {
 async function addPlaceProfile() {
     const url = document.getElementById('newProfileUrl').value.trim();
     const nick = document.getElementById('newProfileNick').value.trim();
+    const keyword = document.getElementById('newProfileKeyword').value.trim();
     if (!url) { alert('플레이스 URL을 입력하세요'); return; }
+    if (!keyword) { alert('우리 매장과 경쟁업체를 비교할 공통 검색어를 입력하세요'); return; }
     try {
-        await apiPost('/api/owner/ad/place-profiles', { place_url: url, nickname: nick || null });
+        await apiPost('/api/owner/ad/place-profiles', { place_url: url, nickname: nick || null, analysis_keyword: keyword });
         document.getElementById('newProfileUrl').value = '';
         document.getElementById('newProfileNick').value = '';
+        document.getElementById('newProfileKeyword').value = '';
         loadManageLists();
         reloadAnalysis();
     } catch (e) { alert('등록 실패: ' + e.message); }
@@ -2847,6 +2975,7 @@ async function addCompetitor() {
     const url = document.getElementById('newCompUrl').value.trim();
     const memo = document.getElementById('newCompMemo').value.trim();
     if (!url) { alert('경쟁업체 URL을 입력하세요'); return; }
+    if (!memo) { alert('구분하기 쉬운 경쟁업체명을 입력하세요'); return; }
     try {
         await apiPost('/api/owner/ad/competitors', { competitor_place_url: url, memo: memo || null });
         document.getElementById('newCompUrl').value = '';
@@ -2888,9 +3017,23 @@ async function reloadAnalysis() {
         const range = document.getElementById('analysisRange').value;
         const summary = await apiGet(`/api/owner/ad/analysis/summary?range=${range}`);
         const detail = await apiGet(`/api/owner/ad/analysis?range=${range}`);
-        
+
         const comp = summary.comparison;
+        const dataStatus = summary.data_status || {};
         let summaryHtml = '';
+
+        if (dataStatus.target_count > 0) {
+            const ready = dataStatus.ready_count || 0;
+            const needsAction = dataStatus.needs_admin_action;
+            summaryHtml += `<div class="analysis-readiness ${needsAction ? 'needs-action' : 'ready'} mb-3">
+                <div class="analysis-readiness-icon"><i class="fas fa-${needsAction ? 'clipboard-check' : 'circle-check'}"></i></div>
+                <div class="flex-grow-1">
+                    <strong>비교 데이터 준비 ${ready}/${dataStatus.target_count}</strong>
+                    <span>${needsAction ? '최고관리자 광고 분석 관리에서 누락되거나 오래된 지표를 입력해야 정확한 비교가 가능합니다.' : `모든 대상이 비교 가능합니다${summary.analysis_keyword ? ` · 기준 검색어: ${escapeHtml(summary.analysis_keyword)}` : ''}`}</span>
+                </div>
+                ${needsAction ? '<span class="badge bg-warning text-dark">관리자 입력 필요</span>' : '<span class="badge bg-success">분석 가능</span>'}
+            </div>`;
+        }
 
         // ── 인사이트 카드 ──
         if (comp.insights && comp.insights.length > 0) {
@@ -2976,7 +3119,7 @@ async function reloadAnalysis() {
                         </div>
                         ${comp.my_best_rank || comp.comp_best_rank ? `
                         <div class="mt-2 small text-muted">
-                            최고순위: <span class="text-primary fw-bold">${comp.my_best_rank ? comp.my_best_rank + '위' : '-'}</span> vs 
+                            최고순위: <span class="text-primary fw-bold">${comp.my_best_rank ? comp.my_best_rank + '위' : '-'}</span> vs
                             <span class="text-danger fw-bold">${comp.comp_best_rank ? comp.comp_best_rank + '위' : '-'}</span>
                         </div>` : ''}
                     </div>
@@ -3101,16 +3244,16 @@ async function reloadAnalysis() {
             detailHtml += '</div></div></div>';
         }
 
-        // AI 마케팅 추천 섹션
+        // 데이터 기반 마케팅 추천 섹션
         detailHtml += `<div class="card border-0 shadow-sm mb-3">
             <div class="card-header border-0" style="background:linear-gradient(135deg,rgba(99,102,241,.1),rgba(168,85,247,.1))">
                 <div class="d-flex justify-content-between align-items-center">
-                    <h6 class="mb-0 fw-bold"><i class="fas fa-robot me-2" style="color:#6366f1"></i>AI 마케팅 추천</h6>
+                    <h6 class="mb-0 fw-bold"><i class="fas fa-wand-magic-sparkles me-2" style="color:#6366f1"></i>비교 기반 실행 전략</h6>
                     <button class="btn btn-sm btn-outline-primary" onclick="generateAIRecommendation()" id="aiRecommendBtn">
                         <i class="fas fa-magic me-1"></i>분석 받기
                     </button>
                 </div>
-                <small class="text-muted">경쟁업체 대비 우리 매장에 필요한 마케팅 전략을 AI가 추천합니다</small>
+                <small class="text-muted">실제 입력된 리뷰·검색 순위 차이를 계산해 우선 실행할 항목을 안내합니다</small>
             </div>
             <div class="card-body" id="aiRecommendBody">
                 <div class="text-center py-4 text-muted">
@@ -3130,7 +3273,7 @@ async function reloadAnalysis() {
         document.getElementById('analysisDetail').innerHTML = detailHtml;
 
     } catch (e) {
-        document.getElementById('analysisSummary').innerHTML = `<div class="alert alert-danger"><i class="fas fa-exclamation-circle me-2"></i>${e.message}</div>`;
+        document.getElementById('analysisSummary').innerHTML = `<div class="alert alert-danger"><i class="fas fa-exclamation-circle me-2"></i>${escapeHtml(e.message)}</div>`;
     }
 }
 
@@ -3153,7 +3296,7 @@ async function generateAIRecommendation() {
     if (!btn || !body) return;
     btn.disabled = true;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>분석중...';
-    body.innerHTML = '<div class="text-center py-3"><div class="spinner-border text-primary"></div><p class="mt-2 text-muted small">AI가 경쟁업체 데이터를 분석하고 있습니다...</p></div>';
+    body.innerHTML = '<div class="text-center py-3"><div class="spinner-border text-primary"></div><p class="mt-2 text-muted small">우리 매장과 경쟁업체 지표 차이를 계산하고 있습니다...</p></div>';
 
     try {
         const range = document.getElementById('analysisRange')?.value || 'all';
@@ -3194,6 +3337,17 @@ async function generateAIRecommendation() {
                 compCount++;
             }
         });
+
+        if (myCount === 0 || compCount === 0) {
+            const missing = myCount === 0 ? '우리 매장' : '경쟁업체';
+            body.innerHTML = `<div class="alert alert-warning mb-0">
+                <i class="fas fa-database me-2"></i>${missing}의 실제 분석 지표가 없습니다.
+                최고관리자가 <strong>광고 분석 관리</strong>에서 같은 검색어 기준의 리뷰 수와 검색 순위를 입력한 뒤 다시 분석해주세요.
+            </div>`;
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-magic me-1"></i>분석 받기';
+            return;
+        }
 
         const avgMyBlog = myCount > 0 ? Math.round(myTotalBlog / myCount) : 0;
         const avgMyVisitor = myCount > 0 ? Math.round(myTotalVisitor / myCount) : 0;
@@ -3348,7 +3502,7 @@ async function generateAIRecommendation() {
 
         body.innerHTML = recHtml;
     } catch (e) {
-        body.innerHTML = `<div class="alert alert-danger mb-0"><i class="fas fa-exclamation-circle me-1"></i>${e.message}</div>`;
+        body.innerHTML = `<div class="alert alert-danger mb-0"><i class="fas fa-exclamation-circle me-1"></i>${escapeHtml(e.message)}</div>`;
     }
     btn.disabled = false;
     btn.innerHTML = '<i class="fas fa-magic me-1"></i>다시 분석';
@@ -3357,7 +3511,17 @@ async function generateAIRecommendation() {
 async function loadOwnerAdOrders(c, t) {
     t.textContent = '내 광고 주문';
     const orders = await apiGet('/api/owner/ad/orders');
-    c.innerHTML = `<div class="card data-card"><div class="card-header d-flex justify-content-between align-items-center">
+    c.innerHTML = `<div class="workspace-hero mb-3">
+        <div><span class="workspace-eyebrow">AD ORDERS</span><h2>내 광고 주문</h2><p>요청 후 최고관리자 검토와 집행을 거쳐 완료됩니다.</p></div>
+        <button class="btn btn-light" onclick="navigate('owner-adorder-new')"><i class="fas fa-plus me-1"></i>새 주문</button>
+    </div>
+    <div class="process-steps mb-3">
+        <div class="active"><span>1</span><strong>요청</strong></div><i class="fas fa-chevron-right"></i>
+        <div><span>2</span><strong>관리자 검토</strong></div><i class="fas fa-chevron-right"></i>
+        <div><span>3</span><strong>집행</strong></div><i class="fas fa-chevron-right"></i>
+        <div><span>4</span><strong>완료</strong></div>
+    </div>
+    <div class="card data-card"><div class="card-header d-flex justify-content-between align-items-center">
         <h5 class="mb-0">광고 주문 목록</h5>
         <button class="btn btn-primary btn-sm" onclick="navigate('owner-adorder-new')"><i class="fas fa-plus me-1"></i>새 주문</button>
     </div><div class="card-body">
@@ -3367,8 +3531,8 @@ async function loadOwnerAdOrders(c, t) {
                 let summary = '';
                 if (o.blog_detail) summary = o.blog_detail.campaign_name;
                 if (o.place_traffic_detail) summary = o.place_traffic_detail.place_name_or_id;
-                return `<tr><td>${o.id}</td><td><span class="badge bg-${o.type==='blog'?'info':'secondary'}">${o.type==='blog'?'블로그':'플레이스'}</span></td><td>${statusBadge(o.status)}</td><td>${summary}</td><td>${o.admin_memo||'-'}</td><td>${formatDate(o.created_at)}</td></tr>`;
-            }).join('')}</tbody>
+                return `<tr><td>${o.id}</td><td><span class="badge bg-${o.type==='blog'?'info':'secondary'}">${o.type==='blog'?'블로그':'플레이스'}</span></td><td>${statusBadge(o.status)}</td><td>${escapeHtml(summary)}</td><td>${escapeHtml(o.admin_memo||'-')}</td><td>${formatDate(o.created_at)}</td></tr>`;
+            }).join('') || '<tr><td colspan="6" class="text-center text-muted py-5"><i class="fas fa-inbox d-block fs-3 mb-2 opacity-50"></i>광고 주문이 없습니다.</td></tr>'}</tbody>
         </table></div></div></div>`;
 }
 
@@ -3397,19 +3561,22 @@ async function loadOwnerAdOrderNew(c, t) {
     if (placeOn) tabsHtml += `<li class="nav-item"><a class="nav-link ${defaultTab==='place'?'active':''}" href="#" onclick="showAdTab('place')"><i class="fas fa-map-marker-alt me-1"></i>플레이스 유입</a></li>`;
     tabsHtml += '</ul>';
 
-    let bodyHtml = tabsHtml;
+    let bodyHtml = `<div class="workspace-hero mb-3">
+        <div><span class="workspace-eyebrow">NEW CAMPAIGN</span><h2>새 광고 주문</h2><p>필수 정보를 입력하면 관리자가 검토 후 집행 상태를 안내합니다.</p></div>
+        <div class="workspace-hero-icon"><i class="fas fa-bullhorn"></i></div>
+    </div>${tabsHtml}`;
     if (blogOn) {
         bodyHtml += `<div id="adTabBlog" style="display:${defaultTab==='blog'?'':'none'}">
         <div class="card data-card"><div class="card-header"><h5><i class="fas fa-blog text-info me-2"></i>블로그 배포 요청</h5></div><div class="card-body">
             <div class="row g-3">
-                <div class="col-md-6"><label class="form-label">캠페인 이름</label><input class="form-control" id="blogCampaign"></div>
+                <div class="col-md-6"><label class="form-label">캠페인 이름 <span class="text-danger">*</span></label><input class="form-control" id="blogCampaign" maxlength="300"></div>
                 <div class="col-md-6"><label class="form-label">매장 주소</label><input class="form-control" id="blogAddr"></div>
                 <div class="col-md-6"><label class="form-label">문의 연락처</label><input class="form-control" id="blogContact"></div>
                 <div class="col-md-6"><label class="form-label">링크 (쉼표 구분)</label><input class="form-control" id="blogLinks"></div>
-                <div class="col-md-6"><label class="form-label">메인 키워드 (최대 5)</label><input class="form-control" id="blogKeywords"></div>
+                <div class="col-md-6"><label class="form-label">메인 키워드 (최대 5) <span class="text-danger">*</span></label><input class="form-control" id="blogKeywords" placeholder="쉼표로 구분"></div>
                 <div class="col-md-6"><label class="form-label">해시태그 (최대 5)</label><input class="form-control" id="blogHashtags"></div>
                 <div class="col-12"><label class="form-label">업체 소개</label><textarea class="form-control" id="blogDesc" rows="3"></textarea></div>
-                <div class="col-12"><button class="btn btn-primary" onclick="submitBlogOrder()"><i class="fas fa-paper-plane me-1"></i>블로그 주문 등록</button></div>
+                <div class="col-12"><button class="btn btn-primary" id="blogSubmitBtn" onclick="submitBlogOrder()"><i class="fas fa-paper-plane me-1"></i>검토 요청하기</button></div>
             </div><div id="blogResult" class="mt-3"></div>
         </div></div>
     </div>`;
@@ -3418,9 +3585,9 @@ async function loadOwnerAdOrderNew(c, t) {
         bodyHtml += `<div id="adTabPlace" style="display:${defaultTab==='place'?'':'none'}">
         <div class="card data-card"><div class="card-header"><h5><i class="fas fa-map-marker-alt text-success me-2"></i>플레이스 유입 요청</h5></div><div class="card-body">
             <div class="row g-3">
-                <div class="col-md-6"><label class="form-label">플레이스명 또는 ID</label><input class="form-control" id="placeName"></div>
-                <div class="col-md-6"><label class="form-label">검색 키워드 (최대 3)</label><input class="form-control" id="placeKeywords"></div>
-                <div class="col-12"><button class="btn btn-success" onclick="submitPlaceOrder()"><i class="fas fa-paper-plane me-1"></i>플레이스 주문 등록</button></div>
+                <div class="col-md-6"><label class="form-label">플레이스명 또는 ID <span class="text-danger">*</span></label><input class="form-control" id="placeName" maxlength="300"></div>
+                <div class="col-md-6"><label class="form-label">검색 키워드 (최대 3) <span class="text-danger">*</span></label><input class="form-control" id="placeKeywords" placeholder="쉼표로 구분"></div>
+                <div class="col-12"><button class="btn btn-success" id="placeSubmitBtn" onclick="submitPlaceOrder()"><i class="fas fa-paper-plane me-1"></i>검토 요청하기</button></div>
             </div><div id="placeResult" class="mt-3"></div>
         </div></div>
     </div>`;
@@ -3441,21 +3608,40 @@ function showAdTab(tab) {
 }
 
 async function submitBlogOrder() {
+    const campaign = document.getElementById('blogCampaign').value.trim();
+    const kw = document.getElementById('blogKeywords').value.split(',').map(s=>s.trim()).filter(Boolean);
+    const links = document.getElementById('blogLinks').value.split(',').map(s=>s.trim()).filter(Boolean);
+    const ht = document.getElementById('blogHashtags').value.split(',').map(s=>s.trim()).filter(Boolean);
+    if (campaign.length < 2) { alert('캠페인 이름을 2자 이상 입력해주세요'); return; }
+    if (!kw.length || kw.length > 5) { alert('메인 키워드를 1~5개 입력해주세요'); return; }
+    if (ht.length > 5) { alert('해시태그는 최대 5개까지 입력할 수 있습니다'); return; }
+    const btn = document.getElementById('blogSubmitBtn');
+    btn.disabled = true;
     try {
-        const links = document.getElementById('blogLinks').value.split(',').map(s=>s.trim()).filter(Boolean);
-        const kw = document.getElementById('blogKeywords').value.split(',').map(s=>s.trim()).filter(Boolean);
-        const ht = document.getElementById('blogHashtags').value.split(',').map(s=>s.trim()).filter(Boolean);
-        const res = await apiPost('/api/owner/ad/blog-orders', { campaign_name: document.getElementById('blogCampaign').value, address: document.getElementById('blogAddr').value, contact: document.getElementById('blogContact').value, links, main_keywords: kw, hashtags: ht, description: document.getElementById('blogDesc').value, extra_image_link: '' });
-        document.getElementById('blogResult').innerHTML = `<div class="alert alert-success">주문 등록 완료! (ID: ${res.id})</div>`;
-    } catch(e) { document.getElementById('blogResult').innerHTML = `<div class="alert alert-danger">${e.message}</div>`; }
+        const res = await apiPost('/api/owner/ad/blog-orders', { campaign_name: campaign, address: document.getElementById('blogAddr').value, contact: document.getElementById('blogContact').value, links, main_keywords: kw, hashtags: ht, description: document.getElementById('blogDesc').value, extra_image_link: '' });
+        document.getElementById('blogResult').innerHTML = `<div class="alert alert-success">요청 #${res.id}이 접수되었습니다. 주문 내역으로 이동합니다.</div>`;
+        setTimeout(() => navigate('owner-adorders'), 700);
+    } catch(e) {
+        btn.disabled = false;
+        document.getElementById('blogResult').innerHTML = `<div class="alert alert-danger">${escapeHtml(e.message)}</div>`;
+    }
 }
 
 async function submitPlaceOrder() {
+    const placeName = document.getElementById('placeName').value.trim();
+    const kw = document.getElementById('placeKeywords').value.split(',').map(s=>s.trim()).filter(Boolean);
+    if (placeName.length < 2) { alert('플레이스명 또는 ID를 2자 이상 입력해주세요'); return; }
+    if (!kw.length || kw.length > 3) { alert('검색 키워드를 1~3개 입력해주세요'); return; }
+    const btn = document.getElementById('placeSubmitBtn');
+    btn.disabled = true;
     try {
-        const kw = document.getElementById('placeKeywords').value.split(',').map(s=>s.trim()).filter(Boolean);
-        const res = await apiPost('/api/owner/ad/place-traffic-orders', { place_name_or_id: document.getElementById('placeName').value, search_keywords: kw });
-        document.getElementById('placeResult').innerHTML = `<div class="alert alert-success">주문 등록 완료! (ID: ${res.id})</div>`;
-    } catch(e) { document.getElementById('placeResult').innerHTML = `<div class="alert alert-danger">${e.message}</div>`; }
+        const res = await apiPost('/api/owner/ad/place-traffic-orders', { place_name_or_id: placeName, search_keywords: kw });
+        document.getElementById('placeResult').innerHTML = `<div class="alert alert-success">요청 #${res.id}이 접수되었습니다. 주문 내역으로 이동합니다.</div>`;
+        setTimeout(() => navigate('owner-adorders'), 700);
+    } catch(e) {
+        btn.disabled = false;
+        document.getElementById('placeResult').innerHTML = `<div class="alert alert-danger">${escapeHtml(e.message)}</div>`;
+    }
 }
 
 function crmComingSoon(feature) {
@@ -3568,12 +3754,10 @@ async function loadCRM(c, t){
     try { crmServiceCache = await apiGet('/api/crm/services'); } catch(e){ crmServiceCache=[]; }
     const tabs=[
         {id:'dashboard',icon:'fa-gauge-high',label:'대시보드'},
-        {id:'customers',icon:'fa-users',label:'고객'},
-        {id:'reservations',icon:'fa-calendar-check',label:'예약'},
-        {id:'analytics',icon:'fa-chart-pie',label:'매출·통계'},
-        {id:'marketing',icon:'fa-bullhorn',label:'마케팅·리텐션'},
+        {id:'customers',icon:'fa-users',label:'고객관리'},
+        {id:'staff',icon:'fa-user-group',label:'직원관리'},
+        {id:'services',icon:'fa-scissors',label:'시술관리'},
         {id:'messages',icon:'fa-comment-dots',label:'메시지'},
-        {id:'services',icon:'fa-scissors',label:'시술 메뉴'},
     ];
     if(!tabs.find(x=>x.id===crmTab)) crmTab='dashboard';
     const scopeToggle = crmMe.is_designer ? `
@@ -3585,7 +3769,7 @@ async function loadCRM(c, t){
         <div class="page-header mb-3 d-flex align-items-start flex-wrap gap-2">
             <div>
                 <h2 class="fw-bold mb-1"><i class="fas fa-user-friends me-2" style="color:#667eea"></i>미용실 관리 프로그램</h2>
-                <p class="text-muted mb-0">${crmMe.merchant_name||''} · 고객·예약·매출·마케팅을 한 곳에서 관리하세요${crmMe.is_designer?' <span class="badge bg-info ms-1">디자이너</span>':''}</p>
+                <p class="text-muted mb-0">${crmMe.merchant_name||''} · 고객, 직원, 시술 메뉴와 메시지를 간결하게 관리합니다${crmMe.is_designer?' <span class="badge bg-info ms-1">디자이너</span>':''}</p>
             </div>
             ${scopeToggle}
         </div>
@@ -3611,9 +3795,7 @@ function crmSwitchTab(tab){
     body.innerHTML='<div class="text-center py-5"><div class="spinner-border text-primary"></div></div>';
     if(tab==='dashboard') crmRenderDashboard(body);
     else if(tab==='customers') crmRenderCustomers(body);
-    else if(tab==='reservations') crmRenderReservations(body);
-    else if(tab==='analytics') crmRenderAnalytics(body);
-    else if(tab==='marketing') crmRenderMarketing(body);
+    else if(tab==='staff') crmRenderStaff(body);
     else if(tab==='messages') crmRenderMessages(body);
     else if(tab==='services') crmRenderServices(body);
 }
@@ -3621,41 +3803,61 @@ function crmSwitchTab(tab){
 // ─── Dashboard ─────────────────────────────────────────────
 async function crmRenderDashboard(body){
     try{
-        const s=await apiGet('/api/crm/stats?'+crmScopeQS());
-        const card=(icon,color,label,value,sub)=>`<div class="col-6 col-lg-3"><div class="card data-card h-100"><div class="card-body py-3">
-            <div class="d-flex align-items-center gap-2 mb-1"><span style="width:32px;height:32px;border-radius:9px;background:${color}1a;color:${color};display:flex;align-items:center;justify-content:center"><i class="fas ${icon}"></i></span><small class="text-muted">${label}</small></div>
-            <div class="fs-4 fw-bold">${value}</div>${sub?`<small class="text-muted">${sub}</small>`:''}</div></div></div>`;
-        const topRows=(s.top_services||[]).map((x,i)=>`<tr><td>${i+1}</td><td class="fw-bold">${x.name}</td><td class="text-end">${x.count}건</td><td class="text-end">${formatMoney(x.revenue)}</td></tr>`).join('')||`<tr><td colspan="4" class="text-center text-muted py-3">데이터 없음</td></tr>`;
-        const staffRows=(s.staff_sales||[]).map(x=>`<tr><td class="fw-bold">${x.staff_name}</td><td class="text-end">${x.count}건</td><td class="text-end fw-bold text-primary">${formatMoney(x.revenue)}</td></tr>`).join('')||`<tr><td colspan="3" class="text-center text-muted py-3">데이터 없음</td></tr>`;
+        const [customers, staff, services, messages] = await Promise.all([
+            apiGet('/api/crm/customers?'+crmScopeQS()),
+            apiGet('/api/crm/staff?'+crmScopeQS()),
+            apiGet('/api/crm/services'),
+            apiGet('/api/crm/messages?limit=20')
+        ]);
+        const card=(icon,color,label,value,sub,tab)=>`<button class="crm-overview-card" onclick="crmSwitchTab('${tab}')">
+            <span class="crm-overview-icon" style="background:${color}18;color:${color}"><i class="fas ${icon}"></i></span>
+            <span><small>${label}</small><strong>${value}</strong><em>${sub}</em></span><i class="fas fa-chevron-right"></i>
+        </button>`;
+        const recentCustomers = customers.slice(0, 5);
         body.innerHTML=`
-            <div class="row g-3 mb-3">
-                ${card('fa-calendar-day','#f59e0b','오늘 예약',s.reservations_today+'건','예정 '+s.reservations_upcoming+'건')}
-                ${card('fa-won-sign','#16a34a','오늘 매출',formatMoney(s.revenue_today),s.visits_today+'건 방문')}
-                ${card('fa-coins','#667eea','이번달 매출',formatMoney(s.revenue_month),'객단가 '+formatMoney(s.avg_ticket_month))}
-                ${card('fa-user-plus','#0ea5e9','이번달 신규',s.new_this_month+'명','전체 '+s.total_customers+'명')}
+            <div class="crm-welcome mb-3">
+                <div><span>BEAUTYPOS CRM</span><h3>${escapeHtml(crmMe.merchant_name || '미용실')} 고객관리</h3><p>필요한 고객관리 기능만 빠르게 사용할 수 있습니다.</p></div>
+                <div class="crm-welcome-mark"><i class="fas fa-wand-magic-sparkles"></i></div>
             </div>
-            <div class="row g-3 mb-3">
-                ${card('fa-bell','#ef4444','재방문 대상',s.revisit_due+'명','30일+ 미방문')}
-                ${card('fa-cake-candles','#ec4899','이달 생일',s.birthdays_this_month+'명','축하 메시지 보내기')}
-                ${card('fa-clock','#8b5cf6','예정 예약',s.reservations_upcoming+'건','다가오는 예약')}
-                ${card('fa-sack-dollar','#14b8a6','누적 매출',formatMoney(s.revenue_total),'CRM 기준')}
+            <div class="crm-overview-grid mb-3">
+                ${card('fa-user-group','#2563eb','관리 고객',customers.length+'명','고객 목록과 상세 메모','customers')}
+                ${card('fa-users-gear','#7c3aed','활성 직원',staff.length+'명','담당 고객 연결','staff')}
+                ${card('fa-scissors','#0f9f80','활성 시술',services.filter(x=>x.is_active).length+'개','가격과 소요시간','services')}
+                ${card('fa-comment-dots','#e87924','최근 메시지',messages.length+'건','템플릿과 발송 내역','messages')}
             </div>
-            <div class="row g-3">
-                <div class="col-lg-7"><div class="card data-card h-100"><div class="card-header d-flex justify-content-between align-items-center"><h6 class="mb-0"><i class="fas fa-calendar-day me-2"></i>오늘의 예약</h6><button class="btn btn-sm btn-outline-primary" onclick="crmSwitchTab('reservations')">예약 관리</button></div><div class="card-body p-0" id="crmTodayResv"><div class="text-center py-4"><div class="spinner-border spinner-border-sm text-primary"></div></div></div></div></div>
-                <div class="col-lg-5">
-                    <div class="card data-card"><div class="card-header"><h6 class="mb-0"><i class="fas fa-chart-line me-2"></i>월별 매출</h6></div><div class="card-body"><canvas id="crmDashChart" height="150"></canvas></div></div>
-                    <div class="card data-card mt-3"><div class="card-header"><h6 class="mb-0"><i class="fas fa-crown me-2"></i>인기 시술 TOP5</h6></div><div class="card-body p-0"><table class="table table-sm mb-0 align-middle"><thead class="table-light"><tr><th>#</th><th>시술</th><th class="text-end">건수</th><th class="text-end">매출</th></tr></thead><tbody>${topRows}</tbody></table></div></div>
-                </div>
+            <div class="card data-card">
+                <div class="card-header d-flex justify-content-between align-items-center"><h6 class="mb-0"><i class="fas fa-clock-rotate-left me-2"></i>최근 등록 고객</h6><button class="btn btn-sm btn-outline-primary" onclick="crmSwitchTab('customers')">전체 고객</button></div>
+                <div class="card-body p-0">${recentCustomers.length ? `<div class="crm-recent-list">${recentCustomers.map(customer=>`
+                    <button onclick="crmCustomerDetail(${customer.id})">
+                        <span class="crm-customer-avatar">${escapeHtml((customer.name||'?')[0])}</span>
+                        <span><strong>${escapeHtml(customer.name)}</strong><small>${escapeHtml(customer.phone||'연락처 없음')} · ${escapeHtml(customer.assigned_staff_name||'담당 미지정')}</small></span>
+                        <span class="badge bg-light text-dark">${escapeHtml(customer.grade||'NEW')}</span>
+                    </button>`).join('')}</div>` : '<div class="empty-state compact"><i class="fas fa-user-plus"></i><p>등록된 고객이 없습니다.</p><button class="btn btn-primary btn-sm" onclick="crmSwitchTab(\'customers\')">첫 고객 등록</button></div>'}</div>
+            </div>`;
+    }catch(e){ body.innerHTML=`<div class="alert alert-danger">${escapeHtml(e.message)}</div>`; }
+}
+
+async function crmRenderStaff(body){
+    try {
+        crmStaffCache = await apiGet('/api/crm/staff?'+crmScopeQS());
+        body.innerHTML = `
+        <div class="card data-card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <div><h5 class="mb-1">직원관리</h5><small class="text-muted">고객 담당자를 확인하고 원장 계정에서 직원 정보를 관리합니다.</small></div>
+                ${crmMe.role === 'owner' ? '<button class="btn btn-primary btn-sm" onclick="navigate(\'owner-staff\')"><i class="fas fa-user-plus me-1"></i>직원 등록·수정</button>' : ''}
             </div>
-            ${!s.scope_mine?`<div class="card data-card mt-3"><div class="card-header"><h6 class="mb-0"><i class="fas fa-user-tie me-2"></i>디자이너별 매출 (이번달)</h6></div><div class="card-body p-0"><table class="table table-sm mb-0 align-middle"><thead class="table-light"><tr><th>디자이너</th><th class="text-end">건수</th><th class="text-end">매출</th></tr></thead><tbody>${staffRows}</tbody></table></div></div>`:''}`;
-        const ctx=document.getElementById('crmDashChart');
-        if(ctx&&window.Chart){ crmChartRefs.push(new Chart(ctx,{type:'bar',data:{labels:(s.monthly_revenue||[]).map(m=>m.month.slice(2)),datasets:[{data:(s.monthly_revenue||[]).map(m=>m.revenue),backgroundColor:'#667eea',borderRadius:6}]},options:{plugins:{legend:{display:false}},scales:{y:{ticks:{callback:v=>(v/10000)+'만'}}}}})); }
-        const today=new Date(); today.setMinutes(today.getMinutes()-today.getTimezoneOffset());
-        const ds=today.toISOString().slice(0,10);
-        const rsv=await apiGet(`/api/crm/reservations?date_from=${ds}T00:00&date_to=${ds}T23:59&`+crmScopeQS());
-        const box=document.getElementById('crmTodayResv');
-        if(box){ box.innerHTML = rsv.length? `<div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0"><thead class="table-light"><tr><th>시간</th><th>고객</th><th>시술</th><th>담당</th><th>상태</th></tr></thead><tbody>${rsv.map(r=>`<tr style="cursor:pointer" onclick="crmReservationDetail(${r.id})"><td class="fw-bold">${(formatDate(r.reserved_at).split(' ')[1]||'')}</td><td>${r.customer_name}</td><td>${r.service_name||'-'}</td><td>${r.staff_name||'-'}</td><td>${crmResvStatusBadge(r.status,r.status_kr)}</td></tr>`).join('')}</tbody></table></div>` : `<div class="text-center text-muted py-4">오늘 예약이 없습니다.</div>`; }
-    }catch(e){ body.innerHTML=`<div class="alert alert-danger">${e.message}</div>`; }
+            <div class="card-body">
+                ${crmStaffCache.length ? `<div class="crm-staff-grid">${crmStaffCache.map(staff=>`
+                    <div class="crm-staff-card">
+                        <span class="crm-staff-avatar"><i class="fas fa-user"></i></span>
+                        <div><strong>${escapeHtml(staff.name)}</strong><small>직원코드 ${escapeHtml(staff.staff_code || '-')}</small></div>
+                        ${staff.is_me ? '<span class="badge bg-primary">내 계정</span>' : '<span class="status-dot" title="활성"></span>'}
+                    </div>`).join('')}</div>` : '<div class="empty-state compact"><i class="fas fa-users"></i><p>활성 직원이 없습니다.</p></div>'}
+            </div>
+        </div>`;
+    } catch(e) {
+        body.innerHTML=`<div class="alert alert-danger">${escapeHtml(e.message)}</div>`;
+    }
 }
 
 // ─── Customers ─────────────────────────────────────────────
@@ -3680,7 +3882,7 @@ async function crmRenderCustomers(body){
             if(gr) url+='&grade='+gr;
             if(tg) url+='&tag='+encodeURIComponent(tg);
             list.innerHTML=crmCustomerTable(await apiGet(url));
-        }catch(e){ list.innerHTML=`<div class="alert alert-danger m-3">${e.message}</div>`; }
+        }catch(e){ list.innerHTML=`<div class="alert alert-danger m-3">${escapeHtml(e.message)}</div>`; }
     };
     document.getElementById('crmCustSearch').addEventListener('input', crmDebounce(load,300));
     document.getElementById('crmCustGrade').addEventListener('change', load);
@@ -3750,7 +3952,7 @@ async function crmCustomerSave(id){
     try{
         if(id) await apiPut(`/api/crm/customers/${id}`,payload); else await apiPost('/api/crm/customers',payload);
         crmCloseModal(); crmNotify(id?'수정되었습니다.':'고객이 등록되었습니다.','ok'); crmSwitchTab('customers');
-    }catch(e){ res.innerHTML=`<div class="alert alert-danger py-2 mb-0">${e.message}</div>`; }
+    }catch(e){ res.innerHTML=`<div class="alert alert-danger py-2 mb-0">${escapeHtml(e.message)}</div>`; }
 }
 async function crmCustomerDetail(id){
     try{
@@ -3829,7 +4031,7 @@ function crmPointForm(id){
 async function crmPointSave(id){
     const delta=parseInt(document.getElementById('pfDelta').value); const res=document.getElementById('pfResult');
     if(!delta){ res.innerHTML=`<div class="alert alert-warning py-2 mb-0">변동 포인트를 입력하세요.</div>`; return; }
-    try{ const r=await apiPost(`/api/crm/customers/${id}/points`,{delta,reason:document.getElementById('pfReason').value.trim()||null}); crmCloseModal(); crmNotify(`적용됨 (잔액 ${r.points.toLocaleString()}P)`,'ok'); }catch(e){ res.innerHTML=`<div class="alert alert-danger py-2 mb-0">${e.message}</div>`; }
+    try{ const r=await apiPost(`/api/crm/customers/${id}/points`,{delta,reason:document.getElementById('pfReason').value.trim()||null}); crmCloseModal(); crmNotify(`적용됨 (잔액 ${r.points.toLocaleString()}P)`,'ok'); }catch(e){ res.innerHTML=`<div class="alert alert-danger py-2 mb-0">${escapeHtml(e.message)}</div>`; }
 }
 function crmVisitForm(customerId){
     const custSelect = customerId? '' : `<div class="col-12"><label class="form-label">고객 <span class="text-danger">*</span></label><select class="form-select" id="crmVisitCustomer"><option value="">고객 선택</option></select></div>`;
@@ -3854,7 +4056,7 @@ async function crmVisitSave(customerId){
     const cid=customerId||parseInt(document.getElementById('crmVisitCustomer').value);
     if(!cid){ res.innerHTML=`<div class="alert alert-warning py-2 mb-0">고객을 선택하세요.</div>`; return; }
     const payload={ customer_id:cid, service_name:document.getElementById('crmVisitService').value.trim()||null, amount:parseFloat(document.getElementById('crmVisitAmount').value)||0, staff_id:parseInt(document.getElementById('crmVisitStaff').value)||null, visit_date:document.getElementById('crmVisitDate').value||null, memo:document.getElementById('crmVisitMemo').value.trim()||null };
-    try{ const r=await apiPost('/api/crm/visits',payload); crmCloseModal(); crmNotify(`방문 기록됨${r.points_earned?' (+'+r.points_earned+'P)':''}`,'ok'); crmSwitchTab(crmTab==='customers'?'customers':crmTab); }catch(e){ res.innerHTML=`<div class="alert alert-danger py-2 mb-0">${e.message}</div>`; }
+    try{ const r=await apiPost('/api/crm/visits',payload); crmCloseModal(); crmNotify(`방문 기록됨${r.points_earned?' (+'+r.points_earned+'P)':''}`,'ok'); crmSwitchTab(crmTab==='customers'?'customers':crmTab); }catch(e){ res.innerHTML=`<div class="alert alert-danger py-2 mb-0">${escapeHtml(e.message)}</div>`; }
 }
 async function crmDeleteVisit(vid, customerId){
     if(!confirm('이 방문 기록을 삭제할까요?')) return;
@@ -3893,7 +4095,7 @@ async function crmLoadReservationView(){
         if(crmCalView==='list'){ const data=await apiGet(`/api/crm/reservations?${crmScopeQS()}`); box.innerHTML=crmReservationListTable(data); return; }
         const cal=await apiGet(`/api/crm/reservations/calendar?date=${crmCalDate}&view=${crmCalView}&${crmScopeQS()}`);
         box.innerHTML = crmCalView==='day' ? crmRenderDayCalendar(cal) : crmRenderWeekCalendar(cal);
-    }catch(e){ box.innerHTML=`<div class="alert alert-danger">${e.message}</div>`; }
+    }catch(e){ box.innerHTML=`<div class="alert alert-danger">${escapeHtml(e.message)}</div>`; }
 }
 function crmReservationListTable(data){
     const rows=data.map(r=>`<tr>
@@ -4004,8 +4206,8 @@ async function crmReservationSave(force){
     const payload={ customer_id:parseInt(document.getElementById('rfCustomer').value)||null, customer_name:name, phone:document.getElementById('rfPhone').value.trim()||null, reserved_at:date, service_name:document.getElementById('rfService').value.trim()||null, duration_min:parseInt(document.getElementById('rfDur').value)||60, staff_id:parseInt(document.getElementById('rfStaff').value)||null, memo:document.getElementById('rfMemo').value.trim()||null, force:!!force };
     try{ await apiPost('/api/crm/reservations',payload); crmCloseModal(); crmNotify('예약이 등록되었습니다.','ok'); crmLoadReservationView(); }
     catch(e){
-        if((e.message||'').includes('겹칩')){ if(confirm(e.message+'\n\n그래도 등록하시겠습니까?')){ crmReservationSave(true); return; } res.innerHTML=`<div class="alert alert-warning py-2 mb-0">${e.message}</div>`; }
-        else res.innerHTML=`<div class="alert alert-danger py-2 mb-0">${e.message}</div>`;
+        if((e.message||'').includes('겹칩')){ if(confirm(e.message+'\n\n그래도 등록하시겠습니까?')){ crmReservationSave(true); return; } res.innerHTML=`<div class="alert alert-warning py-2 mb-0">${escapeHtml(e.message)}</div>`; }
+        else res.innerHTML=`<div class="alert alert-danger py-2 mb-0">${escapeHtml(e.message)}</div>`;
     }
 }
 
@@ -4043,7 +4245,7 @@ async function crmRenderAnalytics(body){
                 const wc=document.getElementById('anWeekday'); if(wc) crmChartRefs.push(new Chart(wc,{type:'bar',data:{labels:(a.by_weekday||[]).map(x=>x.label),datasets:[{data:(a.by_weekday||[]).map(x=>x.revenue),backgroundColor:'#f59e0b',borderRadius:5}]},options:{plugins:{legend:{display:false}},scales:{y:{ticks:{callback:v=>(v/10000)+'만'}}}}}));
                 const hc=document.getElementById('anHour'); if(hc) crmChartRefs.push(new Chart(hc,{type:'bar',data:{labels:(a.by_hour||[]).map(x=>x.hour+'시'),datasets:[{data:(a.by_hour||[]).map(x=>x.count),backgroundColor:'#8b5cf6',borderRadius:5}]},options:{plugins:{legend:{display:false}}}}));
             }
-        }catch(e){ box.innerHTML=`<div class="alert alert-danger">${e.message}</div>`; }
+        }catch(e){ box.innerHTML=`<div class="alert alert-danger">${escapeHtml(e.message)}</div>`; }
     };
     document.getElementById('crmAnRange').addEventListener('change', load);
     load();
@@ -4077,7 +4279,7 @@ async function crmMkRender(tab){
             const rows=d.map(cp=>`<tr><td class="fw-bold">${cp.name}</td><td>${cp.customer_name}</td><td>${cp.discount_type==='percent'?cp.value+'%':formatMoney(cp.value)}</td><td>${crmCouponStatusBadge(cp.status)}</td><td class="text-muted">${cp.expires_at||'-'}</td><td class="text-end">${cp.status==='issued'?`<button class="btn btn-sm btn-outline-success border-0" title="사용처리" onclick="crmCouponUse(${cp.id})"><i class="fas fa-check"></i></button>`:''}<button class="btn btn-sm btn-outline-danger border-0" onclick="crmCouponDelete(${cp.id})"><i class="fas fa-trash"></i></button></td></tr>`).join('')||`<tr><td colspan="6" class="text-center text-muted py-3">발급된 쿠폰이 없습니다.</td></tr>`;
             box.innerHTML=`<div class="card data-card"><div class="card-header d-flex justify-content-between align-items-center"><h6 class="mb-0">쿠폰 발급 현황</h6><div class="d-flex gap-2"><button class="btn btn-sm btn-outline-primary" onclick="crmCouponBulkForm()"><i class="fas fa-layer-group me-1"></i>세그먼트 일괄발급</button><button class="btn btn-sm btn-primary" onclick="crmCouponForm()"><i class="fas fa-plus me-1"></i>쿠폰 발급</button></div></div><div class="card-body p-0"><div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead class="table-light"><tr><th>쿠폰명</th><th>고객</th><th>할인</th><th>상태</th><th>만료</th><th class="text-end">관리</th></tr></thead><tbody>${rows}</tbody></table></div></div></div>`;
         }
-    }catch(e){ box.innerHTML=`<div class="alert alert-danger">${e.message}</div>`; }
+    }catch(e){ box.innerHTML=`<div class="alert alert-danger">${escapeHtml(e.message)}</div>`; }
 }
 function crmRevisitTable(d){
     const rows=(d.customers||[]).map(c=>`<tr><td class="fw-bold" style="cursor:pointer" onclick="crmCustomerDetail(${c.id})">${c.name}</td><td>${c.phone||'-'}</td><td><span class="badge" style="background:${CRM_GRADE_COLORS[c.grade]}">${c.grade}</span></td><td class="text-center">${c.visit_count}회</td><td class="text-center"><span class="badge bg-danger">${c.days_since_visit}일 전</span></td><td>${c.assigned_staff_name||'-'}</td><td class="text-end"><button class="btn btn-sm btn-outline-primary border-0" onclick="crmMessageToCustomer(${c.id},'${(c.name||'').replace(/'/g,'')}')"><i class="fas fa-comment-dots"></i></button></td></tr>`).join('')||`<tr><td colspan="7" class="text-center text-muted py-3">대상 고객이 없습니다.</td></tr>`;
@@ -4100,7 +4302,7 @@ async function crmCouponSave(){
     const res=document.getElementById('cpResult'); const name=document.getElementById('cpName').value.trim();
     if(!name){ res.innerHTML=`<div class="alert alert-warning py-2 mb-0">쿠폰명은 필수입니다.</div>`; return; }
     const payload={ customer_id:parseInt(document.getElementById('cpCust').value)||null, name, discount_type:document.getElementById('cpType').value, value:parseInt(document.getElementById('cpValue').value)||0, expires_at:document.getElementById('cpExp').value||null };
-    try{ await apiPost('/api/crm/coupons',payload); crmCloseModal(); crmNotify('쿠폰이 발급되었습니다.','ok'); if(crmTab==='marketing') crmMkRender('coupons'); }catch(e){ res.innerHTML=`<div class="alert alert-danger py-2 mb-0">${e.message}</div>`; }
+    try{ await apiPost('/api/crm/coupons',payload); crmCloseModal(); crmNotify('쿠폰이 발급되었습니다.','ok'); if(crmTab==='marketing') crmMkRender('coupons'); }catch(e){ res.innerHTML=`<div class="alert alert-danger py-2 mb-0">${escapeHtml(e.message)}</div>`; }
 }
 function crmCouponBulkForm(){
     const body=`<div class="row g-3">
@@ -4117,7 +4319,7 @@ async function crmCouponBulkSave(){
     const res=document.getElementById('cbResult'); const name=document.getElementById('cbName').value.trim();
     if(!name){ res.innerHTML=`<div class="alert alert-warning py-2 mb-0">쿠폰명은 필수입니다.</div>`; return; }
     const payload={ segment:document.getElementById('cbSeg').value, name, discount_type:document.getElementById('cbType').value, value:parseInt(document.getElementById('cbValue').value)||0, expires_at:document.getElementById('cbExp').value||null };
-    try{ const r=await apiPost('/api/crm/coupons/bulk',payload); crmCloseModal(); crmNotify(`${r.issued}명에게 쿠폰 발급 완료`,'ok'); crmMkRender('coupons'); }catch(e){ res.innerHTML=`<div class="alert alert-danger py-2 mb-0">${e.message}</div>`; }
+    try{ const r=await apiPost('/api/crm/coupons/bulk',payload); crmCloseModal(); crmNotify(`${r.issued}명에게 쿠폰 발급 완료`,'ok'); crmMkRender('coupons'); }catch(e){ res.innerHTML=`<div class="alert alert-danger py-2 mb-0">${escapeHtml(e.message)}</div>`; }
 }
 async function crmCouponUse(id){ try{ await apiPut(`/api/crm/coupons/${id}?status=used`,{}); crmNotify('사용 처리되었습니다.','ok'); crmMkRender('coupons'); }catch(e){ crmNotify(e.message,'err'); } }
 async function crmCouponDelete(id){ if(!confirm('쿠폰을 삭제할까요?')) return; try{ await apiDelete(`/api/crm/coupons/${id}`); crmNotify('삭제되었습니다.','ok'); crmMkRender('coupons'); }catch(e){ crmNotify(e.message,'err'); } }
@@ -4161,7 +4363,7 @@ async function crmMsgRender(tab){
             const rows=logs.map(m=>`<tr><td><small>${formatDate(m.sent_at)}</small></td><td>${m.customer_name}</td><td><span class="badge bg-secondary">${m.channel}</span></td><td class="small">${m.content}</td><td><span class="badge bg-light text-dark">${m.campaign||'-'}</span></td></tr>`).join('')||`<tr><td colspan="5" class="text-center text-muted py-3">발송 내역이 없습니다.</td></tr>`;
             box.innerHTML=`<div class="card data-card"><div class="card-body p-0"><div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead class="table-light"><tr><th>발송시각</th><th>고객</th><th>채널</th><th>내용</th><th>캠페인</th></tr></thead><tbody>${rows}</tbody></table></div></div></div>`;
         }
-    }catch(e){ box.innerHTML=`<div class="alert alert-danger">${e.message}</div>`; }
+    }catch(e){ box.innerHTML=`<div class="alert alert-danger">${escapeHtml(e.message)}</div>`; }
 }
 async function crmMessageForm(opts){
     opts=opts||{};
@@ -4193,7 +4395,7 @@ async function crmMessageSend(customerId){
     const payload={ channel, template_id:tplId, content:content||null };
     if(customerId) payload.customer_ids=[customerId];
     else payload.segment=document.getElementById('smSeg').value;
-    try{ const r=await apiPost('/api/crm/messages/send',payload); crmCloseModal(); crmNotify(`${r.sent}건 발송(목업) 완료`,'ok'); if(crmTab==='messages') crmMsgRender('log'); }catch(e){ res.innerHTML=`<div class="alert alert-danger py-2 mb-0">${e.message}</div>`; }
+    try{ const r=await apiPost('/api/crm/messages/send',payload); crmCloseModal(); crmNotify(`${r.sent}건 발송(목업) 완료`,'ok'); if(crmTab==='messages') crmMsgRender('log'); }catch(e){ res.innerHTML=`<div class="alert alert-danger py-2 mb-0">${escapeHtml(e.message)}</div>`; }
 }
 function crmMessageToCustomer(id,name){ crmMessageForm({customer_id:id, title:`${name||'고객'} 메시지`}); }
 function crmTemplateForm(existing){
@@ -4211,7 +4413,7 @@ async function crmTemplateSave(id){
     const res=document.getElementById('tfResult'); const name=document.getElementById('tfName').value.trim(); const bodyv=document.getElementById('tfBody').value.trim();
     if(!name||!bodyv){ res.innerHTML=`<div class="alert alert-warning py-2 mb-0">이름과 내용은 필수입니다.</div>`; return; }
     const payload={ name, channel:document.getElementById('tfChannel').value, category:document.getElementById('tfCat').value.trim()||null, body:bodyv };
-    try{ if(id) await apiPut(`/api/crm/message-templates/${id}`,payload); else await apiPost('/api/crm/message-templates',payload); crmCloseModal(); crmNotify('저장되었습니다.','ok'); crmMsgRender('templates'); }catch(e){ res.innerHTML=`<div class="alert alert-danger py-2 mb-0">${e.message}</div>`; }
+    try{ if(id) await apiPut(`/api/crm/message-templates/${id}`,payload); else await apiPost('/api/crm/message-templates',payload); crmCloseModal(); crmNotify('저장되었습니다.','ok'); crmMsgRender('templates'); }catch(e){ res.innerHTML=`<div class="alert alert-danger py-2 mb-0">${escapeHtml(e.message)}</div>`; }
 }
 async function crmTemplateDelete(id){ if(!confirm('템플릿을 삭제할까요?')) return; try{ await apiDelete(`/api/crm/message-templates/${id}`); crmNotify('삭제되었습니다.','ok'); crmMsgRender('templates'); }catch(e){ crmNotify(e.message,'err'); } }
 
@@ -4219,20 +4421,31 @@ async function crmTemplateDelete(id){ if(!confirm('템플릿을 삭제할까요?
 async function crmRenderServices(body){
     try{
         const data=await apiGet('/api/crm/services');
+        crmServiceCache = data;
+        const canManage = crmMe.role === 'owner';
         const cats={};
         data.forEach(s=>{ (cats[s.category||'기타']=cats[s.category||'기타']||[]).push(s); });
         let sections='';
         Object.keys(cats).forEach(cat=>{
-            const rows=cats[cat].map(s=>`<tr>
-                <td class="fw-bold">${s.name}</td><td class="text-end">${formatMoney(s.price)}</td><td class="text-center">${s.duration_min}분</td>
-                <td class="text-center">${s.is_active?'<span class="badge bg-success">활성</span>':'<span class="badge bg-secondary">비활성</span>'}</td>
-                <td class="text-end"><button class="btn btn-sm btn-outline-info border-0" title="디자이너별 단가" onclick="crmServicePriceForm(${s.id},'${s.name.replace(/'/g,'')}')"><i class="fas fa-user-tag"></i></button><button class="btn btn-sm btn-outline-primary border-0" onclick='crmServiceForm(${JSON.stringify(s)})'><i class="fas fa-pen"></i></button><button class="btn btn-sm btn-outline-danger border-0" onclick="crmServiceDelete(${s.id})"><i class="fas fa-trash"></i></button></td>
-            </tr>`).join('');
-            sections+=`<div class="mb-2"><div class="fw-bold text-muted small mb-1 px-1"><i class="fas fa-folder me-1"></i>${cat}</div><div class="table-responsive"><table class="table table-hover align-middle mb-0"><tbody>${rows}</tbody></table></div></div>`;
+            const cards=cats[cat].map(s=>`<div class="crm-service-card">
+                <div class="crm-service-main">
+                    <span class="crm-service-icon"><i class="fas fa-scissors"></i></span>
+                    <div><strong>${escapeHtml(s.name)}</strong><small>${s.duration_min}분 · ${s.is_active?'활성':'비활성'}</small></div>
+                </div>
+                <div class="crm-service-price">${formatMoney(s.price)}</div>
+                ${canManage ? `<div class="crm-service-actions">
+                    <button class="btn btn-sm btn-outline-info" title="디자이너별 단가" onclick="crmOpenServicePrice(${s.id})"><i class="fas fa-user-tag"></i></button>
+                    <button class="btn btn-sm btn-outline-primary" title="수정" onclick="crmEditService(${s.id})"><i class="fas fa-pen"></i></button>
+                    <button class="btn btn-sm btn-outline-danger" title="삭제" onclick="crmServiceDelete(${s.id})"><i class="fas fa-trash"></i></button>
+                </div>` : ''}
+            </div>`).join('');
+            sections+=`<section class="crm-service-section"><h6><i class="fas fa-folder me-1"></i>${escapeHtml(cat)}</h6><div class="crm-service-grid">${cards}</div></section>`;
         });
-        body.innerHTML=`<div class="card data-card"><div class="card-header d-flex justify-content-between align-items-center"><h6 class="mb-0">시술 메뉴</h6><button class="btn btn-sm btn-primary" onclick="crmServiceForm()"><i class="fas fa-plus me-1"></i>시술 추가</button></div><div class="card-body">${sections||'<div class="text-center text-muted py-4">등록된 시술이 없습니다.</div>'}</div></div>`;
-    }catch(e){ body.innerHTML=`<div class="alert alert-danger">${e.message}</div>`; }
+        body.innerHTML=`<div class="card data-card"><div class="card-header d-flex justify-content-between align-items-center"><div><h6 class="mb-1">시술관리</h6><small class="text-muted">${canManage?'시술 메뉴의 가격과 소요시간을 관리합니다.':'매장에서 제공하는 시술 메뉴를 확인합니다.'}</small></div>${canManage?'<button class="btn btn-sm btn-primary" onclick="crmServiceForm()"><i class="fas fa-plus me-1"></i>시술 추가</button>':''}</div><div class="card-body">${sections||'<div class="empty-state compact"><i class="fas fa-scissors"></i><p>등록된 시술이 없습니다.</p></div>'}</div></div>`;
+    }catch(e){ body.innerHTML=`<div class="alert alert-danger">${escapeHtml(e.message)}</div>`; }
 }
+function crmEditService(id){ const service=crmServiceCache.find(item=>item.id===id); if(service) crmServiceForm(service); }
+function crmOpenServicePrice(id){ const service=crmServiceCache.find(item=>item.id===id); if(service) crmServicePriceForm(id,service.name); }
 function crmServiceForm(existing){
     const s=existing||{}; const isEdit=!!(existing&&existing.id);
     const body=`<div class="row g-3">
@@ -4250,7 +4463,7 @@ async function crmServiceSave(id){
     if(!name){ res.innerHTML=`<div class="alert alert-warning py-2 mb-0">시술명은 필수입니다.</div>`; return; }
     const payload={ name, category:document.getElementById('sfCat').value.trim()||null, price:parseFloat(document.getElementById('sfPrice').value)||0, duration_min:parseInt(document.getElementById('sfDur').value)||60 };
     const act=document.getElementById('sfActive'); if(act) payload.is_active=act.checked;
-    try{ if(id) await apiPut(`/api/crm/services/${id}`,payload); else await apiPost('/api/crm/services',payload); crmServiceCache=await apiGet('/api/crm/services'); crmCloseModal(); crmNotify('저장되었습니다.','ok'); crmSwitchTab('services'); }catch(e){ res.innerHTML=`<div class="alert alert-danger py-2 mb-0">${e.message}</div>`; }
+    try{ if(id) await apiPut(`/api/crm/services/${id}`,payload); else await apiPost('/api/crm/services',payload); crmServiceCache=await apiGet('/api/crm/services'); crmCloseModal(); crmNotify('저장되었습니다.','ok'); crmSwitchTab('services'); }catch(e){ res.innerHTML=`<div class="alert alert-danger py-2 mb-0">${escapeHtml(e.message)}</div>`; }
 }
 async function crmServiceDelete(id){ if(!confirm('이 시술을 삭제할까요?')) return; try{ await apiDelete(`/api/crm/services/${id}`); crmServiceCache=await apiGet('/api/crm/services'); crmNotify('삭제되었습니다.','ok'); crmSwitchTab('services'); }catch(e){ crmNotify(e.message,'err'); } }
 async function crmServicePriceForm(sid,name){
@@ -4284,7 +4497,7 @@ async function loadOwnerInfo(c, t) {
         {value: 'other', label: '기타'},
         {value: 'custom', label: '직접입력'},
     ];
-    const catOptions = categories.map(ct => 
+    const catOptions = categories.map(ct =>
         `<option value="${ct.value}" ${info.category === ct.value ? 'selected' : ''}>${ct.label}</option>`
     ).join('');
 
@@ -4370,21 +4583,21 @@ async function saveMerchantInfo() {
         params.append('category', document.getElementById('infoCategory').value);
         params.append('category_custom', document.getElementById('infoCategoryCustom')?.value || '');
         params.append('place_url', document.getElementById('infoPlaceUrl').value);
-        
+
         const res = await api(`/api/owner/merchant-info?${params.toString()}`, { method: 'PUT' });
-        
+
         // 캐시 업데이트
         ownerMerchantInfo = await apiGet('/api/owner/merchant-info');
-        
+
         document.getElementById('infoSaveResult').innerHTML = `
             <div class="alert alert-success py-2">
                 <i class="fas fa-check-circle me-1"></i>매장 정보가 저장되었습니다.
                 ${!res.needs_staff_management ? '<br><small>직원관리/직원별 매출 메뉴가 숨겨집니다.</small>' : ''}
             </div>`;
-        
+
         // 사이드바 재구성 (분야 변경에 따른 메뉴 표시/숨김)
         buildSidebar();
-        
+
         // 이름 변경 시 표시 업데이트
         const displayName = ownerDisplayName(currentUser, ownerMerchantInfo.name);
         document.getElementById('sidebarUserName').textContent = displayName;
@@ -4395,7 +4608,7 @@ async function saveMerchantInfo() {
         const brandEl = document.getElementById('sidebarBrand');
         if (brandEl && ownerMerchantInfo.name) brandEl.textContent = ownerMerchantInfo.name;
     } catch (e) {
-        document.getElementById('infoSaveResult').innerHTML = `<div class="alert alert-danger py-2">${e.message}</div>`;
+        document.getElementById('infoSaveResult').innerHTML = `<div class="alert alert-danger py-2">${escapeHtml(e.message)}</div>`;
     }
 }
 
@@ -4405,7 +4618,7 @@ async function saveMerchantInfo() {
 
 async function loadOwnerReceiptReview(c, t) {
     t.textContent = '영수증 리뷰관리';
-    
+
     let config;
     try {
         config = await apiGet('/api/owner/receipt-review/config');
@@ -4548,7 +4761,7 @@ async function loadOwnerReceiptReview(c, t) {
                 <div class="card-body px-4 pb-4 pt-2">
                     <!-- QR코드 -->
                     <div class="text-center mb-3 p-3" style="background:#f8fafc;border-radius:12px;">
-                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(reviewUrl)}" 
+                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(reviewUrl)}"
                              alt="QR Code" style="width:150px;height:150px;border-radius:8px;">
                         <p class="small text-muted mt-2 mb-0">고객이 스캔하면 리뷰 페이지로 이동합니다</p>
                     </div>
@@ -4658,15 +4871,15 @@ function renderReviewCards(reviews) {
         const hasMemo = !!r.memo;
         const statusColor = r.status === 'approved' ? '#198754' : r.status === 'rejected' ? '#dc3545' : '#ffc107';
         return `
-        <div class="border rounded-3 p-3 mb-2 position-relative" 
-             style="cursor:pointer;transition:all .15s;border-left:3px solid ${statusColor}!important;padding:.6rem!important;" 
-             onmouseover="this.style.boxShadow='0 2px 12px rgba(0,0,0,.08)';this.style.background='#fafbfc'" 
+        <div class="border rounded-3 p-3 mb-2 position-relative"
+             style="cursor:pointer;transition:all .15s;border-left:3px solid ${statusColor}!important;padding:.6rem!important;"
+             onmouseover="this.style.boxShadow='0 2px 12px rgba(0,0,0,.08)';this.style.background='#fafbfc'"
              onmouseout="this.style.boxShadow='none';this.style.background=''"
              onclick="openReviewDetail(${r.id})">
             <div class="d-flex gap-3 align-items-start">
                 <div class="flex-shrink-0" style="width:56px;height:56px;">
                     ${hasImage ? `
-                        <img src="${r.receipt_image_url}" alt="영수증" 
+                        <img src="${r.receipt_image_url}" alt="영수증"
                              style="width:56px;height:56px;object-fit:cover;border-radius:8px;">
                     ` : `
                         <div style="width:56px;height:56px;border-radius:8px;background:#f1f5f9;display:flex;align-items:center;justify-content:center;">
@@ -4720,8 +4933,8 @@ function openReviewDetail(reviewId) {
         <div class="col-md-5 text-center">
             ${hasImage ? `
                 <div class="position-relative">
-                    <img src="${r.receipt_image_url}" alt="영수증 이미지" 
-                         class="img-fluid rounded shadow-sm" style="max-height:400px;cursor:pointer;" 
+                    <img src="${r.receipt_image_url}" alt="영수증 이미지"
+                         class="img-fluid rounded shadow-sm" style="max-height:400px;cursor:pointer;"
                          onclick="window.open('${r.receipt_image_url}','_blank')">
                     <div class="mt-2">
                         <a href="${r.receipt_image_url}" target="_blank" class="btn btn-sm btn-outline-primary">
@@ -4730,7 +4943,7 @@ function openReviewDetail(reviewId) {
                     </div>
                 </div>
             ` : `
-                <div class="d-flex align-items-center justify-content-center rounded" 
+                <div class="d-flex align-items-center justify-content-center rounded"
                      style="height:200px;background:#f8f9fa;border:2px dashed #dee2e6;">
                     <div class="text-center text-muted">
                         <i class="fas fa-image fa-3x mb-2 d-block opacity-25"></i>
@@ -4762,8 +4975,8 @@ function openReviewDetail(reviewId) {
                     </tr>
                     <tr>
                         <td class="text-muted fw-bold"><i class="fas fa-star me-1"></i>플레이스</td>
-                        <td>${r.review_completed 
-                            ? '<span class="badge bg-success"><i class="fas fa-check me-1"></i>리뷰 작성 완료</span>' 
+                        <td>${r.review_completed
+                            ? '<span class="badge bg-success"><i class="fas fa-check me-1"></i>리뷰 작성 완료</span>'
                             : '<span class="badge bg-secondary"><i class="fas fa-clock me-1"></i>미작성</span>'}</td>
                     </tr>
                     <tr>
@@ -4784,7 +4997,7 @@ function openReviewDetail(reviewId) {
             <!-- 관리자 메모 입력 -->
             <div class="mt-3">
                 <label class="form-label fw-bold small"><i class="fas fa-sticky-note text-warning me-1"></i>관리자 메모 (내부용)</label>
-                <textarea class="form-control form-control-sm" id="modalAdminMemo" rows="2" 
+                <textarea class="form-control form-control-sm" id="modalAdminMemo" rows="2"
                           placeholder="관리 참고용 메모를 입력하세요...">${r.admin_memo || ''}</textarea>
             </div>
         </div>
@@ -4834,8 +5047,8 @@ async function updateReviewConfig() {
         if (welcomeMsg) params.append('welcome_message', welcomeMsg);
         await apiPost(`/api/owner/receipt-review/config?${params.toString()}`, {});
         document.getElementById('reviewConfigResult').innerHTML = '<div class="alert alert-success py-1 small"><i class="fas fa-check me-1"></i>저장 완료</div>';
-    } catch(e) { 
-        document.getElementById('reviewConfigResult').innerHTML = `<div class="alert alert-danger py-1 small">${e.message}</div>`;
+    } catch(e) {
+        document.getElementById('reviewConfigResult').innerHTML = `<div class="alert alert-danger py-1 small">${escapeHtml(e.message)}</div>`;
     }
 }
 
@@ -4953,1918 +5166,6 @@ async function loadDesignerProfile(c, t) {
     </div></div>`;
 }
 
-
-// ═══════════════════════════════════════════════════════════
-// LANDLORD (방긋페이) PAGES — Enhanced v3
-// ═══════════════════════════════════════════════════════════
-
-const PROP_TYPE_KR = {apartment:'아파트', officetel:'오피스텔', commercial:'상가', villa:'빌라', other:'기타'};
-const PROP_EMOJI = {apartment:'🏢', officetel:'🏠', commercial:'🏪', villa:'🏘️', other:'📋'};
-
-// 임차인 목록 전역 캐시
-let _landlordTenants = [];
-
-async function loadLandlordTenants(c, t) {
-    t.textContent = '임차인 목록';
-    const tenants = await apiGet('/api/landlord/tenants');
-    _landlordTenants = tenants;
-    const active = tenants.filter(t => t.is_active);
-    const paidCnt = active.filter(t => t.paid_this_month).length;
-    const unpaidCnt = active.length - paidCnt;
-    const totalRent = active.reduce((s,t) => s + t.monthly_rent, 0);
-
-    c.innerHTML = `
-    <!-- 요약 카드 -->
-    <div class="row g-3 mb-4">
-        ${kpiCard('전체 임차인', active.length + '명', 'users', 'warning')}
-        ${kpiCard('이번달 납부', paidCnt + '명', 'check-circle', 'success')}
-        ${kpiCard('미납', unpaidCnt + '명', 'exclamation-triangle', 'danger')}
-        ${kpiCard('월 예정 수금', formatMoney(totalRent), 'won-sign', 'info')}
-    </div>
-
-    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-        <div>
-            <button class="btn btn-sm btn-outline-secondary me-1 tenant-filter active" onclick="filterTenants('all',this)">전체</button>
-            <button class="btn btn-sm btn-outline-success me-1 tenant-filter" onclick="filterTenants('paid',this)">납부 완료</button>
-            <button class="btn btn-sm btn-outline-warning tenant-filter" onclick="filterTenants('unpaid',this)">미납</button>
-        </div>
-        <button class="btn btn-sm text-white" style="background:linear-gradient(135deg,#ff6b35,#ff9f1c);border:none;border-radius:8px;padding:8px 20px" onclick="showAddTenantModal()"><i class="fas fa-plus me-1"></i>임차인 등록</button>
-    </div>
-    <div class="card data-card"><div class="card-body p-0">
-        <div class="table-responsive"><table class="table table-hover mb-0" id="tenantTable">
-            <thead><tr><th></th><th>이름</th><th>임대물건</th><th>호수</th><th>월세</th><th>납부일</th><th>이번달</th><th>결제방식</th><th style="width:140px">관리</th></tr></thead>
-            <tbody>
-            ${tenants.map(tn => `
-                <tr data-paid="${tn.paid_this_month}" data-active="${tn.is_active}" ${!tn.is_active ? 'class="table-secondary"' : ''}>
-                    <td>${PROP_EMOJI[tn.property_type] || '📋'}</td>
-                    <td class="fw-bold">${tn.name} ${!tn.is_active ? '<span class="badge bg-secondary ms-1">비활성</span>' : ''}</td>
-                    <td><span class="badge bg-secondary" style="font-size:.72rem">${tn.property_type_kr}</span><br><span style="font-size:.82rem">${tn.property_name}</span></td>
-                    <td class="fw-bold">${tn.unit_number}</td>
-                    <td class="fw-bold" style="color:#ff6b35">${formatMoney(tn.monthly_rent)}</td>
-                    <td>매월 ${tn.rent_due_day}일</td>
-                    <td>${tn.paid_this_month ? '<span class="badge bg-success"><i class="fas fa-check me-1"></i>완료</span>' : '<span class="badge bg-warning text-dark"><i class="fas fa-clock me-1"></i>미납</span>'}</td>
-                    <td>${tn.is_recurring ? '<span class="badge bg-info"><i class="fas fa-sync-alt me-1"></i>정기</span>' : '<span class="badge border text-muted">일반</span>'}</td>
-                    <td>
-                        <div class="btn-group btn-group-sm">
-                            <button class="btn btn-outline-info" title="결제내역" onclick="showTenantPaymentHistory(${tn.id},'${tn.name.replace(/'/g,"\\'")}','${tn.property_name.replace(/'/g,"\\'")} ${tn.unit_number}')"><i class="fas fa-credit-card"></i></button>
-                            <button class="btn btn-outline-dark" title="QR" onclick="showTenantQR('${tn.qr_token}','${tn.property_name.replace(/'/g,"\\'")}','${tn.unit_number}','${tn.name.replace(/'/g,"\\'")}','${PROP_TYPE_KR[tn.property_type] || tn.property_type_kr}')"><i class="fas fa-qrcode"></i></button>
-                            <button class="btn btn-outline-primary" title="수정" onclick="showEditTenantModal(${tn.id})"><i class="fas fa-edit"></i></button>
-                            <button class="btn btn-outline-danger" title="${tn.is_active ? '비활성화' : '삭제'}" onclick="deleteTenant(${tn.id})"><i class="fas fa-ban"></i></button>
-                        </div>
-                    </td>
-                </tr>
-            `).join('')}
-            </tbody>
-        </table></div>
-    </div></div>`;
-}
-
-function filterTenants(type, btn) {
-    document.querySelectorAll('.tenant-filter').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    document.querySelectorAll('#tenantTable tbody tr').forEach(row => {
-        if (type === 'all') { row.style.display = ''; return; }
-        const paid = row.dataset.paid === 'true';
-        row.style.display = (type === 'paid' && paid) || (type === 'unpaid' && !paid) ? '' : 'none';
-    });
-}
-
-async function showEditTenantModal(tenantId) {
-    const tn = _landlordTenants.find(t => t.id === tenantId);
-    if (!tn) { alert('임차인 정보를 찾을 수 없습니다'); return; }
-    
-    // 프로필에서 등록된 임대물건명 목록 로드
-    let propNames = [];
-    try {
-        const profile = await apiGet('/api/landlord/profile');
-        propNames = profile.property_names || [];
-    } catch(e) {}
-    
-    const propOptions = propNames.map(n => 
-        `<option value="${n}" ${n === tn.property_name ? 'selected' : ''}>${n}</option>`
-    ).join('');
-    const isCustom = !propNames.includes(tn.property_name);
-    
-    const modal = document.getElementById('formModal');
-    document.getElementById('formModalTitle').textContent = '임차인 수정: ' + tn.name;
-    document.getElementById('formModalBody').innerHTML = `
-        <div class="row g-3">
-            <div class="col-md-6"><label class="form-label fw-bold small">이름</label><input type="text" class="form-control" id="et_name" value="${tn.name}"></div>
-            <div class="col-md-6"><label class="form-label fw-bold small">연락처</label><input type="text" class="form-control" id="et_phone" value="${tn.phone || ''}"></div>
-            <div class="col-md-6">
-                <label class="form-label fw-bold small">임대물건명</label>
-                ${propNames.length > 0 ? `
-                <select class="form-select" id="et_pname_select" onchange="if(this.value==='__custom__'){document.getElementById('et_pname_custom_wrap').style.display='block';}else{document.getElementById('et_pname_custom_wrap').style.display='none';}">
-                    ${isCustom ? `<option value="${tn.property_name}" selected>${tn.property_name}</option>` : ''}
-                    ${propOptions}
-                    <option value="__custom__">✏️ 직접입력</option>
-                </select>
-                <div id="et_pname_custom_wrap" style="display:none;margin-top:4px">
-                    <input type="text" class="form-control form-control-sm" id="et_pname_custom" placeholder="새 임대물건명">
-                </div>` : `
-                <input type="text" class="form-control" id="et_pname_direct" value="${tn.property_name}">
-                `}
-            </div>
-            <div class="col-md-6"><label class="form-label fw-bold small">호수</label><input type="text" class="form-control" id="et_unit" value="${tn.unit_number}"></div>
-            <div class="col-md-4"><label class="form-label fw-bold small">월세</label><input type="number" class="form-control" id="et_rent" value="${tn.monthly_rent}"></div>
-            <div class="col-md-4"><label class="form-label fw-bold small">납부일</label><input type="number" class="form-control" id="et_due" value="${tn.rent_due_day}" min="1" max="31"></div>
-            <div class="col-md-4"><label class="form-label fw-bold small">메모</label><input type="text" class="form-control" id="et_memo" value="${tn.memo || ''}"></div>
-            <div class="col-12"><div class="form-check"><input type="checkbox" class="form-check-input" id="et_recurring" ${tn.is_recurring ? 'checked' : ''}><label class="form-check-label">정기결제</label></div></div>
-        </div>`;
-    document.getElementById('formModalFooter').innerHTML = `<button class="btn btn-secondary" data-bs-dismiss="modal">취소</button><button class="btn text-white" style="background:linear-gradient(135deg,#ff6b35,#ff9f1c);border:none" onclick="updateTenant(${tn.id})">저장</button>`;
-    new bootstrap.Modal(modal).show();
-}
-
-async function updateTenant(id) {
-    const fd = new FormData();
-    fd.append('name', document.getElementById('et_name').value);
-    fd.append('phone', document.getElementById('et_phone').value);
-    // 임대물건명
-    let pname = '';
-    const selectEl = document.getElementById('et_pname_select');
-    const directEl = document.getElementById('et_pname_direct');
-    if (selectEl) {
-        pname = selectEl.value === '__custom__' 
-            ? (document.getElementById('et_pname_custom')?.value || '').trim() 
-            : selectEl.value;
-    } else if (directEl) {
-        pname = directEl.value.trim();
-    }
-    if (pname) fd.append('property_name', pname);
-    const unit = document.getElementById('et_unit')?.value;
-    if (unit) fd.append('unit_number', unit);
-    fd.append('monthly_rent', document.getElementById('et_rent').value);
-    fd.append('rent_due_day', document.getElementById('et_due').value);
-    fd.append('memo', document.getElementById('et_memo').value);
-    fd.append('is_recurring', document.getElementById('et_recurring').checked);
-    try {
-        await apiPutForm(`/api/landlord/tenants/${id}`, fd);
-        bootstrap.Modal.getInstance(document.getElementById('formModal')).hide();
-        navigate('landlord-tenants');
-    } catch (e) { alert('수정 실패: ' + e.message); }
-}
-
-async function loadLandlordQR(c, t) {
-    t.textContent = 'QR코드 관리';
-    const tenants = await apiGet('/api/landlord/tenants');
-    const baseUrl = window.location.origin;
-    const activeTenants = tenants.filter(t => t.is_active);
-
-    c.innerHTML = `
-    <!-- 안내 배너 -->
-    <div class="card border-0 shadow-sm mb-4" style="border-radius:14px;overflow:hidden;background:linear-gradient(135deg,#2d1b03 0%,#5a3408 50%,#ff9f1c 100%);">
-        <div class="card-body py-3 px-4 d-flex align-items-center justify-content-between flex-wrap gap-2">
-            <div class="d-flex align-items-center gap-3">
-                <div style="width:44px;height:44px;border-radius:12px;background:rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;">
-                    <i class="fas fa-qrcode text-white" style="font-size:1.2rem"></i>
-                </div>
-                <div>
-                    <h5 class="mb-0 text-white fw-bold">결제 QR코드 관리</h5>
-                    <small style="color:rgba(255,255,255,.7)">임차인별 전용 결제 QR코드 · 스캔 시 결제 페이지로 이동</small>
-                </div>
-            </div>
-            <span class="badge" style="background:rgba(255,255,255,.2);color:#fff;padding:6px 14px;border-radius:50px;font-size:.78rem;">
-                <i class="fas fa-check-circle me-1"></i>활성 QR ${activeTenants.length}개
-            </span>
-        </div>
-    </div>
-
-    <!-- PG 연동 안내 -->
-    <div class="alert border-0 mb-4 py-3" style="background:linear-gradient(135deg,rgba(14,165,233,.05),rgba(14,165,233,.1));border-radius:12px">
-        <div class="d-flex align-items-start gap-2">
-            <i class="fas fa-shield-alt mt-1" style="color:#0ea5e9;font-size:1rem"></i>
-            <div>
-                <strong style="color:#0ea5e9">PG 결제 연동 안내</strong>
-                <p class="mb-0 mt-1" style="font-size:.82rem;color:#666">
-                    현재 QR코드는 <strong>결제 페이지 연결용</strong>으로 생성됩니다. 
-                    PG사(결제대행사) 연동이 완료되면, 각 QR코드를 통해 <strong>실제 카드결제</strong>가 가능해집니다.
-                    <br><span class="text-muted"><i class="fas fa-info-circle me-1"></i>정기결제 설정된 임차인은 매월 자동 결제가 진행됩니다.</span>
-                </p>
-            </div>
-        </div>
-    </div>
-
-    <!-- QR 카드 그리드 -->
-    ${activeTenants.length === 0 
-        ? '<div class="text-center py-5"><i class="fas fa-qrcode fa-3x mb-3" style="color:#ddd"></i><h5 class="text-muted">등록된 활성 임차인이 없습니다</h5><p class="text-muted">임차인 목록에서 임차인을 등록하면 QR코드가 자동 생성됩니다.</p><a href="#" onclick="navigate(\'landlord-tenants\')" class="btn btn-sm text-white" style="background:linear-gradient(135deg,#ff6b35,#ff9f1c);border:none;border-radius:8px"><i class="fas fa-plus me-1"></i>임차인 등록하기</a></div>'
-        : `<div class="row g-3">
-    ${activeTenants.map(t => {
-        const payUrl = `${baseUrl}/pay/${t.qr_token}`;
-        const qrImg = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(payUrl)}&color=1b3a5c&bgcolor=ffffff`;
-        return `
-        <div class="col-lg-4 col-md-6">
-            <div class="card data-card text-center h-100" style="border-radius:16px;overflow:hidden">
-                <div class="card-header py-2 px-3 d-flex justify-content-between align-items-center" style="background:linear-gradient(135deg,rgba(255,107,53,.04),rgba(255,159,28,.06))">
-                    <div class="text-start">
-                        <span style="font-size:1.1rem;margin-right:4px">${PROP_EMOJI[t.property_type] || '📋'}</span>
-                        <strong style="font-size:.88rem">${t.property_name}</strong>
-                        <span class="text-muted" style="font-size:.78rem">${t.unit_number}</span>
-                    </div>
-                    ${t.is_recurring ? '<span class="badge bg-info" style="font-size:.68rem"><i class="fas fa-sync-alt me-1"></i>정기결제</span>' : '<span class="badge bg-secondary" style="font-size:.68rem">일반결제</span>'}
-                </div>
-                <div class="card-body py-3">
-                    <div class="mb-2">
-                        <span class="fw-bold" style="font-size:.95rem">${t.name}</span>
-                    </div>
-                    <div class="mb-2">
-                        <span class="text-muted" style="font-size:.78rem">월세</span>
-                        <strong style="color:#ff6b35;font-size:1.05rem"> ${formatMoney(t.monthly_rent)}</strong>
-                        <span class="text-muted" style="font-size:.72rem">· 매월 ${t.rent_due_day}일</span>
-                    </div>
-                    <!-- QR 코드 -->
-                    <div class="position-relative d-inline-block mb-2">
-                        <div style="padding:10px;background:#fff;border-radius:14px;border:2px solid #e8e8e8;display:inline-block">
-                            <img src="${qrImg}" style="width:150px;height:150px;border-radius:8px" alt="결제 QR코드">
-                        </div>
-                        <div class="position-absolute" style="bottom:-5px;right:-5px;width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#ff6b35,#ff9f1c);display:flex;align-items:center;justify-content:center">
-                            <i class="fas fa-credit-card text-white" style="font-size:.65rem"></i>
-                        </div>
-                    </div>
-                    <!-- 결제 URL -->
-                    <div class="input-group input-group-sm mb-2">
-                        <input type="text" class="form-control text-center" value="${payUrl}" readonly style="font-size:.62rem;border-radius:6px 0 0 6px">
-                        <button class="btn btn-outline-secondary" style="border-radius:0 6px 6px 0" onclick="navigator.clipboard.writeText('${payUrl}');this.innerHTML='<i class=\\'fas fa-check text-success\\'></i>';setTimeout(()=>this.innerHTML='<i class=\\'fas fa-copy\\'></i>',1500)"><i class="fas fa-copy"></i></button>
-                    </div>
-                    <!-- 상태 표시 -->
-                    <div class="d-flex justify-content-center gap-1 mb-2" style="font-size:.72rem">
-                        ${t.paid_this_month 
-                            ? '<span class="badge bg-success py-1 px-2"><i class="fas fa-check me-1"></i>이번달 납부 완료</span>' 
-                            : '<span class="badge bg-warning text-dark py-1 px-2"><i class="fas fa-clock me-1"></i>이번달 미납</span>'}
-                    </div>
-                    <!-- 버튼 -->
-                    <div class="d-flex gap-1 justify-content-center">
-                        <button class="btn btn-sm btn-outline-dark" onclick="showTenantQR('${t.qr_token}','${t.property_name.replace(/'/g,"\\'")}','${t.unit_number}','${t.name.replace(/'/g,"\\'")}','${PROP_TYPE_KR[t.property_type] || t.property_type_kr}')" title="상세보기"><i class="fas fa-expand me-1"></i>크게보기</button>
-                        <button class="btn btn-sm btn-outline-secondary" onclick="window.print()" title="인쇄"><i class="fas fa-print"></i></button>
-                        <button class="btn btn-sm btn-outline-warning" onclick="regenerateQR(${t.id})" title="재발급"><i class="fas fa-sync"></i></button>
-                    </div>
-                </div>
-            </div>
-        </div>`;
-    }).join('')}
-    </div>`}`;
-}
-
-async function loadLandlordPayments(c, t) {
-    t.textContent = '결제 내역';
-    const [payments, tenants] = await Promise.all([
-        apiGet('/api/landlord/payments'),
-        apiGet('/api/landlord/tenants'),
-    ]);
-    const total = payments.reduce((s,p) => s + (p.status === 'paid' ? p.amount : 0), 0);
-    const paidCnt = payments.filter(p => p.status === 'paid').length;
-
-    // 임차인 옵션
-    const tenantOpts = tenants.filter(tn => tn.is_active).map(tn =>
-        `<option value="${tn.id}">${tn.name} (${tn.property_name} ${tn.unit_number})</option>`
-    ).join('');
-    // 결제월 고유값
-    const months = [...new Set(payments.map(p => p.payment_month).filter(Boolean))].sort().reverse();
-    const monthOpts = months.map(m => `<option value="${m}">${m}</option>`).join('');
-
-    c.innerHTML = `
-    <div class="row g-3 mb-4">
-        ${kpiCard('전체 결제', payments.length + '건', 'receipt', 'primary')}
-        ${kpiCard('결제 완료', paidCnt + '건', 'check-circle', 'success')}
-        ${kpiCard('총 결제액', formatMoney(total), 'won-sign', 'warning')}
-        ${kpiCard('평균 결제액', payments.length > 0 ? formatMoney(Math.round(total / Math.max(paidCnt,1))) : '₩0', 'calculator', 'info')}
-    </div>
-
-    <!-- 필터 영역 -->
-    <div class="card data-card mb-4" style="border-radius:14px">
-        <div class="card-header py-2"><h5 class="mb-0"><i class="fas fa-filter me-2 text-info"></i>결제내역 필터</h5></div>
-        <div class="card-body">
-            <div class="row g-2 align-items-end">
-                <div class="col-6 col-md-3">
-                    <label class="form-label small mb-1"><i class="fas fa-user me-1"></i>임차인</label>
-                    <select class="form-select form-select-sm" id="llPayFilterTenant">
-                        <option value="">전체 임차인</option>${tenantOpts}
-                    </select>
-                </div>
-                <div class="col-6 col-md-2">
-                    <label class="form-label small mb-1"><i class="fas fa-calendar me-1"></i>결제월</label>
-                    <select class="form-select form-select-sm" id="llPayFilterMonth">
-                        <option value="">전체</option>${monthOpts}
-                    </select>
-                </div>
-                <div class="col-6 col-md-2">
-                    <label class="form-label small mb-1">시작일</label>
-                    <input type="date" class="form-control form-control-sm" id="llPayFilterFrom">
-                </div>
-                <div class="col-6 col-md-2">
-                    <label class="form-label small mb-1">종료일</label>
-                    <input type="date" class="form-control form-control-sm" id="llPayFilterTo">
-                </div>
-                <div class="col-6 col-md-2">
-                    <label class="form-label small mb-1">상태</label>
-                    <select class="form-select form-select-sm" id="llPayFilterStatus">
-                        <option value="">전체</option>
-                        <option value="paid">완료</option>
-                        <option value="pending">대기</option>
-                        <option value="overdue">연체</option>
-                    </select>
-                </div>
-                <div class="col-6 col-md-1 d-flex gap-1">
-                    <button class="btn btn-sm w-100" style="background:#ff9f1c;color:#fff;border:none" onclick="applyLandlordPayFilter()"><i class="fas fa-search"></i></button>
-                    <button class="btn btn-sm btn-outline-secondary w-100" onclick="resetLandlordPayFilter()" title="초기화"><i class="fas fa-redo"></i></button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- 요약 탭 -->
-    <div class="mb-3">
-        <ul class="nav nav-pills nav-fill" style="gap:4px">
-            <li class="nav-item"><a class="nav-link active llpay-tab" href="#" onclick="switchLandlordPayTab('list',this)" style="font-size:.82rem;border-radius:8px"><i class="fas fa-list me-1"></i>상세내역</a></li>
-            <li class="nav-item"><a class="nav-link llpay-tab" href="#" onclick="switchLandlordPayTab('monthly',this)" style="font-size:.82rem;border-radius:8px"><i class="fas fa-calendar-alt me-1"></i>월별 요약</a></li>
-            <li class="nav-item"><a class="nav-link llpay-tab" href="#" onclick="switchLandlordPayTab('daily',this)" style="font-size:.82rem;border-radius:8px"><i class="fas fa-calendar-day me-1"></i>일별 요약</a></li>
-            <li class="nav-item"><a class="nav-link llpay-tab" href="#" onclick="switchLandlordPayTab('tenant',this)" style="font-size:.82rem;border-radius:8px"><i class="fas fa-users me-1"></i>임차인별</a></li>
-        </ul>
-    </div>
-
-    <div id="llPayTabContent">
-        <!-- 상세내역 (기본) -->
-        <div class="card data-card" id="llPayListView">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <h5 class="mb-0"><i class="fas fa-credit-card me-2" style="color:#ff9f1c"></i>결제 내역</h5>
-                <span class="badge bg-secondary" id="llPayCount">${payments.length}건</span>
-            </div>
-            <div class="card-body p-0">
-                <div class="table-responsive"><table class="table table-hover mb-0" id="llPayTable">
-                    <thead class="table-light"><tr><th>임차인</th><th>물건 정보</th><th>금액</th><th>결제월</th><th>결제방식</th><th>카드사</th><th>승인번호</th><th>상태</th><th>결제일</th></tr></thead>
-                    <tbody id="llPayTableBody"></tbody>
-                </table></div>
-            </div>
-        </div>
-        <div class="card data-card d-none" id="llPaySummaryView">
-            <div class="card-header"><h5 class="mb-0" id="llPaySummaryTitle"><i class="fas fa-chart-bar me-2" style="color:#ff9f1c"></i>요약</h5></div>
-            <div class="card-body" id="llPaySummaryBody"></div>
-        </div>
-    </div>`;
-
-    // 초기 렌더
-    _landlordPaymentsCache = payments;
-    _landlordTenantsCache = tenants;
-    renderLandlordPayTable(payments);
-}
-
-let _landlordPaymentsCache = [];
-let _landlordTenantsCache = [];
-
-function renderLandlordPayTable(payments) {
-    const tbody = document.getElementById('llPayTableBody');
-    const countEl = document.getElementById('llPayCount');
-    if (!tbody) return;
-    if (countEl) countEl.textContent = payments.length + '건';
-    if (payments.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4"><i class="fas fa-inbox me-2"></i>결제 내역이 없습니다</td></tr>';
-        return;
-    }
-    tbody.innerHTML = payments.map(p => `
-        <tr>
-            <td class="fw-bold">${p.tenant_name}</td>
-            <td style="font-size:.82rem">${p.property_info}</td>
-            <td class="fw-bold" style="color:#ff6b35">${formatMoney(p.amount)}</td>
-            <td><span class="badge bg-light text-dark border">${p.payment_month}</span></td>
-            <td>${p.payment_method === 'card_recurring' ? '<span class="badge bg-info"><i class="fas fa-sync-alt me-1"></i>정기</span>' : '<span class="badge bg-secondary">일반</span>'}</td>
-            <td>${p.card_brand || '-'}</td>
-            <td><code style="font-size:.72rem">${p.approval_code || '-'}</code></td>
-            <td><span class="badge bg-${p.status === 'paid' ? 'success' : p.status === 'pending' ? 'warning' : 'danger'}"><i class="fas fa-${p.status === 'paid' ? 'check' : 'clock'} me-1"></i>${p.status === 'paid' ? '완료' : p.status === 'pending' ? '대기' : '연체'}</span></td>
-            <td style="font-size:.78rem">${p.paid_at ? p.paid_at.slice(0,16).replace('T',' ') : '-'}</td>
-        </tr>
-    `).join('');
-}
-
-async function applyLandlordPayFilter() {
-    const tenantId = document.getElementById('llPayFilterTenant').value;
-    const month = document.getElementById('llPayFilterMonth').value;
-    const from = document.getElementById('llPayFilterFrom').value;
-    const to = document.getElementById('llPayFilterTo').value;
-    const status = document.getElementById('llPayFilterStatus').value;
-
-    let qs = [];
-    if (tenantId) qs.push('tenant_id=' + tenantId);
-    if (month) qs.push('month=' + month);
-    if (from) qs.push('date_from=' + from);
-    if (to) qs.push('date_to=' + to);
-    if (status) qs.push('status=' + status);
-
-    try {
-        const payments = await apiGet('/api/landlord/payments' + (qs.length ? '?' + qs.join('&') : ''));
-        _landlordPaymentsCache = payments;
-        // 현재 탭 확인
-        const activeTab = document.querySelector('.llpay-tab.active');
-        const tabName = activeTab ? activeTab.textContent.trim() : '';
-        if (tabName.includes('월별')) renderLandlordPaySummary('month');
-        else if (tabName.includes('일별')) renderLandlordPaySummary('day');
-        else if (tabName.includes('임차인')) renderLandlordPayByTenant();
-        else renderLandlordPayTable(payments);
-    } catch(e) { alert('조회 실패: ' + e.message); }
-}
-
-function resetLandlordPayFilter() {
-    document.getElementById('llPayFilterTenant').value = '';
-    document.getElementById('llPayFilterMonth').value = '';
-    document.getElementById('llPayFilterFrom').value = '';
-    document.getElementById('llPayFilterTo').value = '';
-    document.getElementById('llPayFilterStatus').value = '';
-    applyLandlordPayFilter();
-}
-
-function switchLandlordPayTab(tab, el) {
-    document.querySelectorAll('.llpay-tab').forEach(a => a.classList.remove('active'));
-    el.classList.add('active');
-    const listView = document.getElementById('llPayListView');
-    const summaryView = document.getElementById('llPaySummaryView');
-    if (tab === 'list') {
-        listView.classList.remove('d-none'); summaryView.classList.add('d-none');
-        renderLandlordPayTable(_landlordPaymentsCache);
-    } else if (tab === 'monthly') {
-        listView.classList.add('d-none'); summaryView.classList.remove('d-none');
-        renderLandlordPaySummary('month');
-    } else if (tab === 'daily') {
-        listView.classList.add('d-none'); summaryView.classList.remove('d-none');
-        renderLandlordPaySummary('day');
-    } else if (tab === 'tenant') {
-        listView.classList.add('d-none'); summaryView.classList.remove('d-none');
-        renderLandlordPayByTenant();
-    }
-}
-
-function renderLandlordPaySummary(groupBy) {
-    const title = document.getElementById('llPaySummaryTitle');
-    const body = document.getElementById('llPaySummaryBody');
-    const payments = _landlordPaymentsCache.filter(p => p.status === 'paid');
-    if (title) title.innerHTML = `<i class="fas fa-chart-bar me-2" style="color:#ff9f1c"></i>${groupBy === 'month' ? '월별' : '일별'} 결제 요약`;
-
-    const summary = {};
-    payments.forEach(p => {
-        const key = groupBy === 'day' ? (p.paid_at ? p.paid_at.slice(0,10) : 'unknown') : (p.payment_month || 'unknown');
-        if (!summary[key]) summary[key] = {period: key, count: 0, amount: 0};
-        summary[key].count += 1;
-        summary[key].amount += p.amount;
-    });
-    const sorted = Object.values(summary).sort((a,b) => b.period.localeCompare(a.period));
-    const maxAmt = Math.max(...sorted.map(s => s.amount), 1);
-    const totalAmt = sorted.reduce((s,r) => s + r.amount, 0);
-    const totalCnt = sorted.reduce((s,r) => s + r.count, 0);
-
-    body.innerHTML = `
-    <div class="d-flex gap-3 mb-3 flex-wrap">
-        <span class="badge px-3 py-2" style="background:#ff9f1c;font-size:.8rem">총 ${totalCnt}건</span>
-        <span class="badge bg-success px-3 py-2" style="font-size:.8rem">총 ${formatMoney(totalAmt)}</span>
-    </div>
-    ${sorted.length === 0 ? '<p class="text-muted text-center py-3">데이터 없음</p>' : `
-    <div class="table-responsive"><table class="table table-sm table-hover mb-0">
-        <thead class="table-light"><tr><th>${groupBy === 'month' ? '결제월' : '결제일'}</th><th>건수</th><th>금액</th><th>비율</th></tr></thead>
-        <tbody>${sorted.map(r => `
-            <tr>
-                <td class="fw-bold">${r.period}</td>
-                <td>${r.count}건</td>
-                <td class="fw-bold" style="color:#ff6b35">${formatMoney(r.amount)}</td>
-                <td>
-                    <div class="d-flex align-items-center gap-2">
-                        <div style="flex:1;height:6px;background:#f0f0f0;border-radius:3px;overflow:hidden">
-                            <div style="width:${Math.round(r.amount/maxAmt*100)}%;height:100%;background:linear-gradient(90deg,#ff6b35,#ff9f1c);border-radius:3px"></div>
-                        </div>
-                        <span style="font-size:.72rem;min-width:35px;text-align:right">${totalAmt>0?Math.round(r.amount/totalAmt*100):'0'}%</span>
-                    </div>
-                </td>
-            </tr>
-        `).join('')}</tbody>
-    </table></div>`}`;
-}
-
-function renderLandlordPayByTenant() {
-    const title = document.getElementById('llPaySummaryTitle');
-    const body = document.getElementById('llPaySummaryBody');
-    const payments = _landlordPaymentsCache;
-    if (title) title.innerHTML = '<i class="fas fa-users me-2" style="color:#ff9f1c"></i>임차인별 결제 요약';
-
-    const summary = {};
-    payments.forEach(p => {
-        const key = p.tenant_id || p.tenant_name;
-        if (!summary[key]) summary[key] = {name: p.tenant_name, info: p.property_info, paid: 0, paidAmt: 0, pending: 0, total: 0};
-        summary[key].total += 1;
-        if (p.status === 'paid') { summary[key].paid += 1; summary[key].paidAmt += p.amount; }
-        else summary[key].pending += 1;
-    });
-    const sorted = Object.values(summary).sort((a,b) => b.paidAmt - a.paidAmt);
-    const totalAmt = sorted.reduce((s,r) => s + r.paidAmt, 0);
-
-    body.innerHTML = `
-    <div class="d-flex gap-3 mb-3 flex-wrap">
-        <span class="badge px-3 py-2" style="background:#ff9f1c;font-size:.8rem">${sorted.length}명</span>
-        <span class="badge bg-success px-3 py-2" style="font-size:.8rem">총 ${formatMoney(totalAmt)}</span>
-    </div>
-    ${sorted.length === 0 ? '<p class="text-muted text-center py-3">데이터 없음</p>' : `
-    <div class="row g-3">${sorted.map(r => `
-        <div class="col-md-6">
-            <div class="card border shadow-sm h-100" style="border-radius:10px">
-                <div class="card-body py-2 px-3">
-                    <div class="d-flex justify-content-between align-items-center mb-1">
-                        <div class="fw-bold">${r.name}</div>
-                        <div class="fw-bold" style="color:#ff6b35">${formatMoney(r.paidAmt)}</div>
-                    </div>
-                    <div class="text-muted" style="font-size:.78rem">${r.info}</div>
-                    <div class="d-flex gap-2 mt-1" style="font-size:.75rem">
-                        <span class="badge bg-success">완료 ${r.paid}건</span>
-                        ${r.pending > 0 ? `<span class="badge bg-warning text-dark">대기 ${r.pending}건</span>` : ''}
-                        <span class="text-muted">총 ${r.total}건</span>
-                    </div>
-                </div>
-            </div>
-        </div>
-    `).join('')}</div>`}`;
-}
-
-async function loadLandlordMonthly(c, t) {
-    t.textContent = '월별 수금 현황';
-    const stats = await apiGet('/api/landlord/dashboard-stats');
-    const trend = stats.monthly_trend || [];
-    const maxAmount = Math.max(...trend.map(t => t.amount), 1);
-
-    c.innerHTML = `
-    <div class="row g-3 mb-4">
-        ${kpiCard('총 수금액', formatMoney(stats.total_collected), 'coins', 'warning')}
-        ${kpiCard('이번달 수금', formatMoney(stats.month_collected), 'check-circle', 'success')}
-        ${kpiCard('수금률', stats.collection_rate + '%', 'percentage', 'primary')}
-        ${kpiCard('납부 완료', stats.month_paid_count + '건', 'receipt', 'info')}
-    </div>
-    
-    <!-- 월별 납부 상태 조회 -->
-    <div class="card data-card mb-4">
-        <div class="card-header py-2"><h5 class="mb-0"><i class="fas fa-calendar-check me-2 text-success"></i>월별 임차인 납부 상태</h5></div>
-        <div class="card-body">
-            <div class="row g-2 mb-3 align-items-end">
-                <div class="col-md-4">
-                    <label class="form-label small mb-1">조회 월</label>
-                    <input type="month" class="form-control form-control-sm" id="llMonthStatusMonth" value="${new Date().toISOString().slice(0,7)}">
-                </div>
-                <div class="col-md-3">
-                    <button class="btn btn-sm btn-success" onclick="loadLandlordMonthlyStatus()"><i class="fas fa-search me-1"></i>납부 상태 조회</button>
-                </div>
-            </div>
-            <div id="llMonthlyStatusResult"></div>
-        </div>
-    </div>
-    
-    <div class="row g-3">
-        <div class="col-md-8">
-            <div class="card data-card h-100">
-                <div class="card-header"><h5><i class="fas fa-chart-bar me-2" style="color:#ff9f1c"></i>월별 수금 추이 (최근 6개월)</h5></div>
-                <div class="card-body" style="height:320px"><canvas id="monthlyTrendChart2"></canvas></div>
-            </div>
-        </div>
-        <div class="col-md-4">
-            <div class="card data-card h-100">
-                <div class="card-header"><h5><i class="fas fa-list-ol me-2 text-info"></i>월별 상세</h5></div>
-                <div class="card-body p-0">
-                    <div class="list-group list-group-flush">
-                    ${trend.map(m => `
-                        <div class="list-group-item d-flex justify-content-between align-items-center px-3 py-2">
-                            <span class="fw-bold" style="font-size:.85rem">${m.month}</span>
-                            <div class="d-flex align-items-center gap-2">
-                                <div style="width:80px;height:6px;background:#f0f0f0;border-radius:3px;overflow:hidden">
-                                    <div style="width:${Math.round(m.amount/maxAmount*100)}%;height:100%;background:linear-gradient(90deg,#ff6b35,#ff9f1c);border-radius:3px"></div>
-                                </div>
-                                <span class="fw-bold" style="font-size:.82rem;color:#ff6b35;min-width:70px;text-align:right">${formatMoney(m.amount)}</span>
-                            </div>
-                        </div>
-                    `).join('')}
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>`;
-    setTimeout(() => {
-        const ctx = document.getElementById('monthlyTrendChart2');
-        if (ctx && typeof Chart !== 'undefined') {
-            new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: trend.map(t => t.month),
-                    datasets: [{label:'수금액', data: trend.map(t => t.amount), backgroundColor:'rgba(255,159,28,.5)', borderColor:'#ff9f1c', borderWidth:1, borderRadius:8}]
-                },
-                options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>'수금액: '+formatMoney(ctx.raw)}}}, scales:{y:{beginAtZero:true,ticks:{callback:v=>v>=10000?(v/10000)+'만':v.toLocaleString(),font:{size:11}},grid:{color:'rgba(0,0,0,.04)'}},x:{grid:{display:false},ticks:{font:{size:11}}}} }
-            });
-        }
-    }, 100);
-    
-    // Auto-load current month status
-    loadLandlordMonthlyStatus();
-}
-
-async function loadLandlordMonthlyStatus() {
-    const month = document.getElementById('llMonthStatusMonth')?.value;
-    if (!month) return;
-    const el = document.getElementById('llMonthlyStatusResult');
-    if (!el) return;
-    el.innerHTML = '<div class="text-center py-2"><div class="spinner-border spinner-border-sm text-warning"></div></div>';
-    
-    try {
-        const data = await apiGet(`/api/landlord/monthly-status?month=${month}`);
-        const paid = data.filter(d => d.status === 'paid').length;
-        const unpaid = data.filter(d => d.status === 'unpaid').length;
-        
-        el.innerHTML = `
-        <div class="mb-2 d-flex gap-3">
-            <span class="badge bg-success px-3 py-2">납부 ${paid}명</span>
-            <span class="badge bg-danger px-3 py-2">미납 ${unpaid}명</span>
-            <span class="badge bg-secondary px-3 py-2">전체 ${data.length}명</span>
-        </div>
-        ${data.length === 0 ? '<p class="text-muted">해당 월의 데이터가 없습니다</p>' : `
-        <div class="table-responsive">
-            <table class="table table-sm table-hover mb-0">
-                <thead class="table-light"><tr><th>임차인</th><th>물건</th><th>월세</th><th>납부상태</th><th>납부액</th><th>납부일</th></tr></thead>
-                <tbody>
-                ${data.map(d => `
-                    <tr>
-                        <td class="fw-bold">${d.tenant_name}</td>
-                        <td style="font-size:.82rem">${d.property_info}</td>
-                        <td style="color:#ff6b35">${formatMoney(d.monthly_rent)}</td>
-                        <td><span class="badge bg-${d.status==='paid'?'success':'danger'}">${d.status==='paid'?'납부':'미납'}</span></td>
-                        <td>${d.paid_amount > 0 ? formatMoney(d.paid_amount) : '-'}</td>
-                        <td style="font-size:.78rem">${d.paid_at ? d.paid_at.slice(0,16).replace('T',' ') : '-'}</td>
-                    </tr>
-                `).join('')}
-                </tbody>
-            </table>
-        </div>`}`;
-    } catch(e) { el.innerHTML = `<div class="alert alert-danger py-2">${e.message}</div>`; }
-}
-
-async function loadLandlordProfile(c, t) {
-    t.textContent = '내 정보 관리';
-    const p = await apiGet('/api/landlord/profile');
-    const propNames = p.property_names || [];
-    c.innerHTML = `
-    <div class="row g-3">
-        <div class="col-lg-7">
-            <div class="card data-card mb-3">
-                <div class="card-header"><h5 class="mb-0"><i class="fas fa-building me-2" style="color:#ff9f1c"></i>임대인 프로필</h5></div>
-                <div class="card-body">
-                    <form id="profileForm">
-                        <div class="mb-3">
-                            <label class="form-label fw-bold small">대표 건물명</label>
-                            <input type="text" class="form-control" id="pf_building" value="${p.building_name || ''}" placeholder="대표 건물명 입력">
-                            <small class="text-muted"><i class="fas fa-info-circle me-1"></i>대시보드에 표시되는 대표 건물명입니다</small>
-                        </div>
-                        <div class="mb-3"><label class="form-label fw-bold small">주소</label><input type="text" class="form-control" id="pf_address" value="${p.address || ''}" placeholder="예: 서울시 강남구 테헤란로 123"></div>
-                        <div class="row g-3 mb-3">
-                            <div class="col-md-6"><label class="form-label fw-bold small">전화번호</label><input type="text" class="form-control" id="pf_phone" value="${p.phone || ''}" placeholder="010-0000-0000"></div>
-                            <div class="col-md-6"><label class="form-label fw-bold small">사업자번호</label><input type="text" class="form-control" id="pf_biz" value="${p.business_no || ''}" placeholder="000-00-00000"></div>
-                        </div>
-                        <div class="row g-3 mb-3">
-                            <div class="col-md-4"><label class="form-label fw-bold small">은행명</label><input type="text" class="form-control" id="pf_bank" value="${p.bank_name || ''}"></div>
-                            <div class="col-md-4"><label class="form-label fw-bold small">계좌번호</label><input type="text" class="form-control" id="pf_account" value="${p.bank_account || ''}"></div>
-                            <div class="col-md-4"><label class="form-label fw-bold small">예금주</label><input type="text" class="form-control" id="pf_holder" value="${p.bank_holder || ''}"></div>
-                        </div>
-                        <button type="button" class="btn text-white w-100" style="background:linear-gradient(135deg,#ff6b35,#ff9f1c);border:none;border-radius:8px" onclick="saveLandlordProfile()"><i class="fas fa-save me-2"></i>프로필 저장</button>
-                    </form>
-                </div>
-            </div>
-
-            <!-- 임대물건명 관리 -->
-            <div class="card data-card">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0"><i class="fas fa-home me-2" style="color:#ff6b35"></i>임대물건명 관리</h5>
-                    <span class="badge" style="background:#ff9f1c;color:#fff">${propNames.length}건</span>
-                </div>
-                <div class="card-body">
-                    <div class="alert border-0 py-2 px-3 mb-3" style="background:rgba(255,159,28,.06);border-radius:10px;font-size:.82rem">
-                        <i class="fas fa-lightbulb me-1" style="color:#ff9f1c"></i>
-                        <strong>임대물건명</strong>은 임차인 등록 시 자동으로 선택할 수 있도록 동기화됩니다.<br>
-                        <span class="text-muted">예) <strong>강남센트럴상가</strong>, <strong>역삼오피스텔</strong>, <strong>서초타워빌딩</strong> 등</span>
-                    </div>
-                    <div class="d-flex gap-2 mb-3">
-                        <input type="text" class="form-control form-control-sm" id="pf_new_property" placeholder="새 임대물건명 입력 (예: ***상가, **오피스텔 등)">
-                        <button class="btn btn-sm text-white text-nowrap" style="background:linear-gradient(135deg,#ff6b35,#ff9f1c);border:none;border-radius:8px;min-width:80px" onclick="addPropertyName()"><i class="fas fa-plus me-1"></i>추가</button>
-                    </div>
-                    <div id="propertyNamesList">
-                        ${propNames.length === 0 
-                            ? '<p class="text-muted text-center py-3" style="font-size:.85rem"><i class="fas fa-inbox me-2"></i>등록된 임대물건명이 없습니다</p>' 
-                            : propNames.map(n => `
-                            <div class="d-flex align-items-center justify-content-between py-2 px-3 mb-1 rounded" style="background:#f8f9fa">
-                                <div><i class="fas fa-building me-2 text-muted"></i><span class="fw-bold" style="font-size:.88rem">${n}</span></div>
-                                <button class="btn btn-sm btn-outline-danger py-0 px-2" onclick="deletePropertyName('${n.replace(/'/g,"\\'")}')" title="삭제"><i class="fas fa-times"></i></button>
-                            </div>
-                        `).join('')}
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="col-lg-5">
-            <div class="card data-card h-100">
-                <div class="card-header"><h5 class="mb-0"><i class="fas fa-info-circle me-2 text-info"></i>계정 정보</h5></div>
-                <div class="card-body">
-                    <ul class="list-unstyled mb-0">
-                        <li class="mb-3 d-flex justify-content-between border-bottom pb-2"><span class="text-muted">이름</span><span class="fw-bold">${currentUser.name}</span></li>
-                        <li class="mb-3 d-flex justify-content-between border-bottom pb-2"><span class="text-muted">이메일</span><span class="fw-bold">${currentUser.email}</span></li>
-                        <li class="mb-3 d-flex justify-content-between border-bottom pb-2"><span class="text-muted">역할</span><span class="badge" style="background:linear-gradient(135deg,#ff6b35,#ff9f1c);color:#fff">임대인</span></li>
-                        <li class="mb-3 d-flex justify-content-between border-bottom pb-2"><span class="text-muted">대표 건물</span><span class="fw-bold">${p.building_name || '미등록'}</span></li>
-                        <li class="mb-3 d-flex justify-content-between border-bottom pb-2"><span class="text-muted">임대물건</span><span class="fw-bold">${propNames.length}건 등록</span></li>
-                        <li class="d-flex justify-content-between"><span class="text-muted">상태</span><span class="badge bg-success">활성</span></li>
-                    </ul>
-                </div>
-            </div>
-        </div>
-    </div>`;
-}
-
-// ─── Landlord helper functions ────────────────────────────
-
-function showTenantQR(token, propName, unit, tenantName, propType) {
-    const baseUrl = window.location.origin;
-    const qrUrl = `${baseUrl}/pay/${token}`;
-    const modal = document.getElementById('formModal');
-    document.getElementById('formModalTitle').textContent = 'QR코드 상세';
-    document.getElementById('formModalBody').innerHTML = `
-        <div class="text-center">
-            <span class="badge bg-secondary mb-2">${propType}</span>
-            <h5>${propName} ${unit}</h5>
-            <p class="text-muted mb-3">임차인: <strong>${tenantName}</strong></p>
-            <img src="https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(qrUrl)}" style="width:220px;height:220px;border-radius:14px;border:3px solid #f0f0f0" class="mb-3">
-            <div class="input-group mb-3"><input type="text" class="form-control" value="${qrUrl}" readonly id="qrUrlInput"><button class="btn btn-outline-secondary" onclick="navigator.clipboard.writeText(document.getElementById('qrUrlInput').value);this.innerHTML='<i class=\\'fas fa-check text-success\\'></i>';setTimeout(()=>this.innerHTML='<i class=\\'fas fa-copy\\'></i>',1500)"><i class="fas fa-copy"></i></button></div>
-            <p class="text-muted" style="font-size:.75rem"><i class="fas fa-info-circle me-1"></i>임차인이 이 QR코드를 스캔하면 결제 페이지로 이동합니다</p>
-        </div>`;
-    document.getElementById('formModalFooter').innerHTML = `<button class="btn btn-outline-secondary" onclick="window.print()"><i class="fas fa-print me-1"></i>인쇄</button><button class="btn btn-secondary" data-bs-dismiss="modal">닫기</button>`;
-    new bootstrap.Modal(modal).show();
-}
-
-async function showAddTenantModal() {
-    const modal = document.getElementById('formModal');
-    document.getElementById('formModalTitle').textContent = '새 임차인 등록';
-    
-    // 프로필에서 등록된 임대물건명 목록 로드
-    let propNames = [];
-    try {
-        const profile = await apiGet('/api/landlord/profile');
-        propNames = profile.property_names || [];
-    } catch(e) {}
-    
-    const propOptions = propNames.map(n => `<option value="${n}">${n}</option>`).join('');
-    
-    document.getElementById('formModalBody').innerHTML = `
-        <div class="row g-3">
-            <div class="col-md-6"><label class="form-label fw-bold small">임차인 이름 <span class="text-danger">*</span></label><input type="text" class="form-control" id="nt_name"></div>
-            <div class="col-md-6"><label class="form-label fw-bold small">연락처</label><input type="text" class="form-control" id="nt_phone" placeholder="010-0000-0000"></div>
-            <div class="col-md-6"><label class="form-label fw-bold small">물건 유형</label>
-                <select class="form-select" id="nt_ptype"><option value="apartment">🏢 아파트</option><option value="officetel" selected>🏠 오피스텔</option><option value="commercial">🏪 상가</option><option value="villa">🏘️ 빌라</option><option value="other">📋 기타</option></select></div>
-            <div class="col-md-6">
-                <label class="form-label fw-bold small">임대물건명 <span class="text-danger">*</span></label>
-                ${propNames.length > 0 ? `
-                <div class="input-group">
-                    <select class="form-select" id="nt_pname_select" onchange="if(this.value==='__custom__'){document.getElementById('nt_pname_custom_wrap').style.display='block';document.getElementById('nt_pname_custom').focus();}else{document.getElementById('nt_pname_custom_wrap').style.display='none';}">
-                        <option value="">-- 임대물건 선택 --</option>
-                        ${propOptions}
-                        <option value="__custom__">✏️ 직접입력</option>
-                    </select>
-                </div>
-                <div id="nt_pname_custom_wrap" style="display:none;margin-top:4px">
-                    <input type="text" class="form-control form-control-sm" id="nt_pname_custom" placeholder="새 임대물건명 직접 입력">
-                </div>` : `
-                <input type="text" class="form-control" id="nt_pname_direct" placeholder="예: ***상가, **오피스텔 등">
-                `}
-                <small class="text-muted mt-1 d-block" style="font-size:.72rem"><i class="fas fa-info-circle me-1"></i>예) ***상가 **호, **오피스텔 **호 등으로 표기해 주세요</small>
-            </div>
-            <div class="col-md-4"><label class="form-label fw-bold small">호수 <span class="text-danger">*</span></label><input type="text" class="form-control" id="nt_unit" placeholder="예: 301호"></div>
-            <div class="col-md-4"><label class="form-label fw-bold small">월세(원) <span class="text-danger">*</span></label><input type="number" class="form-control" id="nt_rent" placeholder="800000"></div>
-            <div class="col-md-4"><label class="form-label fw-bold small">납부일</label><input type="number" class="form-control" id="nt_due" value="25" min="1" max="31"></div>
-            <div class="col-12"><div class="form-check"><input type="checkbox" class="form-check-input" id="nt_recurring"><label class="form-check-label"><i class="fas fa-sync-alt me-1 text-info"></i>정기결제 설정 (매월 자동 결제)</label></div></div>
-        </div>`;
-    document.getElementById('formModalFooter').innerHTML = `<button class="btn btn-secondary" data-bs-dismiss="modal">취소</button><button class="btn text-white" style="background:linear-gradient(135deg,#ff6b35,#ff9f1c);border:none" onclick="createTenant()"><i class="fas fa-plus me-1"></i>등록</button>`;
-    new bootstrap.Modal(modal).show();
-}
-
-async function createTenant() {
-    const name = document.getElementById('nt_name').value;
-    // 임대물건명 가져오기 (select 또는 직접입력)
-    let pname = '';
-    const selectEl = document.getElementById('nt_pname_select');
-    const directEl = document.getElementById('nt_pname_direct');
-    if (selectEl) {
-        if (selectEl.value === '__custom__') {
-            pname = (document.getElementById('nt_pname_custom')?.value || '').trim();
-        } else {
-            pname = selectEl.value;
-        }
-    } else if (directEl) {
-        pname = directEl.value.trim();
-    }
-    const unit = document.getElementById('nt_unit').value;
-    const rent = document.getElementById('nt_rent').value;
-    if (!name || !pname || !unit || !rent) { alert('필수 항목을 입력해주세요\n(이름, 임대물건명, 호수, 월세)'); return; }
-    const fd = new FormData();
-    fd.append('name', name);
-    fd.append('phone', document.getElementById('nt_phone').value);
-    fd.append('property_type', document.getElementById('nt_ptype').value);
-    fd.append('property_name', pname);
-    fd.append('unit_number', unit);
-    fd.append('monthly_rent', rent);
-    fd.append('rent_due_day', document.getElementById('nt_due').value);
-    fd.append('is_recurring', document.getElementById('nt_recurring').checked);
-    try {
-        const res = await apiPostForm('/api/landlord/tenants', fd);
-        bootstrap.Modal.getInstance(document.getElementById('formModal')).hide();
-        alert(`임차인 등록 완료!\n임대물건: ${pname} ${unit}\nQR 토큰: ${res.qr_token}`);
-        navigate('landlord-tenants');
-    } catch (e) { alert('등록 실패: ' + e.message); }
-}
-
-async function deleteTenant(id) {
-    if (!confirm('이 임차인을 비활성화하시겠습니까?')) return;
-    await apiDelete(`/api/landlord/tenants/${id}`);
-    navigate('landlord-tenants');
-}
-
-async function regenerateQR(tenantId) {
-    if (!confirm('QR코드를 재발급하시겠습니까?\n기존 QR코드는 즉시 비활성화됩니다.')) return;
-    const res = await apiPost(`/api/landlord/tenants/${tenantId}/regenerate-qr`);
-    alert('QR코드가 재발급되었습니다.');
-    navigate('landlord-qr');
-}
-
-async function saveLandlordProfile() {
-    const fd = new FormData();
-    fd.append('building_name', document.getElementById('pf_building').value);
-    fd.append('address', document.getElementById('pf_address').value);
-    fd.append('phone', document.getElementById('pf_phone').value);
-    fd.append('business_no', document.getElementById('pf_biz').value);
-    fd.append('bank_name', document.getElementById('pf_bank').value);
-    fd.append('bank_account', document.getElementById('pf_account').value);
-    fd.append('bank_holder', document.getElementById('pf_holder').value);
-    try {
-        await apiPutForm('/api/landlord/profile', fd);
-        alert('프로필이 저장되었습니다');
-        landlordProfileInfo = await apiGet('/api/landlord/profile');
-        navigate('landlord-profile');
-    } catch (e) { alert('저장 실패: ' + e.message); }
-}
-
-async function addPropertyName() {
-    const input = document.getElementById('pf_new_property');
-    const name = (input?.value || '').trim();
-    if (!name) { alert('임대물건명을 입력해주세요'); input?.focus(); return; }
-    try {
-        const fd = new FormData();
-        fd.append('name', name);
-        await apiPostForm('/api/landlord/property-names', fd);
-        navigate('landlord-profile');
-    } catch(e) { alert('추가 실패: ' + e.message); }
-}
-
-async function deletePropertyName(name) {
-    if (!confirm(`"${name}" 임대물건명을 삭제하시겠습니까?`)) return;
-    try {
-        await apiDelete('/api/landlord/property-names?name=' + encodeURIComponent(name));
-        navigate('landlord-profile');
-    } catch(e) { alert('삭제 실패: ' + e.message); }
-}
-
-
-// ─── Per-Tenant Payment History (Landlord) ────────────────
-
-async function showTenantPaymentHistory(tenantId, tenantName, propertyInfo) {
-    const modal = document.getElementById('formModal');
-    document.getElementById('formModalTitle').textContent = '결제 내역: ' + tenantName;
-    document.getElementById('formModalBody').innerHTML = '<div class="text-center py-4"><div class="spinner-border text-warning"></div><p class="text-muted mt-2">결제 내역 조회 중...</p></div>';
-    document.getElementById('formModalFooter').innerHTML = '<button class="btn btn-secondary" data-bs-dismiss="modal">닫기</button>';
-    new bootstrap.Modal(modal).show();
-
-    try {
-        const payments = await apiGet(`/api/landlord/payments?tenant_id=${tenantId}`);
-        const total = payments.reduce((s,p) => s + (p.status === 'paid' ? p.amount : 0), 0);
-        const paidCnt = payments.filter(p => p.status === 'paid').length;
-
-        document.getElementById('formModalBody').innerHTML = `
-            <div class="mb-3 p-3 rounded" style="background:linear-gradient(135deg,rgba(255,107,53,.04),rgba(255,159,28,.06))">
-                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                    <div>
-                        <div class="fw-bold">${tenantName}</div>
-                        <div class="text-muted" style="font-size:.82rem">${propertyInfo}</div>
-                    </div>
-                    <div class="text-end">
-                        <div class="fw-bold" style="color:#ff6b35;font-size:1.1rem">${formatMoney(total)}</div>
-                        <div class="text-muted" style="font-size:.78rem">결제 완료 ${paidCnt}건 / 전체 ${payments.length}건</div>
-                    </div>
-                </div>
-            </div>
-            ${payments.length === 0 ? '<div class="text-center text-muted py-4"><i class="fas fa-inbox fa-2x mb-2 d-block opacity-25"></i><p>결제 내역이 없습니다</p></div>' : `
-            <div class="table-responsive">
-                <table class="table table-hover table-sm mb-0">
-                    <thead><tr><th>결제월</th><th>금액</th><th>방식</th><th>카드사</th><th>승인번호</th><th>상태</th><th>결제일</th></tr></thead>
-                    <tbody>
-                    ${payments.map(p => `
-                        <tr>
-                            <td><span class="badge bg-light text-dark border">${p.payment_month}</span></td>
-                            <td class="fw-bold" style="color:#ff6b35">${formatMoney(p.amount)}</td>
-                            <td>${p.payment_method === 'card_recurring' ? '<span class="badge bg-info">정기</span>' : '<span class="badge bg-secondary">일반</span>'}</td>
-                            <td>${p.card_brand || '-'}</td>
-                            <td><code style="font-size:.72rem">${p.approval_code || '-'}</code></td>
-                            <td><span class="badge bg-${p.status === 'paid' ? 'success' : 'warning'}"><i class="fas fa-${p.status === 'paid' ? 'check' : 'clock'} me-1"></i>${p.status === 'paid' ? '완료' : '대기'}</span></td>
-                            <td style="font-size:.78rem">${p.paid_at ? p.paid_at.slice(0,16).replace('T',' ') : '-'}</td>
-                        </tr>
-                    `).join('')}
-                    </tbody>
-                </table>
-            </div>`}`;
-    } catch (e) {
-        document.getElementById('formModalBody').innerHTML = `<div class="alert alert-danger"><i class="fas fa-exclamation-circle me-2"></i>${e.message}</div>`;
-    }
-}
-
-
-// ═══════════════════════════════════════════════════════════
-// ADMIN — 방긋페이 관리 PAGES (Enhanced v3)
-// ═══════════════════════════════════════════════════════════
-
-async function loadAdminLandlords(c, t) {
-    t.textContent = '임대인 관리 (방긋페이)';
-    const landlords = await apiGet('/api/admin/landlords');
-    const totalTenants = landlords.reduce((s,l) => s + (l.tenant_count || 0), 0);
-    const activeLandlords = landlords.filter(l => l.is_active).length;
-    const totalRent = landlords.reduce((s,l) => s + (l.total_monthly_rent || 0), 0);
-
-    c.innerHTML = `
-    <!-- 배너 -->
-    <div class="card border-0 shadow-sm mb-4" style="border-radius:14px;overflow:hidden;background:linear-gradient(135deg,#2d1b03 0%,#5a3408 50%,#ff9f1c 100%);">
-        <div class="card-body py-3 px-4 d-flex align-items-center justify-content-between flex-wrap gap-2">
-            <div class="d-flex align-items-center gap-3">
-                <div style="width:44px;height:44px;border-radius:12px;background:rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;">
-                    <i class="fas fa-building text-white"></i>
-                </div>
-                <div>
-                    <h5 class="mb-0 text-white fw-bold">방긋페이 임대인 관리</h5>
-                    <small style="color:rgba(255,255,255,.65)">전체 임대인 현황 및 관리 대시보드</small>
-                </div>
-            </div>
-            <span class="badge" style="background:rgba(255,255,255,.2);color:#fff;padding:6px 14px;border-radius:50px;font-size:.78rem;">
-                <i class="fas fa-smile me-1" style="color:#ff9f1c"></i>Bang Good Pay
-            </span>
-        </div>
-    </div>
-    <!-- KPI -->
-    <div class="row g-3 mb-4">
-        ${kpiCard('전체 임대인', landlords.length + '명', 'building', 'warning')}
-        ${kpiCard('활성 임대인', activeLandlords + '명', 'check-circle', 'success')}
-        ${kpiCard('총 임차인', totalTenants + '명', 'users', 'info')}
-        ${kpiCard('월 총 임대료', formatMoney(totalRent), 'won-sign', 'primary')}
-    </div>
-    <!-- 검색 -->
-    <div class="card data-card mb-3">
-        <div class="card-body py-2 px-3 d-flex align-items-center gap-2 flex-wrap">
-            <div class="input-group input-group-sm" style="max-width:280px">
-                <span class="input-group-text"><i class="fas fa-search"></i></span>
-                <input type="text" class="form-control" placeholder="이름 / 건물명 / 이메일 검색" id="adminLandlordSearch" oninput="filterAdminLandlords()">
-            </div>
-            <div class="btn-group btn-group-sm">
-                <button class="btn btn-outline-secondary admin-ll-filter active" onclick="filterAdminLandlordStatus('all',this)">전체</button>
-                <button class="btn btn-outline-success admin-ll-filter" onclick="filterAdminLandlordStatus('active',this)">활성</button>
-                <button class="btn btn-outline-danger admin-ll-filter" onclick="filterAdminLandlordStatus('inactive',this)">비활성</button>
-            </div>
-            <span class="ms-auto text-muted" style="font-size:.78rem"><i class="fas fa-info-circle me-1"></i>총 ${landlords.length}명 등록</span>
-        </div>
-    </div>
-    <!-- 테이블 -->
-    <div class="card data-card">
-        <div class="card-body p-0">
-        <div class="table-responsive"><table class="table table-hover mb-0" id="adminLandlordTable">
-            <thead><tr><th>이름</th><th>이메일</th><th>건물명</th><th>주소</th><th>전화번호</th><th>사업자번호</th><th>임차인</th><th>상태</th><th>등록일</th><th style="width:80px">관리</th></tr></thead>
-            <tbody>
-            ${landlords.length === 0 ? '<tr><td colspan="10" class="text-center text-muted py-4"><i class="fas fa-inbox me-2"></i>등록된 임대인이 없습니다</td></tr>' :
-            landlords.map(l => `
-                <tr data-name="${(l.name||'').toLowerCase()}" data-building="${(l.building_name||'').toLowerCase()}" data-email="${(l.email||'').toLowerCase()}" data-active="${l.is_active}">
-                    <td class="fw-bold">${l.name}</td>
-                    <td style="font-size:.82rem">${l.email}</td>
-                    <td>${l.building_name || '<span class="text-muted">-</span>'}</td>
-                    <td style="font-size:.8rem;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${l.address || ''}">${l.address || '-'}</td>
-                    <td>${l.phone || '-'}</td>
-                    <td style="font-size:.82rem">${l.business_no || '-'}</td>
-                    <td><span class="badge bg-info fw-bold">${l.tenant_count || 0}명</span></td>
-                    <td>${l.is_active ? '<span class="badge bg-success">활성</span>' : '<span class="badge bg-danger">비활성</span>'}</td>
-                    <td style="font-size:.78rem">${l.created_at ? l.created_at.slice(0,10) : '-'}</td>
-                    <td>
-                        <button class="btn btn-sm btn-outline-dark" title="상세보기" onclick="showAdminLandlordDetail(${JSON.stringify(l).replace(/"/g,'&quot;')})"><i class="fas fa-eye"></i></button>
-                    </td>
-                </tr>
-            `).join('')}
-            </tbody>
-        </table></div>
-    </div></div>`;
-}
-
-function filterAdminLandlords() {
-    const q = (document.getElementById('adminLandlordSearch').value || '').toLowerCase();
-    document.querySelectorAll('#adminLandlordTable tbody tr').forEach(row => {
-        if (!row.dataset.name) return;
-        const match = row.dataset.name.includes(q) || row.dataset.building.includes(q) || row.dataset.email.includes(q);
-        row.style.display = match ? '' : 'none';
-    });
-}
-function filterAdminLandlordStatus(status, btn) {
-    document.querySelectorAll('.admin-ll-filter').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    document.querySelectorAll('#adminLandlordTable tbody tr').forEach(row => {
-        if (!row.dataset.active) return;
-        if (status === 'all') { row.style.display = ''; return; }
-        row.style.display = (status === 'active' && row.dataset.active === 'true') || (status === 'inactive' && row.dataset.active === 'false') ? '' : 'none';
-    });
-}
-function showAdminLandlordDetail(l) {
-    const modal = document.getElementById('formModal');
-    document.getElementById('formModalTitle').textContent = '임대인 상세: ' + l.name;
-    document.getElementById('formModalBody').innerHTML = `
-        <div class="row g-3">
-            <div class="col-md-6">
-                <h6 class="fw-bold mb-3"><i class="fas fa-user me-2" style="color:#ff9f1c"></i>기본 정보</h6>
-                <ul class="list-unstyled mb-0">
-                    <li class="mb-2 d-flex justify-content-between border-bottom pb-2"><span class="text-muted">이름</span><strong>${l.name}</strong></li>
-                    <li class="mb-2 d-flex justify-content-between border-bottom pb-2"><span class="text-muted">이메일</span><strong>${l.email}</strong></li>
-                    <li class="mb-2 d-flex justify-content-between border-bottom pb-2"><span class="text-muted">전화번호</span><strong>${l.phone || '-'}</strong></li>
-                    <li class="mb-2 d-flex justify-content-between border-bottom pb-2"><span class="text-muted">사업자번호</span><strong>${l.business_no || '-'}</strong></li>
-                    <li class="d-flex justify-content-between"><span class="text-muted">등록일</span><strong>${l.created_at ? l.created_at.slice(0,10) : '-'}</strong></li>
-                </ul>
-            </div>
-            <div class="col-md-6">
-                <h6 class="fw-bold mb-3"><i class="fas fa-building me-2" style="color:#ff9f1c"></i>건물 정보</h6>
-                <ul class="list-unstyled mb-0">
-                    <li class="mb-2 d-flex justify-content-between border-bottom pb-2"><span class="text-muted">건물명</span><strong>${l.building_name || '-'}</strong></li>
-                    <li class="mb-2 d-flex justify-content-between border-bottom pb-2"><span class="text-muted">주소</span><strong style="font-size:.82rem;text-align:right;max-width:180px">${l.address || '-'}</strong></li>
-                    <li class="mb-2 d-flex justify-content-between border-bottom pb-2"><span class="text-muted">임차인 수</span><span class="badge bg-info">${l.tenant_count || 0}명</span></li>
-                    <li class="mb-2 d-flex justify-content-between border-bottom pb-2"><span class="text-muted">월 총 임대료</span><strong style="color:#ff6b35">${formatMoney(l.total_monthly_rent || 0)}</strong></li>
-                    <li class="d-flex justify-content-between"><span class="text-muted">상태</span>${l.is_active ? '<span class="badge bg-success">활성</span>' : '<span class="badge bg-danger">비활성</span>'}</li>
-                </ul>
-            </div>
-        </div>
-        <hr>
-        <h6 class="fw-bold mb-3"><i class="fas fa-users me-2 text-info"></i>소속 임차인 목록</h6>
-        <div id="landlordTenantsListArea"><div class="text-center py-3"><div class="spinner-border spinner-border-sm text-warning"></div></div></div>`;
-    document.getElementById('formModalFooter').innerHTML = `<button class="btn btn-outline-secondary" data-bs-dismiss="modal">닫기</button>`;
-    new bootstrap.Modal(modal).show();
-
-    // 임차인 목록 비동기 로드
-    loadLandlordTenantsForAdmin(l.id);
-}
-
-async function loadLandlordTenantsForAdmin(landlordId) {
-    const area = document.getElementById('landlordTenantsListArea');
-    try {
-        const data = await apiGet(`/api/admin/banggut/landlord/${landlordId}/tenants`);
-        const tenants = data.tenants || [];
-        if (tenants.length === 0) {
-            area.innerHTML = '<div class="text-center text-muted py-3"><i class="fas fa-inbox me-2"></i>등록된 임차인이 없습니다</div>';
-            return;
-        }
-        area.innerHTML = `
-        <div class="table-responsive">
-            <table class="table table-sm table-hover mb-0">
-                <thead class="table-light"><tr><th></th><th>이름</th><th>물건</th><th>호수</th><th>월세</th><th>이번달</th><th>총납부</th><th>관리</th></tr></thead>
-                <tbody>
-                ${tenants.map(tn => `
-                    <tr>
-                        <td>${PROP_EMOJI[tn.property_type] || '📋'}</td>
-                        <td class="fw-bold">${tn.name} ${!tn.is_active ? '<span class="badge bg-secondary">비활성</span>' : ''}</td>
-                        <td><span class="badge bg-secondary" style="font-size:.68rem">${tn.property_type_kr}</span> ${tn.property_name}</td>
-                        <td class="fw-bold">${tn.unit_number}</td>
-                        <td class="fw-bold" style="color:#ff6b35">${formatMoney(tn.monthly_rent)}</td>
-                        <td>${tn.paid_this_month ? '<span class="badge bg-success">완료</span>' : '<span class="badge bg-warning text-dark">미납</span>'}</td>
-                        <td style="font-size:.82rem">${formatMoney(tn.total_paid)} (${tn.pay_count}건)</td>
-                        <td><button class="btn btn-sm btn-outline-info" onclick="showAdminTenantPayments(${tn.id},'${tn.name.replace(/'/g,"\\'")}','${tn.property_name.replace(/'/g,"\\'")} ${tn.unit_number}')" title="결제내역"><i class="fas fa-credit-card"></i></button></td>
-                    </tr>
-                `).join('')}
-                </tbody>
-            </table>
-        </div>`;
-    } catch (e) {
-        area.innerHTML = `<div class="alert alert-danger">${e.message}</div>`;
-    }
-}
-
-async function showAdminTenantPayments(tenantId, tenantName, propertyInfo) {
-    // 모달 안에 새 모달 대신 formModalBody를 교체
-    const area = document.getElementById('landlordTenantsListArea');
-    if (!area) return;
-    area.innerHTML = '<div class="text-center py-3"><div class="spinner-border spinner-border-sm text-info"></div></div>';
-    try {
-        const data = await apiGet(`/api/admin/banggut/tenant/${tenantId}/payments`);
-        const payments = data.payments || [];
-        const total = payments.reduce((s,p) => s + (p.status === 'paid' ? p.amount : 0), 0);
-        area.innerHTML = `
-        <div class="mb-2 d-flex justify-content-between align-items-center">
-            <div>
-                <button class="btn btn-sm btn-outline-secondary me-2" onclick="loadLandlordTenantsForAdmin(${data.tenant.landlord_name ? 'undefined' : 'undefined'})"><i class="fas fa-arrow-left me-1"></i>목록</button>
-                <strong>${tenantName}</strong> <span class="text-muted">(${propertyInfo})</span>
-            </div>
-            <span class="fw-bold" style="color:#ff6b35">${formatMoney(total)} / ${payments.length}건</span>
-        </div>
-        ${payments.length === 0 ? '<div class="text-center text-muted py-3"><i class="fas fa-inbox me-2"></i>결제 내역이 없습니다</div>' : `
-        <div class="table-responsive">
-            <table class="table table-sm table-hover mb-0">
-                <thead class="table-light"><tr><th>결제월</th><th>금액</th><th>방식</th><th>카드사</th><th>승인번호</th><th>상태</th><th>결제일</th></tr></thead>
-                <tbody>
-                ${payments.map(p => `
-                    <tr>
-                        <td><span class="badge bg-light text-dark border">${p.payment_month}</span></td>
-                        <td class="fw-bold" style="color:#ff6b35">${formatMoney(p.amount)}</td>
-                        <td>${p.payment_method === 'card_recurring' ? '<span class="badge bg-info">정기</span>' : '<span class="badge bg-secondary">일반</span>'}</td>
-                        <td>${p.card_brand || '-'}</td>
-                        <td><code style="font-size:.72rem">${p.approval_code || '-'}</code></td>
-                        <td><span class="badge bg-${p.status === 'paid' ? 'success' : 'warning'}">${p.status === 'paid' ? '완료' : '대기'}</span></td>
-                        <td style="font-size:.78rem">${p.paid_at ? p.paid_at.slice(0,16).replace('T',' ') : '-'}</td>
-                    </tr>
-                `).join('')}
-                </tbody>
-            </table>
-        </div>`}`;
-    } catch (e) {
-        area.innerHTML = `<div class="alert alert-danger">${e.message}</div>`;
-    }
-}
-
-async function loadAdminTenants(c, t) {
-    t.textContent = '임차인 현황 (방긋페이)';
-    const tenants = await apiGet('/api/admin/banggut/tenants');
-    const activeTenants = tenants.filter(t => t.is_active);
-    const paidCnt = activeTenants.filter(t => t.paid_this_month).length;
-    const unpaidCnt = activeTenants.length - paidCnt;
-    const totalRent = activeTenants.reduce((s,t) => s + t.monthly_rent, 0);
-    const paidRate = activeTenants.length > 0 ? Math.round(paidCnt / activeTenants.length * 100) : 0;
-
-    // 물건유형별 통계
-    const typeStats = {};
-    activeTenants.forEach(t => { typeStats[t.property_type_kr] = (typeStats[t.property_type_kr] || 0) + 1; });
-
-    // 임대인별 그룹핑
-    const landlordGroups = {};
-    tenants.forEach(t => {
-        if (!landlordGroups[t.landlord_name]) landlordGroups[t.landlord_name] = { total: 0, paid: 0, rent: 0 };
-        landlordGroups[t.landlord_name].total++;
-        if (t.paid_this_month) landlordGroups[t.landlord_name].paid++;
-        if (t.is_active) landlordGroups[t.landlord_name].rent += t.monthly_rent;
-    });
-
-    c.innerHTML = `
-    <div class="row g-3 mb-4">
-        ${kpiCard('전체 임차인', tenants.length + '명', 'users', 'warning')}
-        ${kpiCard('이번달 납부', paidCnt + '/' + activeTenants.length + '명', 'check-circle', 'success')}
-        ${kpiCard('수금률', paidRate + '%', 'percentage', paidRate >= 80 ? 'success' : paidRate >= 50 ? 'warning' : 'danger')}
-        ${kpiCard('월 총 임대료', formatMoney(totalRent), 'won-sign', 'info')}
-    </div>
-    <!-- 물건유형 분포 + 임대인별 현황 -->
-    <div class="row g-3 mb-4">
-        <div class="col-md-5">
-            <div class="card data-card h-100">
-                <div class="card-header py-2"><h6 class="mb-0"><i class="fas fa-chart-pie me-2 text-warning"></i>물건유형 분포</h6></div>
-                <div class="card-body d-flex flex-wrap gap-2 align-items-center justify-content-center py-3">
-                    ${Object.entries(typeStats).map(([type, cnt]) => `
-                        <div class="text-center px-3 py-2" style="background:rgba(255,159,28,.06);border-radius:12px;min-width:90px">
-                            <div style="font-size:1.5rem">${type === '아파트' ? '🏢' : type === '오피스텔' ? '🏠' : type === '상가' ? '🏪' : type === '빌라' ? '🏘️' : '📋'}</div>
-                            <div class="fw-bold" style="font-size:.82rem">${type}</div>
-                            <div class="fw-bold" style="color:#ff9f1c;font-size:1.1rem">${cnt}명</div>
-                        </div>
-                    `).join('')}
-                </div>
-            </div>
-        </div>
-        <div class="col-md-7">
-            <div class="card data-card h-100">
-                <div class="card-header py-2"><h6 class="mb-0"><i class="fas fa-building me-2 text-info"></i>임대인별 현황</h6></div>
-                <div class="card-body p-0">
-                    <div class="table-responsive"><table class="table table-sm table-hover mb-0">
-                        <thead class="table-light"><tr><th>임대인</th><th>전체</th><th>납부</th><th>수금률</th><th>월 임대료</th></tr></thead>
-                        <tbody>
-                        ${Object.entries(landlordGroups).map(([name, g]) => {
-                            const rate = g.total > 0 ? Math.round(g.paid / g.total * 100) : 0;
-                            return `<tr>
-                                <td class="fw-bold">${name}</td>
-                                <td>${g.total}명</td>
-                                <td>${g.paid}명</td>
-                                <td><div class="progress" style="height:6px;width:60px;display:inline-block;vertical-align:middle"><div class="progress-bar bg-${rate>=80?'success':rate>=50?'warning':'danger'}" style="width:${rate}%"></div></div> <span class="ms-1" style="font-size:.78rem">${rate}%</span></td>
-                                <td style="color:#ff6b35;font-size:.85rem">${formatMoney(g.rent)}</td>
-                            </tr>`;
-                        }).join('')}
-                        </tbody>
-                    </table></div>
-                </div>
-            </div>
-        </div>
-    </div>
-    <!-- 검색/필터 -->
-    <div class="card data-card mb-3">
-        <div class="card-body py-2 px-3 d-flex align-items-center gap-2 flex-wrap">
-            <div class="input-group input-group-sm" style="max-width:250px">
-                <span class="input-group-text"><i class="fas fa-search"></i></span>
-                <input type="text" class="form-control" placeholder="임차인 / 임대인 검색" id="adminTenantSearch" oninput="filterAdminTenantTable()">
-            </div>
-            <div class="btn-group btn-group-sm">
-                <button class="btn btn-outline-secondary admin-tenant-filter active" onclick="filterAdminTenantStatus('all',this)">전체</button>
-                <button class="btn btn-outline-success admin-tenant-filter" onclick="filterAdminTenantStatus('paid',this)">납부</button>
-                <button class="btn btn-outline-warning admin-tenant-filter" onclick="filterAdminTenantStatus('unpaid',this)">미납</button>
-            </div>
-        </div>
-    </div>
-    <!-- 테이블 -->
-    <div class="card data-card">
-        <div class="card-body p-0">
-        <div class="table-responsive"><table class="table table-hover mb-0" id="adminTenantTable">
-            <thead><tr><th></th><th>임대인</th><th>임차인</th><th>물건</th><th>호수</th><th>월세</th><th>납부일</th><th>결제방식</th><th>이번달</th><th>상태</th><th>결제</th></tr></thead>
-            <tbody>
-            ${tenants.length === 0 ? '<tr><td colspan="11" class="text-center text-muted py-4"><i class="fas fa-inbox me-2"></i>등록된 임차인이 없습니다</td></tr>' :
-            tenants.map(tn => `
-                <tr data-name="${(tn.name||'').toLowerCase()}" data-landlord="${(tn.landlord_name||'').toLowerCase()}" data-paid="${tn.paid_this_month}" data-active="${tn.is_active}" ${!tn.is_active ? 'class="table-secondary"' : ''}>
-                    <td>${PROP_EMOJI[tn.property_type] || '📋'}</td>
-                    <td><span class="text-primary" style="cursor:pointer;text-decoration:underline" onclick="showAdminTenantPaymentsModal(${tn.id},'${(tn.name||'').replace(/'/g,"\\'")}','${(tn.property_name||'').replace(/'/g,"\\'")} ${tn.unit_number}','${(tn.landlord_name||'').replace(/'/g,"\\'")}')">${tn.landlord_name}</span></td>
-                    <td class="fw-bold">${tn.name}</td>
-                    <td><span class="badge bg-secondary" style="font-size:.68rem">${tn.property_type_kr}</span> ${tn.property_name}</td>
-                    <td class="fw-bold">${tn.unit_number}</td>
-                    <td class="fw-bold" style="color:#ff6b35">${formatMoney(tn.monthly_rent)}</td>
-                    <td>매월 ${tn.rent_due_day}일</td>
-                    <td>${tn.is_recurring ? '<span class="badge bg-info"><i class="fas fa-sync-alt me-1"></i>정기</span>' : '<span class="badge border text-muted">일반</span>'}</td>
-                    <td>${tn.paid_this_month ? '<span class="badge bg-success"><i class="fas fa-check me-1"></i>완료</span>' : '<span class="badge bg-warning text-dark"><i class="fas fa-clock me-1"></i>미납</span>'}</td>
-                    <td>${tn.is_active ? '<span class="badge bg-success">활성</span>' : '<span class="badge bg-secondary">비활성</span>'}</td>
-                    <td><button class="btn btn-sm btn-outline-info" onclick="showAdminTenantPaymentsModal(${tn.id},'${(tn.name||'').replace(/'/g,"\\'")}','${(tn.property_name||'').replace(/'/g,"\\'")} ${tn.unit_number}','${(tn.landlord_name||'').replace(/'/g,"\\'")}')" title="결제내역"><i class="fas fa-credit-card"></i></button></td>
-                </tr>
-            `).join('')}
-            </tbody>
-        </table></div>
-    </div></div>`;
-}
-
-// 관리자용 임차인별 결제내역 모달
-async function showAdminTenantPaymentsModal(tenantId, tenantName, propertyInfo, landlordName) {
-    const modal = document.getElementById('formModal');
-    document.getElementById('formModalTitle').textContent = '결제 내역: ' + tenantName;
-    document.getElementById('formModalBody').innerHTML = '<div class="text-center py-4"><div class="spinner-border text-warning"></div></div>';
-    document.getElementById('formModalFooter').innerHTML = '<button class="btn btn-secondary" data-bs-dismiss="modal">닫기</button>';
-    new bootstrap.Modal(modal).show();
-
-    try {
-        const data = await apiGet(`/api/admin/banggut/tenant/${tenantId}/payments`);
-        const payments = data.payments || [];
-        const total = payments.reduce((s,p) => s + (p.status === 'paid' ? p.amount : 0), 0);
-
-        document.getElementById('formModalBody').innerHTML = `
-            <div class="mb-3 p-3 rounded" style="background:linear-gradient(135deg,rgba(255,107,53,.04),rgba(255,159,28,.06))">
-                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                    <div>
-                        <div class="fw-bold">${tenantName} <span class="text-muted fw-normal" style="font-size:.82rem">(${propertyInfo})</span></div>
-                        <div class="text-muted" style="font-size:.82rem">임대인: <strong>${landlordName}</strong> · 월세: <strong style="color:#ff6b35">${formatMoney(data.tenant.monthly_rent)}</strong></div>
-                    </div>
-                    <div class="text-end">
-                        <div class="fw-bold" style="color:#ff6b35;font-size:1.1rem">${formatMoney(total)}</div>
-                        <div class="text-muted" style="font-size:.78rem">완료 ${payments.filter(p=>p.status==='paid').length}건 / 전체 ${payments.length}건</div>
-                    </div>
-                </div>
-            </div>
-            ${payments.length === 0 ? '<div class="text-center text-muted py-4"><i class="fas fa-inbox fa-2x mb-2 d-block opacity-25"></i><p>결제 내역이 없습니다</p></div>' : `
-            <div class="table-responsive">
-                <table class="table table-hover table-sm mb-0">
-                    <thead><tr><th>결제월</th><th>금액</th><th>방식</th><th>카드사</th><th>승인번호</th><th>상태</th><th>결제일</th></tr></thead>
-                    <tbody>
-                    ${payments.map(p => `
-                        <tr>
-                            <td><span class="badge bg-light text-dark border">${p.payment_month}</span></td>
-                            <td class="fw-bold" style="color:#ff6b35">${formatMoney(p.amount)}</td>
-                            <td>${p.payment_method === 'card_recurring' ? '<span class="badge bg-info">정기</span>' : '<span class="badge bg-secondary">일반</span>'}</td>
-                            <td>${p.card_brand || '-'}</td>
-                            <td><code style="font-size:.72rem">${p.approval_code || '-'}</code></td>
-                            <td><span class="badge bg-${p.status === 'paid' ? 'success' : 'warning'}">${p.status === 'paid' ? '완료' : '대기'}</span></td>
-                            <td style="font-size:.78rem">${p.paid_at ? p.paid_at.slice(0,16).replace('T',' ') : '-'}</td>
-                        </tr>
-                    `).join('')}
-                    </tbody>
-                </table>
-            </div>`}`;
-    } catch (e) {
-        document.getElementById('formModalBody').innerHTML = `<div class="alert alert-danger">${e.message}</div>`;
-    }
-}
-
-function filterAdminTenantTable() {
-    const q = (document.getElementById('adminTenantSearch').value || '').toLowerCase();
-    document.querySelectorAll('#adminTenantTable tbody tr').forEach(row => {
-        if (!row.dataset.name) return;
-        row.style.display = (row.dataset.name.includes(q) || row.dataset.landlord.includes(q)) ? '' : 'none';
-    });
-}
-function filterAdminTenantStatus(status, btn) {
-    document.querySelectorAll('.admin-tenant-filter').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    document.querySelectorAll('#adminTenantTable tbody tr').forEach(row => {
-        if (status === 'all') { row.style.display = ''; return; }
-        const paid = row.dataset.paid === 'true';
-        row.style.display = (status === 'paid' && paid) || (status === 'unpaid' && !paid) ? '' : 'none';
-    });
-}
-
-async function loadAdminRentPayments(c, t) {
-    t.textContent = '월세 결제 내역 (방긋페이)';
-    
-    // Load initial data + landlords for filter + available months
-    const [payments, landlords, months] = await Promise.all([
-        apiGet('/api/admin/banggut/payments'),
-        apiGet('/api/admin/landlords').catch(() => []),
-        apiGet('/api/admin/banggut/payment-months').catch(() => []),
-    ]);
-    
-    const total = payments.reduce((s,p) => s + (p.status === 'paid' ? p.amount : 0), 0);
-    const paidCnt = payments.filter(p => p.status === 'paid').length;
-    const pendingCnt = payments.filter(p => p.status === 'pending').length;
-
-    // 월별 수금 그룹핑
-    const monthlyData = {};
-    payments.filter(p => p.status === 'paid').forEach(p => {
-        const m = p.payment_month || 'N/A';
-        monthlyData[m] = (monthlyData[m] || 0) + p.amount;
-    });
-    const sortedMonths = Object.keys(monthlyData).sort().slice(-6);
-
-    // Landlord options
-    const landlordOpts = '<option value="">전체 임대인</option>' + landlords.map(l => `<option value="${l.id}">${l.name} (${l.building_name || '-'})</option>`).join('');
-    // Month options  
-    const monthOpts = '<option value="">전체 월</option>' + months.map(m => `<option value="${m}">${m}</option>`).join('');
-
-    c.innerHTML = `
-    <div class="row g-3 mb-4">
-        ${kpiCard('전체 결제', payments.length + '건', 'receipt', 'primary')}
-        ${kpiCard('결제 완료', paidCnt + '건', 'check-circle', 'success')}
-        ${kpiCard('총 수금액', formatMoney(total), 'won-sign', 'warning')}
-        ${kpiCard('대기/미납', pendingCnt + '건', 'clock', 'danger')}
-    </div>
-    <!-- 월별 차트 -->
-    <div class="row g-3 mb-4">
-        <div class="col-md-8">
-            <div class="card data-card h-100">
-                <div class="card-header py-2"><h6 class="mb-0"><i class="fas fa-chart-bar me-2 text-warning"></i>월별 수금 추이</h6></div>
-                <div class="card-body" style="height:240px"><canvas id="adminRentChart"></canvas></div>
-            </div>
-        </div>
-        <div class="col-md-4">
-            <div class="card data-card h-100">
-                <div class="card-header py-2"><h6 class="mb-0"><i class="fas fa-list-ol me-2 text-info"></i>월별 상세</h6></div>
-                <div class="card-body p-0">
-                    <div class="list-group list-group-flush">
-                    ${sortedMonths.map(m => `
-                        <div class="list-group-item d-flex justify-content-between px-3 py-2">
-                            <span style="font-size:.85rem">${m}</span>
-                            <strong style="color:#ff6b35;font-size:.85rem">${formatMoney(monthlyData[m])}</strong>
-                        </div>
-                    `).join('') || '<div class="p-3 text-muted text-center">데이터 없음</div>'}
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-    <!-- 월별 납부상태 조회 -->
-    <div class="card data-card mb-3">
-        <div class="card-header py-2"><h6 class="mb-0"><i class="fas fa-calendar-check me-2 text-success"></i>월별 납부 상태 조회</h6></div>
-        <div class="card-body">
-            <div class="row g-2 align-items-end">
-                <div class="col-md-3"><label class="form-label small mb-1">조회 월</label><input type="month" class="form-control form-control-sm" id="rentStatusMonth" value="${new Date().toISOString().slice(0,7)}"></div>
-                <div class="col-md-3"><label class="form-label small mb-1">임대인 필터</label><select class="form-select form-select-sm" id="rentStatusLandlord"><option value="">전체 임대인</option>${landlords.map(l=>`<option value="${l.id}">${l.name}</option>`).join('')}</select></div>
-                <div class="col-md-2"><button class="btn btn-sm btn-success w-100" onclick="loadMonthlyPaymentStatus()"><i class="fas fa-search me-1"></i>납부상태 조회</button></div>
-            </div>
-            <div id="monthlyStatusResult" class="mt-3"></div>
-        </div>
-    </div>
-    <!-- 필터 + 검색 -->
-    <div class="card data-card mb-3">
-        <div class="card-body py-2 px-3 d-flex align-items-center gap-2 flex-wrap">
-            <select class="form-select form-select-sm" style="max-width:200px" id="rentFilterLandlord" onchange="reloadRentPayments()">${landlordOpts}</select>
-            <select class="form-select form-select-sm" style="max-width:150px" id="rentFilterMonth" onchange="reloadRentPayments()">${monthOpts}</select>
-            <div class="input-group input-group-sm" style="max-width:220px">
-                <span class="input-group-text"><i class="fas fa-search"></i></span>
-                <input type="text" class="form-control" placeholder="임대인 / 임차인 검색" id="rentSearchInput" oninput="filterRentTable()">
-            </div>
-            <div class="btn-group btn-group-sm">
-                <button class="btn btn-outline-secondary active rent-status-filter" onclick="filterRentStatus('all',this)">전체</button>
-                <button class="btn btn-outline-success rent-status-filter" onclick="filterRentStatus('paid',this)">완료</button>
-                <button class="btn btn-outline-warning rent-status-filter" onclick="filterRentStatus('pending',this)">대기</button>
-            </div>
-            <span class="ms-auto text-muted" style="font-size:.78rem" id="rentPaymentCount">${payments.length}건</span>
-        </div>
-    </div>
-    <!-- 테이블 -->
-    <div class="card data-card">
-        <div class="card-body p-0" id="rentPaymentTableBody"></div>
-    </div>`;
-    
-    renderRentPaymentTable(payments);
-
-    // 월별 차트
-    setTimeout(() => {
-        const ctx = document.getElementById('adminRentChart');
-        if (ctx && typeof Chart !== 'undefined' && sortedMonths.length > 0) {
-            new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: sortedMonths,
-                    datasets: [{label:'수금액', data: sortedMonths.map(m => monthlyData[m] || 0), backgroundColor:'rgba(255,159,28,.5)', borderColor:'#ff9f1c', borderWidth:1, borderRadius:6}]
-                },
-                options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true,ticks:{callback:v=>v>=10000?(v/10000)+'만':v.toLocaleString()}},x:{grid:{display:false}}} }
-            });
-        }
-    }, 100);
-}
-
-function renderRentPaymentTable(payments) {
-    const el = document.getElementById('rentPaymentTableBody');
-    if (!el) return;
-    el.innerHTML = `
-    <div class="table-responsive"><table class="table table-hover mb-0" id="adminPayTable">
-        <thead><tr><th>임대인</th><th>임차인</th><th>물건 정보</th><th>금액</th><th>결제월</th><th>방식</th><th>카드사</th><th>승인번호</th><th>상태</th><th>결제일</th></tr></thead>
-        <tbody>
-        ${payments.length === 0 ? '<tr><td colspan="10" class="text-center text-muted py-4"><i class="fas fa-inbox me-2"></i>결제 내역이 없습니다</td></tr>' :
-        payments.map(p => `
-            <tr data-name="${(p.tenant_name||'').toLowerCase()}" data-landlord="${(p.landlord_name||'').toLowerCase()}" data-status="${p.status}">
-                <td>${p.landlord_name}</td>
-                <td class="fw-bold">${p.tenant_name}</td>
-                <td style="font-size:.82rem">${p.property_info}</td>
-                <td class="fw-bold" style="color:#ff6b35">${formatMoney(p.amount)}</td>
-                <td><span class="badge bg-light text-dark border">${p.payment_month}</span></td>
-                <td>${p.payment_method === 'card_recurring' ? '<span class="badge bg-info">정기</span>' : '<span class="badge bg-secondary">일반</span>'}</td>
-                <td>${p.card_brand || '-'}</td>
-                <td><code style="font-size:.72rem">${p.approval_code || '-'}</code></td>
-                <td><span class="badge bg-${p.status === 'paid' ? 'success' : 'warning'}"><i class="fas fa-${p.status === 'paid' ? 'check' : 'clock'} me-1"></i>${p.status === 'paid' ? '완료' : '대기'}</span></td>
-                <td style="font-size:.78rem">${p.paid_at ? p.paid_at.slice(0,16).replace('T',' ') : '-'}</td>
-            </tr>
-        `).join('')}
-        </tbody>
-    </table></div>`;
-}
-
-async function reloadRentPayments() {
-    const landlordId = document.getElementById('rentFilterLandlord')?.value || '';
-    const month = document.getElementById('rentFilterMonth')?.value || '';
-    let url = '/api/admin/banggut/payments?';
-    if (landlordId) url += `landlord_id=${landlordId}&`;
-    if (month) url += `month=${month}&`;
-    try {
-        const payments = await apiGet(url);
-        document.getElementById('rentPaymentCount').textContent = payments.length + '건';
-        renderRentPaymentTable(payments);
-    } catch(e) { console.error(e); }
-}
-
-function filterRentTable() {
-    const q = (document.getElementById('rentSearchInput')?.value || '').toLowerCase();
-    document.querySelectorAll('#adminPayTable tbody tr[data-name]').forEach(r => {
-        r.style.display = (r.dataset.name.includes(q) || r.dataset.landlord.includes(q)) ? '' : 'none';
-    });
-}
-
-function filterRentStatus(status, btn) {
-    document.querySelectorAll('.rent-status-filter').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    document.querySelectorAll('#adminPayTable tbody tr[data-status]').forEach(r => {
-        r.style.display = (status === 'all' || r.dataset.status === status) ? '' : 'none';
-    });
-}
-
-async function loadMonthlyPaymentStatus() {
-    const month = document.getElementById('rentStatusMonth')?.value;
-    const landlordId = document.getElementById('rentStatusLandlord')?.value || '';
-    if (!month) { alert('조회할 월을 선택하세요'); return; }
-    
-    const el = document.getElementById('monthlyStatusResult');
-    el.innerHTML = '<div class="text-center py-3"><div class="spinner-border spinner-border-sm text-success"></div></div>';
-    
-    try {
-        const data = await apiGet(`/api/admin/banggut/monthly-status?month=${month}`);
-        const filtered = landlordId ? data.filter(d => d.landlord_user_id == landlordId) : data;
-        const paid = filtered.filter(d => d.status === 'paid').length;
-        const unpaid = filtered.filter(d => d.status === 'unpaid').length;
-        
-        el.innerHTML = `
-        <div class="mb-2 d-flex gap-3">
-            <span class="badge bg-success px-3 py-2">납부 ${paid}명</span>
-            <span class="badge bg-danger px-3 py-2">미납 ${unpaid}명</span>
-            <span class="badge bg-secondary px-3 py-2">전체 ${filtered.length}명</span>
-        </div>
-        <div class="table-responsive" style="max-height:300px;overflow-y:auto">
-            <table class="table table-sm table-hover mb-0">
-                <thead class="table-light sticky-top"><tr><th>임대인</th><th>임차인</th><th>물건</th><th>월세</th><th>납부상태</th><th>납부액</th><th>납부일</th></tr></thead>
-                <tbody>
-                ${filtered.map(d => `
-                    <tr>
-                        <td>${d.landlord_name}</td>
-                        <td class="fw-bold">${d.tenant_name}</td>
-                        <td style="font-size:.82rem">${d.property_info}</td>
-                        <td style="color:#ff6b35">${formatMoney(d.monthly_rent)}</td>
-                        <td><span class="badge bg-${d.status==='paid'?'success':d.status==='unpaid'?'danger':'warning'}">${d.status==='paid'?'납부':d.status==='unpaid'?'미납':'대기'}</span></td>
-                        <td>${d.paid_amount > 0 ? formatMoney(d.paid_amount) : '-'}</td>
-                        <td style="font-size:.78rem">${d.paid_at ? d.paid_at.slice(0,16).replace('T',' ') : '-'}</td>
-                    </tr>
-                `).join('')}
-                </tbody>
-            </table>
-        </div>`;
-    } catch(e) { el.innerHTML = `<div class="alert alert-danger">${e.message}</div>`; }
-}
-
-async function loadAdminPGLandlord(c, t) {
-    t.textContent = 'PG 설정 — 소상공인 / 임대인 분리';
-    
-    // Load landlords list
-    let landlords = [];
-    try { landlords = await apiGet('/api/admin/landlords'); } catch(e) {}
-    const landlordOpts = landlords.map(l => `<option value="${l.id}">${l.name} (${l.building_name || '건물명 미등록'})</option>`).join('');
-    
-    c.innerHTML = `
-    <div class="alert border-0 mb-4" style="background:linear-gradient(135deg,rgba(14,165,233,.06),rgba(255,159,28,.06));border-radius:14px">
-        <i class="fas fa-info-circle me-2 text-info"></i>
-        소상공인(ADPAY)과 임대인(방긋페이)의 PG 키값은 <strong>별도로 관리</strong>됩니다. 먼저 임대인을 선택한 후 PG사를 설정하세요.
-    </div>
-    <div class="row g-3">
-        <div class="col-md-6">
-            <div class="card data-card h-100">
-                <div class="card-header" style="background:linear-gradient(135deg,rgba(255,107,53,.04),rgba(255,159,28,.06))">
-                    <h5 class="mb-0"><i class="fas fa-building me-2" style="color:#ff9f1c"></i>방긋페이 PG (임대인)</h5>
-                </div>
-                <div class="card-body">
-                    <p class="text-muted mb-3" style="font-size:.88rem">임대인 월세 결제 전용 PG 키값을 등록합니다.</p>
-                    <form>
-                        <div class="mb-3">
-                            <label class="form-label fw-bold small"><i class="fas fa-user-tie me-1 text-warning"></i>임대인 선택 <span class="text-danger">*</span></label>
-                            <select class="form-select" id="landlordSelect" onchange="onLandlordSelect()">
-                                <option value="">-- 임대인을 먼저 선택하세요 --</option>
-                                ${landlordOpts}
-                            </select>
-                            <div class="form-text" id="landlordSelectInfo"></div>
-                        </div>
-                        <div id="pgFormSection" style="display:none">
-                            <div class="mb-3"><label class="form-label fw-bold small">PG사 선택</label><select class="form-select" id="landlordPgProvider"><option>선택하세요</option></select></div>
-                            <div class="mb-3"><label class="form-label fw-bold small">MID (상점ID)</label><input type="text" class="form-control" id="landlordPgMid" placeholder="MID-LANDLORD-001"></div>
-                            <div class="mb-3"><label class="form-label fw-bold small">SECRET KEY</label>
-                                <div class="input-group">
-                                    <input type="password" class="form-control" id="landlordPgSecret" placeholder="암호화되어 보관됩니다">
-                                    <button type="button" class="btn btn-outline-secondary" onclick="const i=document.getElementById('landlordPgSecret');i.type=i.type==='password'?'text':'password'"><i class="fas fa-eye"></i></button>
-                                </div>
-                            </div>
-                            <div class="mb-3"><label class="form-label fw-bold small">메모</label><input type="text" class="form-control" id="landlordPgMemo" placeholder="예: 방긋페이 실서비스용"></div>
-                            <button type="button" class="btn text-white w-100" style="background:linear-gradient(135deg,#ff6b35,#ff9f1c);border:none;border-radius:8px" onclick="saveLandlordPG()"><i class="fas fa-save me-2"></i>방긋페이 PG 저장</button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-6">
-            <div class="card data-card h-100">
-                <div class="card-header" style="background:linear-gradient(135deg,rgba(14,165,233,.04),rgba(27,58,92,.06))">
-                    <h5 class="mb-0"><i class="fas fa-store me-2" style="color:#0ea5e9"></i>ADPAY PG (소상공인)</h5>
-                </div>
-                <div class="card-body">
-                    <p class="text-muted mb-3" style="font-size:.88rem">소상공인 결제 전용 PG 키값은 별도 메뉴에서 관리합니다.</p>
-                    <div class="alert alert-light border mb-3" style="border-radius:10px">
-                        <div class="d-flex align-items-center gap-2">
-                            <i class="fas fa-network-wired text-primary"></i>
-                            <div>
-                                <strong>ADPAY PG 설정</strong><br>
-                                <a href="#" onclick="navigate('admin-pg')" class="small">PG 설정 페이지 바로가기 →</a>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="text-center text-muted py-3">
-                        <i class="fas fa-shield-alt fa-2x mb-2 d-block" style="color:#0ea5e9;opacity:.4"></i>
-                        <span style="font-size:.82rem">소상공인 PG는 가맹점별로<br>개별 관리됩니다</span>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>`;
-    try {
-        const providers = await apiGet('/api/admin/pg-providers');
-        const sel = document.getElementById('landlordPgProvider');
-        if (sel && providers) {
-            providers.forEach(p => {
-                const opt = document.createElement('option');
-                opt.value = p.id;
-                opt.textContent = p.name;
-                sel.appendChild(opt);
-            });
-        }
-    } catch(e) {}
-}
-
-function onLandlordSelect() {
-    const sel = document.getElementById('landlordSelect');
-    const infoEl = document.getElementById('landlordSelectInfo');
-    const formEl = document.getElementById('pgFormSection');
-    if (sel.value) {
-        const name = sel.options[sel.selectedIndex].text;
-        infoEl.innerHTML = `<i class="fas fa-check-circle text-success me-1"></i> <strong>${name}</strong> 선택됨`;
-        formEl.style.display = '';
-    } else {
-        infoEl.innerHTML = '';
-        formEl.style.display = 'none';
-    }
-}
-
-function saveLandlordPG() {
-    const landlordId = document.getElementById('landlordSelect').value;
-    if (!landlordId) { alert('임대인을 먼저 선택해주세요'); return; }
-    const pgProvider = document.getElementById('landlordPgProvider').value;
-    if (!pgProvider || pgProvider === '선택하세요') { alert('PG사를 선택해주세요'); return; }
-    const mid = document.getElementById('landlordPgMid').value;
-    if (!mid) { alert('MID를 입력해주세요'); return; }
-    alert(`PG 등록이 완료되었습니다 (데모)\n임대인 ID: ${landlordId}\nPG사: ${pgProvider}\nMID: ${mid}`);
-}
-
-// ═══════════════════════════════════════════════════════════
-// 방긋페이 영업관리자 관리 (Admin - Task 7)
-// ═══════════════════════════════════════════════════════════
-
-async function loadAdminBanggutSales(c, t) {
-    t.textContent = '방긋페이 영업관리자';
-    
-    const [salesManagers, landlords, assigns] = await Promise.all([
-        apiGet('/api/admin/sales-managers'),
-        apiGet('/api/admin/landlords').catch(() => []),
-        apiGet('/api/admin/sales-assignments'),
-    ]);
-    
-    // 영업관리자별 커미션 현황 계산
-    const assignMap = {};
-    assigns.forEach(a => {
-        if (!assignMap[a.sales_manager_user_id]) assignMap[a.sales_manager_user_id] = [];
-        assignMap[a.sales_manager_user_id].push(a);
-    });
-    
-    const totalManagers = salesManagers.length;
-    const activeManagers = salesManagers.filter(s => s.is_active).length;
-    const totalAssigned = assigns.filter(a => a.is_active).length;
-    
-    const landlordOpts = landlords.map(l => `<option value="${l.id}">${l.name} (${l.building_name || '-'})</option>`).join('');
-    const salesOpts = salesManagers.map(s => `<option value="${s.id}">${s.name} (${s.email})</option>`).join('');
-    
-    c.innerHTML = `
-    <!-- 배너 -->
-    <div class="card border-0 shadow-sm mb-4" style="border-radius:14px;overflow:hidden;background:linear-gradient(135deg,#2d1b03 0%,#5a3408 50%,#ff9f1c 100%);">
-        <div class="card-body py-3 px-4 d-flex align-items-center justify-content-between flex-wrap gap-2">
-            <div class="d-flex align-items-center gap-3">
-                <div style="width:44px;height:44px;border-radius:12px;background:rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;">
-                    <i class="fas fa-user-tie text-white"></i>
-                </div>
-                <div>
-                    <h5 class="mb-0 text-white fw-bold">방긋페이 영업관리자</h5>
-                    <small style="color:rgba(255,255,255,.65)">임대인 유치 영업관리자 및 수수료 관리</small>
-                </div>
-            </div>
-            <span class="badge" style="background:rgba(255,255,255,.2);color:#fff;padding:6px 14px;border-radius:50px;font-size:.78rem;">
-                <i class="fas fa-smile me-1" style="color:#ff9f1c"></i>Bang Good Pay
-            </span>
-        </div>
-    </div>
-    
-    <!-- KPI -->
-    <div class="row g-3 mb-4">
-        ${kpiCard('전체 영업관리자', totalManagers + '명', 'user-tie', 'info')}
-        ${kpiCard('활성 관리자', activeManagers + '명', 'check-circle', 'success')}
-        ${kpiCard('배정 가맹점', totalAssigned + '건', 'handshake', 'primary')}
-        ${kpiCard('임대인 수', landlords.length + '명', 'building', 'warning')}
-    </div>
-    
-    <!-- 안내 -->
-    <div class="alert border-0 mb-4" style="background:linear-gradient(135deg,rgba(255,107,53,.05),rgba(255,159,28,.06));border-radius:12px">
-        <div class="d-flex align-items-start gap-2">
-            <i class="fas fa-info-circle text-warning mt-1"></i>
-            <div>
-                <h6 class="fw-bold mb-1" style="font-size:.9rem">방긋페이 영업관리자 수수료 안내</h6>
-                <ul class="mb-0 small text-muted">
-                    <li>ADPAY의 영업관리자 구조와 동일하게, 방긋페이에도 영업관리자를 배정할 수 있습니다.</li>
-                    <li>임대인 유치에 따른 수수료(커미션)는 <strong>기존 영업관리자 연결</strong> 메뉴에서 가맹점 단위로 관리됩니다.</li>
-                    <li>방긋페이 수수료는 월세 결제 수수료(3.5%) 내에서 배분됩니다.</li>
-                </ul>
-            </div>
-        </div>
-    </div>
-    
-    <!-- 영업관리자 카드 -->
-    <div class="row g-3 mb-4">
-    ${salesManagers.length === 0 ? `
-        <div class="col-12">
-            <div class="card data-card"><div class="card-body text-center py-5">
-                <i class="fas fa-user-tie fa-3x mb-3" style="color:#ff9f1c;opacity:.3"></i>
-                <p class="text-muted mb-3">등록된 영업관리자가 없습니다</p>
-                <p class="small text-muted">사용자 목록에서 역할을 '영업관리자'로 변경하여 추가하세요.</p>
-                <button class="btn btn-outline-primary btn-sm" onclick="navigate('admin-users')"><i class="fas fa-users-cog me-1"></i>사용자 관리</button>
-            </div></div>
-        </div>` :
-    salesManagers.map(s => {
-        const myAssigns = assignMap[s.id] || [];
-        const activeAssigns = myAssigns.filter(a => a.is_active);
-        const totalCommission = myAssigns.reduce((sum, a) => sum + (a.commission_rate || 0), 0);
-        const avgRate = activeAssigns.length > 0 ? (totalCommission / activeAssigns.length * 100).toFixed(1) : '0.0';
-        
-        return `
-        <div class="col-md-6">
-            <div class="card border-0 shadow-sm h-100" style="border-top:3px solid #ff9f1c">
-                <div class="card-header bg-transparent d-flex justify-content-between align-items-center">
-                    <div>
-                        <h6 class="mb-0 fw-bold"><i class="fas fa-user-tie me-2" style="color:#ff9f1c"></i>${s.name}</h6>
-                        <small class="text-muted">${s.email}</small>
-                    </div>
-                    <div>${s.is_active ? '<span class="badge bg-success">활성</span>' : '<span class="badge bg-secondary">비활성</span>'}</div>
-                </div>
-                <div class="card-body">
-                    <div class="row g-2 mb-3 text-center">
-                        <div class="col-4"><div class="bg-light rounded p-2"><div class="fs-5 fw-bold text-primary">${activeAssigns.length}</div><small class="text-muted">담당 가맹점</small></div></div>
-                        <div class="col-4"><div class="bg-light rounded p-2"><div class="fs-5 fw-bold text-success">${avgRate}%</div><small class="text-muted">평균 커미션</small></div></div>
-                        <div class="col-4"><div class="bg-light rounded p-2"><div class="fs-5 fw-bold" style="color:#ff9f1c">${s.phone || '-'}</div><small class="text-muted">연락처</small></div></div>
-                    </div>
-                    ${activeAssigns.length > 0 ? `
-                    <div class="table-responsive">
-                        <table class="table table-sm table-hover mb-0">
-                            <thead class="table-light"><tr><th>가맹점</th><th>커미션율</th><th>상태</th></tr></thead>
-                            <tbody>${activeAssigns.map(a => `
-                                <tr>
-                                    <td class="fw-bold">${a.merchant_name || '-'}</td>
-                                    <td class="text-primary fw-bold">${(a.commission_rate*100).toFixed(2)}%</td>
-                                    <td>${a.is_active ? '<span class="badge bg-success">활성</span>' : '<span class="badge bg-secondary">비활성</span>'}</td>
-                                </tr>
-                            `).join('')}</tbody>
-                        </table>
-                    </div>` : `
-                    <div class="text-center py-3 text-muted">
-                        <i class="fas fa-inbox d-block mb-1 opacity-50"></i>
-                        <small>배정된 가맹점 없음</small>
-                    </div>`}
-                    <div class="mt-3 d-flex gap-2">
-                        <button class="btn btn-sm btn-outline-warning" onclick="navigate('admin-banggut-sales-assign')"><i class="fas fa-link me-1"></i>임대인 연결</button>
-                        <button class="btn btn-sm btn-outline-${s.is_active?'danger':'success'}" onclick="toggleUserActive(${s.id})">
-                            <i class="fas fa-${s.is_active?'ban':'check'} me-1"></i>${s.is_active?'비활성화':'활성화'}
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>`;
-    }).join('')}
-    </div>
-    
-    <!-- 빠른 링크 -->
-    <div class="card data-card" style="border-radius:14px">
-        <div class="card-body">
-            <div class="row g-2 text-center">
-                <div class="col-6 col-md-3"><a href="#" onclick="navigate('admin-banggut-sales-assign')" class="btn btn-outline-warning w-100 py-2" style="border-radius:10px;font-size:.85rem"><i class="fas fa-handshake d-block mb-1"></i>임대인 연결</a></div>
-                <div class="col-6 col-md-3"><a href="#" onclick="navigate('admin-landlords')" class="btn btn-outline-primary w-100 py-2" style="border-radius:10px;font-size:.85rem"><i class="fas fa-building d-block mb-1"></i>임대인 관리</a></div>
-                <div class="col-6 col-md-3"><a href="#" onclick="navigate('admin-fee-policies')" class="btn btn-outline-success w-100 py-2" style="border-radius:10px;font-size:.85rem"><i class="fas fa-percentage d-block mb-1"></i>수수료 정책</a></div>
-                <div class="col-6 col-md-3"><a href="#" onclick="navigate('admin-users')" class="btn btn-outline-dark w-100 py-2" style="border-radius:10px;font-size:.85rem"><i class="fas fa-users-cog d-block mb-1"></i>사용자 관리</a></div>
-            </div>
-        </div>
-    </div>`;
-}
-
-// ─── 방긋페이 영업관리자 연결 (임대인 전용) ─────────────────
-async function loadAdminBanggutSalesAssign(c, t) {
-    t.textContent = '방긋페이 영업관리자 연결';
-    const [landlords, salesManagers, assigns] = await Promise.all([
-        apiGet('/api/admin/landlords').catch(() => []),
-        apiGet('/api/admin/sales-managers'),
-        apiGet('/api/admin/banggut/sales-assignments').catch(() => []),
-    ]);
-    
-    const landlordOpts = landlords.map(l => `<option value="${l.id}">${l.name} (${l.building_name || '건물명 미등록'})</option>`).join('');
-    const salesOpts = salesManagers.map(u => `<option value="${u.id}">${u.name} (${u.email})</option>`).join('');
-    
-    c.innerHTML = `
-    <!-- 배너 -->
-    <div class="card border-0 shadow-sm mb-4" style="border-radius:14px;overflow:hidden;background:linear-gradient(135deg,#2d1b03 0%,#5a3408 50%,#ff9f1c 100%)">
-        <div class="card-body py-3 px-4 d-flex align-items-center justify-content-between flex-wrap gap-2">
-            <div class="d-flex align-items-center gap-3">
-                <div style="width:44px;height:44px;border-radius:12px;background:rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center">
-                    <i class="fas fa-handshake text-white"></i>
-                </div>
-                <div>
-                    <h5 class="mb-0 text-white fw-bold">방긋페이 영업관리자 연결</h5>
-                    <small style="color:rgba(255,255,255,.65)">임대인 유치 영업관리자와 임대인을 연결합니다</small>
-                </div>
-            </div>
-            <span class="badge" style="background:rgba(255,255,255,.2);color:#fff;padding:6px 14px;border-radius:50px;font-size:.78rem">
-                <i class="fas fa-smile me-1" style="color:#ff9f1c"></i>Bang Good Pay
-            </span>
-        </div>
-    </div>
-    
-    <!-- 안내 -->
-    <div class="alert border-0 mb-4" style="background:rgba(255,159,28,.06);border-radius:12px">
-        <div class="d-flex align-items-start gap-2">
-            <i class="fas fa-info-circle text-warning mt-1"></i>
-            <div>
-                <h6 class="fw-bold mb-1" style="font-size:.9rem">방긋페이 임대인 연결 안내</h6>
-                <ul class="mb-0 small text-muted">
-                    <li>방긋페이에서 영업관리자가 유치한 <strong>임대인</strong>을 연결합니다.</li>
-                    <li>ADPAY의 가맹점 연결과 별도로 운영되며, 수수료는 <strong>월세 결제 수수료(3.5%) 내</strong>에서 배분됩니다.</li>
-                    <li>예: 수익률 1.0% 설정 시, 월세 100만원 결제 → 영업관리자 수익 10,000원</li>
-                </ul>
-            </div>
-        </div>
-    </div>
-    
-    <!-- 새 연결 추가 폼 -->
-    <div class="card data-card mb-4" style="border-radius:14px;border-top:3px solid #ff9f1c">
-        <div class="card-header"><h5 class="mb-0"><i class="fas fa-plus-circle me-2" style="color:#ff9f1c"></i>새 임대인 연결</h5></div>
-        <div class="card-body">
-            <div class="row g-3">
-                <div class="col-12 col-md-6">
-                    <label class="form-label fw-bold"><i class="fas fa-building me-1 text-warning"></i>임대인</label>
-                    <select class="form-select" id="bgAssignLandlord">${landlordOpts || '<option disabled>임대인 없음</option>'}</select>
-                </div>
-                <div class="col-12 col-md-6">
-                    <label class="form-label fw-bold"><i class="fas fa-user-tie me-1 text-info"></i>영업관리자</label>
-                    <select class="form-select" id="bgAssignSales">${salesOpts || '<option disabled>영업관리자 없음</option>'}</select>
-                </div>
-                <div class="col-6 col-md-4">
-                    <label class="form-label fw-bold">수익률 (VAT별도)</label>
-                    <div class="input-group">
-                        <input type="number" class="form-control" id="bgAssignRate" value="1.0" step="0.1" min="0" max="3.5" placeholder="1.0">
-                        <span class="input-group-text">%</span>
-                    </div>
-                    <small class="text-muted">최대 3.5%</small>
-                </div>
-                <div class="col-6 col-md-4">
-                    <label class="form-label fw-bold">메모</label>
-                    <input type="text" class="form-control" id="bgAssignMemo" placeholder="배정 사유">
-                </div>
-                <div class="col-12 col-md-4 d-flex align-items-end">
-                    <button class="btn w-100" style="height:42px;background:#ff9f1c;color:#fff;border:none" onclick="createBanggutSalesAssignment()">
-                        <i class="fas fa-link me-1"></i>임대인 연결
-                    </button>
-                </div>
-            </div>
-            <div id="bgAssignResult" class="mt-2"></div>
-        </div>
-    </div>
-    
-    <!-- 연결 현황 -->
-    <div class="card data-card" style="border-radius:14px">
-        <div class="card-header d-flex justify-content-between align-items-center">
-            <h5 class="mb-0"><i class="fas fa-list me-2" style="color:#ff9f1c"></i>방긋페이 영업관리자 연결 현황</h5>
-            <span class="badge" style="background:#ff9f1c">${assigns.length}건</span>
-        </div>
-        <div class="card-body">
-            ${assigns.length > 0 ? `
-            <div class="table-responsive">
-                <table class="table table-hover table-sm align-middle">
-                    <thead class="table-light"><tr><th>ID</th><th>임대인</th><th>건물명</th><th>영업관리자</th><th>수익률</th><th>수익 예시</th><th>메모</th><th>상태</th><th>액션</th></tr></thead>
-                    <tbody>${assigns.map(a => `<tr>
-                        <td>${a.id}</td>
-                        <td class="fw-bold">${a.landlord_name || '-'}</td>
-                        <td class="text-muted">${a.building_name || '-'}</td>
-                        <td><i class="fas fa-user-tie text-info me-1"></i>${a.sales_manager_name || '-'}</td>
-                        <td class="fw-bold text-nowrap" style="color:#ff9f1c">${(a.commission_rate*100).toFixed(2)}%</td>
-                        <td class="text-success fw-bold text-nowrap">${(1000000 * a.commission_rate).toLocaleString('ko-KR', {maximumFractionDigits:0})}원</td>
-                        <td class="text-muted small">${a.memo || '-'}</td>
-                        <td>${a.is_active ? '<span class="badge bg-success">활성</span>' : '<span class="badge bg-secondary">비활성</span>'}</td>
-                        <td>
-                            <button class="btn btn-sm btn-outline-danger" onclick="deleteBanggutSalesAssignment(${a.id})" title="연결 해제">
-                                <i class="fas fa-unlink"></i>
-                            </button>
-                        </td>
-                    </tr>`).join('')}</tbody>
-                </table>
-            </div>` : `
-            <div class="text-center py-4 text-muted">
-                <i class="fas fa-handshake fa-2x mb-2 d-block" style="opacity:.3;color:#ff9f1c"></i>
-                <p class="mb-1">연결된 임대인이 없습니다</p>
-                <small>위 폼에서 임대인과 영업관리자를 연결해 주세요.</small>
-            </div>`}
-        </div>
-    </div>`;
-}
-
-async function createBanggutSalesAssignment() {
-    try {
-        const landlordId = parseInt(document.getElementById('bgAssignLandlord').value);
-        const salesId = parseInt(document.getElementById('bgAssignSales').value);
-        const rate = parseFloat(document.getElementById('bgAssignRate').value) / 100;
-        const memo = document.getElementById('bgAssignMemo').value;
-        
-        if (!landlordId || !salesId) { alert('임대인과 영업관리자를 선택해주세요.'); return; }
-        if (rate < 0 || rate > 0.035) { alert('수익률은 0~3.5% 범위에서 설정해주세요.'); return; }
-        
-        await apiPost('/api/admin/banggut/sales-assignments', {
-            landlord_user_id: landlordId,
-            sales_manager_user_id: salesId,
-            commission_rate: rate,
-            memo: memo || null,
-        });
-        
-        const el = document.getElementById('bgAssignResult');
-        el.innerHTML = '<div class="alert alert-success py-2"><i class="fas fa-check-circle me-1"></i>임대인 연결 완료!</div>';
-        setTimeout(() => navigate('admin-banggut-sales-assign'), 1000);
-    } catch (e) {
-        const el = document.getElementById('bgAssignResult');
-        el.innerHTML = `<div class="alert alert-danger py-2"><i class="fas fa-exclamation-circle me-1"></i>${e.message}</div>`;
-    }
-}
-
-async function deleteBanggutSalesAssignment(id) {
-    if (!confirm('이 방긋페이 영업관리자 연결을 해제하시겠습니까?')) return;
-    try {
-        await api(`/api/admin/banggut/sales-assignments/${id}`, { method: 'DELETE' });
-        navigate('admin-banggut-sales-assign');
-    } catch (e) { alert('해제 실패: ' + e.message); }
-}
 
 // ─── API helpers for form ─────────────────────────────────
 async function apiPostForm(url, formData) {

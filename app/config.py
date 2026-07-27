@@ -1,9 +1,11 @@
-from pydantic_settings import BaseSettings
+from pydantic import model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
-import os
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
     # Database
     DB_HOST: str = "db"
     DB_PORT: int = 3306
@@ -12,7 +14,7 @@ class Settings(BaseSettings):
     DB_NAME: str = "adpay"
 
     # JWT
-    JWT_SECRET_KEY: str = "change-me"
+    JWT_SECRET_KEY: str = "development-only-change-me"
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
@@ -31,17 +33,28 @@ class Settings(BaseSettings):
 
     # App
     APP_ENV: str = "development"
-    DEV_MODE: bool = True
+    DEV_MODE: bool = False
+    CORS_ORIGINS: str = "http://localhost:8000,http://127.0.0.1:8000"
 
     # Allow override for local dev (SQLite)
     DATABASE_URL_OVERRIDE: str = ""
 
-    # ONGI (위아오너) — 내통장 결제 연동
-    # pay.ongi.site는 해시 라우터를 사용 — 결제창 URL은 https://pay.ongi.site/#/qr/{qr_token}?... 형태
-    ONGI_PAY_BASE_URL: str = "https://pay.ongi.site"
-    ONGI_QR_TOKEN: str = ""  # 가맹점별 ONGI QR 토큰 (위아오너에서 발급)
-    ONGI_CALLBACK_URL: str = ""  # 결제 완료 콜백 URL (https 절대주소). 미설정 시 자체 도메인 자동 사용
-    ONGI_PUBLIC_BASE_URL: str = ""  # 콜백 자동 생성용 자체 공개 도메인 (예: https://adpay.example.com)
+    @property
+    def cors_origins(self) -> list[str]:
+        return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
+
+    @model_validator(mode="after")
+    def validate_production_security(self):
+        if self.APP_ENV.lower() in {"production", "prod"}:
+            if self.DEV_MODE:
+                raise ValueError("DEV_MODE must be false in production")
+            if self.JWT_SECRET_KEY in {"change-me", "development-only-change-me"} or len(self.JWT_SECRET_KEY) < 32:
+                raise ValueError("JWT_SECRET_KEY must be a unique value of at least 32 characters in production")
+            if self.ENCRYPTION_KEY == "c2VjcmV0LWVuY3J5cHRpb24ta2V5LWZvci1hZHBheQ==":
+                raise ValueError("ENCRYPTION_KEY must be replaced in production")
+            if "*" in self.cors_origins:
+                raise ValueError("Wildcard CORS origins are not allowed in production")
+        return self
 
     @property
     def DATABASE_URL(self) -> str:
@@ -52,11 +65,6 @@ class Settings(BaseSettings):
             f"@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
             f"?charset=utf8mb4"
         )
-
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
-
 
 @lru_cache()
 def get_settings() -> Settings:

@@ -18,6 +18,7 @@ class AdPlaceProfile(Base):
     place_url = Column(String(500), nullable=True)
     place_id = Column(String(200), nullable=True)
     nickname = Column(String(200), nullable=True)
+    analysis_keyword = Column(String(200), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -43,6 +44,7 @@ class AdMetric(Base):
     blog_review_count = Column(Integer, default=0)
     visitor_review_count = Column(Integer, default=0)
     place_rank = Column(Integer, nullable=True)
+    search_keyword = Column(String(200), nullable=True)
     source = Column(String(50), default="manual")  # manual / api
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)

@@ -26,9 +26,6 @@ def _auth_terminal(api_key: str, db: Session) -> TerminalDevice:
     for t in terminals:
         if pwd_context.verify(api_key, t.api_key_hash):
             return t
-        # Also check plain key for dev/seed convenience
-        if t.api_key_plain and t.api_key_plain == api_key:
-            return t
     raise HTTPException(status_code=401, detail="Invalid terminal API key")
 
 

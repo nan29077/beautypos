@@ -44,22 +44,11 @@ def register(req: RegisterRequest, db: Session = Depends(get_db)):
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
 
-    role_val = req.role
-    if role_val not in [r.value for r in UserRole]:
-        role_val = "owner"
-
-    # 디자이너는 직접 회원가입할 수 없고, 소속 미용실 원장님이 등록한다.
-    if role_val == UserRole.DESIGNER.value:
-        raise HTTPException(
-            status_code=403,
-            detail="디자이너는 직접 가입할 수 없습니다. 소속 미용실 원장님에게 계정 등록을 요청하세요.",
-        )
-
     user = User(
         email=req.email,
         password_hash=hash_password(req.password),
         name=req.name,
-        role=UserRole(role_val),
+        role=UserRole.OWNER,
     )
     db.add(user)
     db.commit()
@@ -90,11 +79,10 @@ def test_login(role: str = Query(...), db: Session = Depends(get_db)):
         "sales": "sales@test.com",
         "owner": "owner@test.com",
         "designer": "designer@test.com",
-        "landlord": "landlord@test.com",
     }
     email = role_email_map.get(role)
     if not email:
-        raise HTTPException(status_code=400, detail="Invalid role. Use: admin/sales/owner/designer/landlord")
+        raise HTTPException(status_code=400, detail="Invalid role. Use: admin/sales/owner/designer")
     user = db.query(User).filter(User.email == email).first()
     if not user:
         raise HTTPException(status_code=404, detail="Test account not found. Run seed first.")

@@ -8,6 +8,7 @@ import uuid
 import base64
 import io
 from datetime import datetime, timedelta
+from urllib.parse import urlsplit, urlunsplit
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
@@ -27,11 +28,13 @@ from app.models.ad import (
     AdPlaceProfile, AdCompetitor, AdMetric,
 )
 from app.models.receipt_review import ReceiptReviewConfig, ReceiptReview
-from app.models.luxury_product import (
-    LuxuryProduct, LuxuryProductOrder, LuxuryCategoryEnum,
-    LUXURY_CATEGORY_LABELS, LuxuryProductStatus,
-)
 from app.models.affiliate_mall import AffiliateMall
+from app.models.system_config import (
+    SystemConfig,
+    AD_ORDER_MGMT_ENABLED,
+    AD_BLOG_ENABLED,
+    AD_PLACE_TRAFFIC_ENABLED,
+)
 from app.auth.dependencies import get_current_user, require_roles
 from app.services.settlement_service import compute_distribution
 from app.services.visibility import commission_visible_for
@@ -65,6 +68,30 @@ def _date_range(range_str: str):
         return now - timedelta(days=30), now
     else:  # all
         return datetime(2000, 1, 1), now
+
+
+def _normalize_place_url(value: str) -> str:
+    """Normalize a public place URL while preserving its identifying query."""
+    raw = (value or "").strip()
+    try:
+        parts = urlsplit(raw)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="올바른 플레이스 URL을 입력해주세요") from exc
+    if parts.scheme not in {"http", "https"} or not parts.netloc:
+        raise HTTPException(status_code=400, detail="http 또는 https로 시작하는 플레이스 URL을 입력해주세요")
+    return urlunsplit((parts.scheme.lower(), parts.netloc.lower(), parts.path.rstrip("/"), parts.query, ""))
+
+
+def _ad_feature_enabled(db: Session, key: str) -> bool:
+    cfg = db.query(SystemConfig).filter(SystemConfig.config_key == key).first()
+    return bool(cfg and cfg.is_enabled)
+
+
+def _require_ad_order_feature(db: Session, type_key: str) -> None:
+    if not _ad_feature_enabled(db, AD_ORDER_MGMT_ENABLED):
+        raise HTTPException(status_code=403, detail="광고 주문 기능이 현재 비활성화되어 있습니다")
+    if not _ad_feature_enabled(db, type_key):
+        raise HTTPException(status_code=403, detail="선택한 광고 상품이 현재 비활성화되어 있습니다")
 
 
 # ─── Transactions ────────────────────────────────────────────
@@ -432,10 +459,11 @@ def ad_analysis(
             ).order_by(AdMetric.date.desc()).all()
             my_metrics.append({
                 "place_url": p.place_url, "nickname": p.nickname,
+                "analysis_keyword": p.analysis_keyword,
                 "data": [{
                     "date": str(m.date), "blog_review_count": m.blog_review_count,
                     "visitor_review_count": m.visitor_review_count,
-                    "place_rank": m.place_rank,
+                    "place_rank": m.place_rank, "search_keyword": m.search_keyword,
                 } for m in metrics],
             })
 
@@ -443,6 +471,7 @@ def ad_analysis(
     comp_metrics = []
     for c in competitors:
         metrics = db.query(AdMetric).filter(
+            AdMetric.merchant_id == merchant.id,
             AdMetric.place_url == c.competitor_place_url,
             AdMetric.date >= start_date.date() if hasattr(start_date, 'date') else start_date,
         ).order_by(AdMetric.date.desc()).all()
@@ -451,14 +480,17 @@ def ad_analysis(
             "data": [{
                 "date": str(m.date), "blog_review_count": m.blog_review_count,
                 "visitor_review_count": m.visitor_review_count,
-                "place_rank": m.place_rank,
+                "place_rank": m.place_rank, "search_keyword": m.search_keyword,
             } for m in metrics],
         })
 
     return {
         "my_places": my_metrics,
         "competitors": comp_metrics,
-        "profiles": [{"id": p.id, "place_url": p.place_url, "nickname": p.nickname} for p in profiles],
+        "profiles": [{
+            "id": p.id, "place_url": p.place_url, "nickname": p.nickname,
+            "analysis_keyword": p.analysis_keyword,
+        } for p in profiles],
         "competitor_list": [{"id": c.id, "place_url": c.competitor_place_url, "memo": c.memo} for c in competitors],
     }
 
@@ -481,6 +513,7 @@ def ad_analysis_summary(
     def _aggregate_metrics(place_url, merchant_id_filter=None):
         """특정 place_url의 집계 지표를 계산"""
         q = db.query(AdMetric).filter(
+            AdMetric.merchant_id == merchant.id,
             AdMetric.place_url == place_url,
             AdMetric.date >= start_date.date() if hasattr(start_date, 'date') else start_date,
         )
@@ -498,7 +531,7 @@ def ad_analysis_summary(
         latest_rank = ranks[0] if ranks else None
         latest_blog = metrics[0].blog_review_count if metrics else 0
         latest_visitor = metrics[0].visitor_review_count if metrics else 0
-        
+
         # 트렌드 계산 (최근 2개 데이터 비교)
         blog_trend = 0
         visitor_trend = 0
@@ -530,10 +563,11 @@ def ad_analysis_summary(
         if p.place_url:
             agg = _aggregate_metrics(p.place_url, merchant.id)
             my_summaries.append({
-                "id": p.id,
-                "nickname": p.nickname or p.place_url,
-                "place_url": p.place_url,
-                "metrics": agg,
+            "id": p.id,
+            "nickname": p.nickname or p.place_url,
+            "place_url": p.place_url,
+            "analysis_keyword": p.analysis_keyword,
+            "metrics": agg,
             })
 
     # 경쟁업체 집계
@@ -598,11 +632,41 @@ def ad_analysis_summary(
     elif not comp_valid:
         comparison["insights"].append({"type": "info", "text": "경쟁업체가 등록되지 않았습니다. 경쟁업체를 추가하면 비교 분석을 제공합니다."})
 
+    all_targets = my_summaries + comp_summaries
+    missing_targets = [
+        {
+            "type": "my" if target in my_summaries else "competitor",
+            "name": target.get("nickname") or target.get("name") or target["place_url"],
+            "place_url": target["place_url"],
+        }
+        for target in all_targets if not target["metrics"]
+    ]
+    stale_cutoff = (datetime.utcnow().date() - timedelta(days=14))
+    stale_targets = [
+        {
+            "type": "my" if target in my_summaries else "competitor",
+            "name": target.get("nickname") or target.get("name") or target["place_url"],
+            "place_url": target["place_url"],
+            "latest_date": target["metrics"]["latest_date"],
+        }
+        for target in all_targets
+        if target["metrics"] and datetime.strptime(target["metrics"]["latest_date"], "%Y-%m-%d").date() < stale_cutoff
+    ]
+    primary_keyword = next((p.analysis_keyword for p in profiles if p.analysis_keyword), None)
+
     return {
         "my_places": my_summaries,
         "competitors": comp_summaries,
         "comparison": comparison,
         "range": range,
+        "analysis_keyword": primary_keyword,
+        "data_status": {
+            "target_count": len(all_targets),
+            "ready_count": len(all_targets) - len(missing_targets),
+            "missing_targets": missing_targets,
+            "stale_targets": stale_targets,
+            "needs_admin_action": bool(missing_targets or stale_targets),
+        },
     }
 
 
@@ -635,7 +699,22 @@ def delete_competitor(cid: int, db: Session = Depends(get_db), user: User = Depe
 @router.post("/ad/place-profiles")
 def create_place_profile(req: AdPlaceProfileCreate, db: Session = Depends(get_db), user: User = Depends(require_owner)):
     merchant = _get_owner_merchant(user, db)
-    p = AdPlaceProfile(merchant_id=merchant.id, place_url=req.place_url, place_id=req.place_id, nickname=req.nickname)
+    url = _normalize_place_url(req.place_url) if req.place_url else None
+    if not url:
+        raise HTTPException(status_code=400, detail="플레이스 URL은 필수입니다")
+    duplicate = db.query(AdPlaceProfile).filter(
+        AdPlaceProfile.merchant_id == merchant.id,
+        AdPlaceProfile.place_url == url,
+    ).first()
+    if duplicate:
+        raise HTTPException(status_code=409, detail="이미 등록된 우리 매장 플레이스입니다")
+    p = AdPlaceProfile(
+        merchant_id=merchant.id,
+        place_url=url,
+        place_id=req.place_id,
+        nickname=(req.nickname or "").strip() or None,
+        analysis_keyword=(req.analysis_keyword or "").strip() or None,
+    )
     db.add(p)
     db.commit()
     db.refresh(p)
@@ -645,7 +724,23 @@ def create_place_profile(req: AdPlaceProfileCreate, db: Session = Depends(get_db
 @router.post("/ad/competitors")
 def create_competitor(req: AdCompetitorCreate, db: Session = Depends(get_db), user: User = Depends(require_owner)):
     merchant = _get_owner_merchant(user, db)
-    c = AdCompetitor(merchant_id=merchant.id, competitor_place_url=req.competitor_place_url, memo=req.memo)
+    url = _normalize_place_url(req.competitor_place_url)
+    duplicate = db.query(AdCompetitor).filter(
+        AdCompetitor.merchant_id == merchant.id,
+        AdCompetitor.competitor_place_url == url,
+    ).first()
+    if duplicate:
+        raise HTTPException(status_code=409, detail="이미 등록된 경쟁업체입니다")
+    if db.query(AdPlaceProfile).filter(
+        AdPlaceProfile.merchant_id == merchant.id,
+        AdPlaceProfile.place_url == url,
+    ).first():
+        raise HTTPException(status_code=400, detail="우리 매장 URL은 경쟁업체로 등록할 수 없습니다")
+    c = AdCompetitor(
+        merchant_id=merchant.id,
+        competitor_place_url=url,
+        memo=(req.memo or "").strip() or None,
+    )
     db.add(c)
     db.commit()
     db.refresh(c)
@@ -684,6 +779,11 @@ def list_owner_ad_orders(db: Session = Depends(get_db), user: User = Depends(req
 @router.post("/ad/blog-orders")
 def create_blog_order(req: AdBlogOrderCreate, db: Session = Depends(get_db), user: User = Depends(require_owner)):
     merchant = _get_owner_merchant(user, db)
+    _require_ad_order_feature(db, AD_BLOG_ENABLED)
+    keywords = [item.strip() for item in req.main_keywords if item.strip()]
+    if not keywords:
+        raise HTTPException(status_code=400, detail="메인 키워드를 1개 이상 입력해주세요")
+    links = [_normalize_place_url(item) for item in req.links]
     order = AdOrder(
         merchant_id=merchant.id, type=AdOrderType.BLOG,
         status=AdOrderStatus.REQUESTED, created_by=user.id,
@@ -695,9 +795,9 @@ def create_blog_order(req: AdBlogOrderCreate, db: Session = Depends(get_db), use
         order_id=order.id,
         campaign_name=req.campaign_name,
         address=req.address, contact=req.contact,
-        links_json=json.dumps(req.links),
-        main_keywords_json=json.dumps(req.main_keywords),
-        hashtags_json=json.dumps(req.hashtags),
+        links_json=json.dumps(links),
+        main_keywords_json=json.dumps(keywords),
+        hashtags_json=json.dumps([item.strip().lstrip("#") for item in req.hashtags if item.strip()]),
         description=req.description,
         extra_image_link=req.extra_image_link,
     )
@@ -710,6 +810,10 @@ def create_blog_order(req: AdBlogOrderCreate, db: Session = Depends(get_db), use
 @router.post("/ad/place-traffic-orders")
 def create_place_traffic_order(req: AdPlaceTrafficOrderCreate, db: Session = Depends(get_db), user: User = Depends(require_owner)):
     merchant = _get_owner_merchant(user, db)
+    _require_ad_order_feature(db, AD_PLACE_TRAFFIC_ENABLED)
+    keywords = [item.strip() for item in req.search_keywords if item.strip()]
+    if not keywords:
+        raise HTTPException(status_code=400, detail="검색 키워드를 1개 이상 입력해주세요")
     order = AdOrder(
         merchant_id=merchant.id, type=AdOrderType.PLACE_TRAFFIC,
         status=AdOrderStatus.REQUESTED, created_by=user.id,
@@ -720,7 +824,7 @@ def create_place_traffic_order(req: AdPlaceTrafficOrderCreate, db: Session = Dep
     detail = AdOrderPlaceTrafficDetail(
         order_id=order.id,
         place_name_or_id=req.place_name_or_id,
-        search_keywords_json=json.dumps(req.search_keywords),
+        search_keywords_json=json.dumps(keywords),
     )
     db.add(detail)
     db.commit()
@@ -1054,99 +1158,6 @@ def update_review_status(
     review.updated_at = datetime.utcnow()
     db.commit()
     return {"ok": True, "status": review.status}
-
-
-# ═══════════════════════════════════════════════════════════
-# LUXURY STORE (명품스토어) — 골드회원(원장) 상품 조회/주문
-# ═══════════════════════════════════════════════════════════
-
-@router.get("/luxury/categories")
-def get_owner_luxury_categories(user: User = Depends(require_owner)):
-    """명품 카테고리 목록 (원장용)"""
-    return [{"value": k, "label": v} for k, v in LUXURY_CATEGORY_LABELS.items()]
-
-
-@router.get("/luxury/products")
-def list_owner_luxury_products(
-    category: Optional[str] = None,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_owner),
-):
-    """활성 명품 상품 목록 (골드회원용 — active 상품만)"""
-    q = db.query(LuxuryProduct).filter(
-        LuxuryProduct.status == LuxuryProductStatus.ACTIVE
-    ).order_by(LuxuryProduct.is_featured.desc(), LuxuryProduct.created_at.desc())
-    if category:
-        q = q.filter(LuxuryProduct.category == category)
-    products = q.all()
-    return [{
-        "id": p.id, "name": p.name, "brand": p.brand,
-        "category": p.category.value if p.category else "other",
-        "category_label": p.category_label,
-        "description": p.description, "price": p.price,
-        "discount_price": p.discount_price, "display_price": p.display_price,
-        "image_url": p.image_url, "stock": p.stock, "is_featured": p.is_featured,
-        "created_at": str(p.created_at),
-    } for p in products]
-
-
-@router.post("/luxury/orders")
-def create_luxury_order(
-    product_id: int = Query(...),
-    quantity: int = Query(1),
-    memo: Optional[str] = Query(None),
-    shipping_address: Optional[str] = Query(None),
-    shipping_phone: Optional[str] = Query(None),
-    db: Session = Depends(get_db),
-    user: User = Depends(require_owner),
-):
-    """명품 상품 주문"""
-    product = db.query(LuxuryProduct).filter(
-        LuxuryProduct.id == product_id,
-        LuxuryProduct.status == LuxuryProductStatus.ACTIVE,
-    ).first()
-    if not product:
-        raise HTTPException(404, "상품을 찾을 수 없습니다.")
-    if product.stock < quantity:
-        raise HTTPException(400, "재고가 부족합니다.")
-
-    merchant = _get_owner_merchant(user, db)
-    total_price = product.display_price * quantity
-
-    order = LuxuryProductOrder(
-        product_id=product_id, user_id=user.id,
-        merchant_id=merchant.id if merchant else None,
-        quantity=quantity, total_price=total_price,
-        memo=memo, shipping_address=shipping_address,
-        shipping_phone=shipping_phone,
-    )
-    db.add(order)
-    # 재고 차감
-    product.stock -= quantity
-    db.commit()
-    db.refresh(order)
-    return {"id": order.id, "total_price": total_price, "message": "주문이 접수되었습니다."}
-
-
-@router.get("/luxury/orders")
-def list_owner_luxury_orders(
-    db: Session = Depends(get_db),
-    user: User = Depends(require_owner),
-):
-    """내 명품 주문 내역"""
-    orders = db.query(LuxuryProductOrder).filter(
-        LuxuryProductOrder.user_id == user.id
-    ).order_by(LuxuryProductOrder.created_at.desc()).all()
-    return [{
-        "id": o.id, "product_id": o.product_id,
-        "product_name": o.product.name if o.product else "-",
-        "product_brand": o.product.brand if o.product else "-",
-        "product_image": o.product.image_url if o.product else None,
-        "quantity": o.quantity, "total_price": o.total_price,
-        "status": o.status.value if o.status else "pending",
-        "memo": o.memo, "admin_memo": o.admin_memo,
-        "created_at": str(o.created_at),
-    } for o in orders]
 
 
 # ═══════════════════════════════════════════════════════════

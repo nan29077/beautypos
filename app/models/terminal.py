@@ -13,7 +13,6 @@ class TerminalDevice(Base):
     merchant_id = Column(Integer, ForeignKey("merchants.id"), nullable=False, index=True)
     terminal_serial = Column(String(100), unique=True, nullable=False)
     api_key_hash = Column(String(255), nullable=False)
-    api_key_plain = Column(String(255), nullable=True)  # stored only in dev/seed
     memo = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

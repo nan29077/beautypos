@@ -4,10 +4,11 @@ Run: python -m app.init_db
 """
 import time
 import sys
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 from app.database import engine, Base, SessionLocal
 from app.models import *  # noqa: F401, F403 — import all models to register them
 from app.seed import run_seed, seed_crm_demo
+from app.config import get_settings
 
 
 def wait_for_db(max_retries=30, delay=2):
@@ -42,6 +43,8 @@ def _ensure_columns():
         ("crm_reservations", "end_at", "DATETIME", "NULL"),
         ("crm_reservations", "duration_min", "INTEGER", "NULL"),
         ("crm_reservations", "reminder_sent_at", "DATETIME", "NULL"),
+        ("ad_place_profiles", "analysis_keyword", "VARCHAR(200)", "NULL"),
+        ("ad_metrics", "search_keyword", "VARCHAR(200)", "NULL"),
     ]
     with engine.connect() as conn:
         for table, column, ddl_type, default in pending:
@@ -67,16 +70,52 @@ def _ensure_columns():
                 print(f"   ⚠️ Could not ensure {table}.{column}: {e}")
 
 
+def _remove_retired_features():
+    """Permanently remove storage for the retired rent-payment and luxury features."""
+    retired_tables = [
+        "luxury_product_orders",
+        "luxury_products",
+        "rent_payments",
+        "landlord_sales_assignments",
+        "tenants",
+        "landlord_profiles",
+    ]
+    with engine.begin() as conn:
+        for table in retired_tables:
+            conn.execute(text(f"DROP TABLE IF EXISTS {table}"))
+        conn.execute(text(
+            "DELETE FROM merchant_pg_configs WHERE provider_id IN "
+            "(SELECT id FROM pg_providers WHERE code = 'ongi')"
+        ))
+        conn.execute(text("DELETE FROM pg_providers WHERE code = 'ongi'"))
+        conn.execute(text("DELETE FROM users WHERE role IN ('LANDLORD', 'landlord')"))
+        terminal_columns = {column["name"] for column in inspect(conn).get_columns("terminal_devices")}
+        if "api_key_plain" in terminal_columns:
+            conn.execute(text("UPDATE terminal_devices SET api_key_plain = NULL"))
+            conn.execute(text("ALTER TABLE terminal_devices DROP COLUMN api_key_plain"))
+        if engine.dialect.name in {"mysql", "mariadb"}:
+            conn.execute(text(
+                "ALTER TABLE users MODIFY role "
+                "ENUM('ADMIN','SALES','OWNER','DESIGNER') NOT NULL"
+            ))
+
+
 def init_db():
     if not wait_for_db():
         sys.exit(1)
 
     print("🔧 Creating tables...")
     Base.metadata.create_all(bind=engine)
+    _remove_retired_features()
     _ensure_columns()
     print("✅ Tables created")
 
-    print("🌱 Running seed data...")
+    settings = get_settings()
+    if not settings.DEV_MODE:
+        print("ℹ️ Demo seed skipped (DEV_MODE is disabled)")
+        return
+
+    print("🌱 Running development seed data...")
     db = SessionLocal()
     try:
         run_seed(db)
