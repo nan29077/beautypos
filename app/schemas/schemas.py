@@ -103,7 +103,7 @@ class TerminalTransactionCreate(BaseModel):
 # ─── Payout ──────────────────────────────────────────────────
 
 class PayoutRequestCreate(BaseModel):
-    amount: float
+    amount: float = Field(gt=0, description="출금 요청 금액 (원)")
     bank_info: Optional[str] = None
     memo: Optional[str] = None
 

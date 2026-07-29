@@ -83,7 +83,19 @@ def list_merchants(db: Session = Depends(get_db), _=Depends(require_admin)):
 def create_merchant(req: MerchantCreate, db: Session = Depends(get_db), _=Depends(require_admin)):
     owner = db.query(User).filter(User.id == req.owner_user_id).first()
     if not owner:
-        raise HTTPException(status_code=400, detail="Owner user not found")
+        raise HTTPException(status_code=400, detail="소유자 계정을 찾을 수 없습니다")
+    # 원장 화면은 owner_user_id 로 가맹점을 1개만 찾으므로, 잘못된 역할·중복 소유를 등록 시점에 막는다.
+    if owner.role != UserRole.OWNER:
+        raise HTTPException(
+            status_code=400,
+            detail=f"사장님(원장) 역할의 계정만 가맹점 소유자가 될 수 있습니다. (현재: {owner.role.value})",
+        )
+    existing = db.query(Merchant).filter(Merchant.owner_user_id == req.owner_user_id).first()
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"이 계정은 이미 '{existing.name}' 가맹점을 소유하고 있습니다",
+        )
     m = Merchant(
         name=req.name, owner_user_id=req.owner_user_id,
         business_no=req.business_no, address=req.address, phone=req.phone,

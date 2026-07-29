@@ -24,8 +24,13 @@ def _auth_terminal(api_key: str, db: Session) -> TerminalDevice:
     # For MVP, we check against all active terminals
     terminals = db.query(TerminalDevice).filter(TerminalDevice.is_active == True).all()
     for t in terminals:
-        if pwd_context.verify(api_key, t.api_key_hash):
-            return t
+        # 해시 형식이 깨진 행이 하나라도 있으면 verify 가 예외를 던져 전체 인증이 500 이 된다.
+        # 그런 행은 건너뛰고 나머지 단말기로 계속 대조한다.
+        try:
+            if t.api_key_hash and pwd_context.verify(api_key, t.api_key_hash):
+                return t
+        except ValueError:
+            continue
     raise HTTPException(status_code=401, detail="Invalid terminal API key")
 
 

@@ -11,6 +11,20 @@ from app.seed import run_seed, seed_crm_demo
 from app.config import get_settings
 
 
+def _make_console_lenient():
+    """콘솔이 못 그리는 글자 때문에 기동이 막히지 않게 한다.
+
+    한글 Windows 콘솔(cp949)에서는 아래 로그의 이모지가 UnicodeEncodeError 를 일으켜
+    lifespan(init_db) 이 그대로 죽고 서버가 뜨지 않는다. 인코딩은 그대로 두고
+    표현 못 하는 문자만 대체하도록 바꾼다.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="replace")
+        except Exception:  # noqa: BLE001 — 콘솔 설정 실패가 기동을 막으면 안 된다
+            pass
+
+
 def wait_for_db(max_retries=30, delay=2):
     """Wait for the database to be ready."""
     for i in range(max_retries):
@@ -101,6 +115,7 @@ def _remove_retired_features():
 
 
 def init_db():
+    _make_console_lenient()
     if not wait_for_db():
         sys.exit(1)
 

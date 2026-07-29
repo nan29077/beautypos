@@ -21,7 +21,7 @@ from app.models.user import User, UserRole
 from app.models.merchant import Merchant, STAFF_MANAGED_CATEGORIES
 from app.models.staff import Staff
 from app.models.transaction import Transaction
-from app.models.settlement import Settlement
+from app.models.settlement import Settlement, PayoutRequest
 from app.models.ad import (
     AdOrder, AdOrderType, AdOrderStatus,
     AdOrderBlogDetail, AdOrderBlogImage,
@@ -45,6 +45,7 @@ from app.schemas.schemas import (
     StaffCreate, StaffUpdate, DesignerCreate, DesignerUpdate,
     AdBlogOrderCreate, AdPlaceTrafficOrderCreate,
     AdPlaceProfileCreate, AdCompetitorCreate,
+    PayoutRequestCreate,
 )
 from app.auth.jwt_handler import hash_password
 
@@ -436,6 +437,75 @@ def owner_settlement_breakdown(
     result["range"] = range
     result["merchant_name"] = merchant.name
     return result
+
+
+# ─── Settlements (관리자가 확정한 정산 내역) ──────────────────
+
+@router.get("/settlements")
+def list_owner_settlements(
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_owner),
+):
+    """최고관리자가 계산·확정한 우리 매장 정산 내역.
+
+    금액은 결제액 → PG수수료 → 실지급액(net) 순으로 내려주고,
+    영업수수료 항목은 표시 설정이 OFF 면 마스킹한다.
+    """
+    merchant = _get_owner_merchant(user, db)
+    rows = db.query(Settlement).filter(
+        Settlement.merchant_id == merchant.id,
+    ).order_by(Settlement.period_start.desc(), Settlement.id.desc()).limit(limit).all()
+
+    show_commission = commission_visible_for(db, user.role)
+    return [{
+        "id": s.id,
+        "merchant_name": merchant.name,
+        "period_start": str(s.period_start),
+        "period_end": str(s.period_end),
+        "gross_amount": float(s.gross_amount),
+        "pg_fee_amount": float(s.pg_fee_amount),
+        "net_amount": float(s.net_amount),
+        "commission_amount": float(s.commission_amount) if show_commission else None,
+        "show_sales_commission": show_commission,
+        "created_at": str(s.created_at),
+    } for s in rows]
+
+
+# ─── Payout Requests (원장 출금요청) ──────────────────────────
+
+@router.get("/payout-requests")
+def list_owner_payout_requests(db: Session = Depends(get_db), user: User = Depends(require_owner)):
+    """본인이 신청한 출금요청 내역만 조회한다."""
+    reqs = db.query(PayoutRequest).filter(
+        PayoutRequest.requester_user_id == user.id,
+    ).order_by(PayoutRequest.created_at.desc()).all()
+    return [{
+        "id": r.id, "amount": float(r.amount),
+        "bank_info": r.bank_info, "memo": r.memo,
+        "status": r.status.value if r.status else None,
+        "created_at": str(r.created_at),
+        "reviewed_at": str(r.reviewed_at) if r.reviewed_at else None,
+    } for r in reqs]
+
+
+@router.post("/payout-requests")
+def create_owner_payout_request(
+    req: PayoutRequestCreate, db: Session = Depends(get_db), user: User = Depends(require_owner),
+):
+    """정산금 출금을 신청한다. 최고관리자가 승인/거절한다."""
+    _get_owner_merchant(user, db)  # 가맹점이 없는 계정은 신청할 수 없다
+    pr = PayoutRequest(
+        requester_user_id=user.id,
+        role=user.role.value if isinstance(user.role, UserRole) else user.role,
+        amount=req.amount,
+        bank_info=req.bank_info,
+        memo=req.memo,
+    )
+    db.add(pr)
+    db.commit()
+    db.refresh(pr)
+    return {"id": pr.id, "amount": float(pr.amount), "status": pr.status.value}
 
 
 # ─── Ad Analysis ────────────────────────────────────────────
