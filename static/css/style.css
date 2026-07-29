@@ -2540,4 +2540,97 @@ body[data-page="admin-metrics"] .card[style*="linear-gradient"] { background: li
 
     /* 분석 기간 선택 full-width */
     #crmAnRange { width: 100% !important; }
+
+    /* ─── 직원 관리 헤더 버튼 세로 배치 ────────────────── */
+    body.role-mobile-ui .staff-mgmt-header-btns {
+        flex-direction: column !important;
+        width: 100% !important;
+    }
+    body.role-mobile-ui .staff-mgmt-header-btns .btn {
+        width: 100% !important;
+        min-height: 44px !important;
+        justify-content: center;
+    }
+
+    /* ─── 직원 관리 테이블 → 모바일 카드 변환 ──────────── */
+    body.role-mobile-ui .staff-mgmt-table,
+    body.role-mobile-ui .staff-mgmt-table tbody,
+    body.role-mobile-ui .staff-mgmt-table tr,
+    body.role-mobile-ui .staff-mgmt-table td { display: block !important; }
+    body.role-mobile-ui .staff-mgmt-table thead { display: none !important; }
+    body.role-mobile-ui .staff-mgmt-table tbody tr {
+        margin-bottom: .75rem;
+        border: 1px solid #eadfe3 !important;
+        border-radius: 14px !important;
+        padding: 14px !important;
+        background: #fffcfd;
+        box-shadow: 0 2px 10px rgba(72,43,53,.07);
+    }
+    body.role-mobile-ui .staff-mgmt-table td {
+        padding: .28rem 0 !important;
+        border: none !important;
+    }
+    body.role-mobile-ui .staff-mgmt-table td[data-label="ID"] { display: none !important; }
+    body.role-mobile-ui .staff-mgmt-table td[data-label="이름"] {
+        font-size: 1rem !important;
+        font-weight: 700 !important;
+        padding-bottom: .5rem !important;
+        border-bottom: 1px solid #f0e5e8 !important;
+        margin-bottom: .15rem;
+    }
+    body.role-mobile-ui .staff-mgmt-table td[data-label="이름"]::before { display: none !important; }
+    body.role-mobile-ui .staff-mgmt-table td[data-label]::before {
+        content: attr(data-label);
+        font-size: .64rem;
+        color: #a36a7b;
+        display: block;
+        font-weight: 700;
+        letter-spacing: .05em;
+        text-transform: uppercase;
+        margin-bottom: 3px;
+    }
+    body.role-mobile-ui .staff-mgmt-table td[data-label="분배율"] .input-group { flex-wrap: nowrap !important; }
+    body.role-mobile-ui .staff-mgmt-table td[data-label="액션"] .btn {
+        width: 100% !important;
+        min-height: 44px !important;
+        margin-top: .4rem;
+    }
+
+    /* ─── 직원별 매출 거래 테이블 → 모바일 카드 변환 ───── */
+    body.role-mobile-ui .staff-sales-tx-table,
+    body.role-mobile-ui .staff-sales-tx-table tbody { display: block !important; }
+    body.role-mobile-ui .staff-sales-tx-table thead { display: none !important; }
+    body.role-mobile-ui .staff-sales-tx-table tbody tr {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        margin-bottom: .5rem;
+        border: 1px solid #eadfe3 !important;
+        border-radius: 12px !important;
+        padding: 12px 14px !important;
+        background: #fffcfd;
+        box-shadow: 0 1px 6px rgba(72,43,53,.05);
+    }
+    body.role-mobile-ui .staff-sales-tx-table td {
+        display: block !important;
+        border: none !important;
+        padding: .15rem 0 !important;
+    }
+    body.role-mobile-ui .staff-sales-tx-table td[data-label="ID"] { display: none !important; }
+    body.role-mobile-ui .staff-sales-tx-table td[data-label="금액"] {
+        flex: 0 0 100%;
+        font-size: 1rem !important;
+        font-weight: 700 !important;
+        color: #9f596d;
+        padding-bottom: .4rem !important;
+        border-bottom: 1px solid #f0e5e8 !important;
+        margin-bottom: .2rem;
+    }
+    body.role-mobile-ui .staff-sales-tx-table td[data-label="승인일"],
+    body.role-mobile-ui .staff-sales-tx-table td[data-label="등록일"] {
+        flex: 0 0 50%;
+        font-size: .72rem !important;
+        color: #a36a7b;
+    }
+    body.role-mobile-ui .staff-sales-tx-table td[data-label="승인일"]::before { content: '승인 '; font-weight: 700; color: #7a4a5b; }
+    body.role-mobile-ui .staff-sales-tx-table td[data-label="등록일"]::before { content: '등록 '; font-weight: 700; color: #7a4a5b; }
 }

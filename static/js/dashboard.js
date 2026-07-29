@@ -2924,18 +2924,18 @@ async function loadOwnerStaff(c, t) {
     const staff = await apiGet('/api/owner/staff');
     c.innerHTML = `<div class="card data-card"><div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
         <h5 class="mb-0">직원 · 디자이너 목록</h5>
-        <div class="d-flex gap-2">
+        <div class="d-flex gap-2 staff-mgmt-header-btns">
             <button class="btn btn-primary btn-sm" onclick="showNewDesignerForm()"><i class="fas fa-user-plus me-1"></i>디자이너 계정 등록</button>
             <button class="btn btn-outline-secondary btn-sm" onclick="showNewStaffForm()"><i class="fas fa-plus me-1"></i>직원 추가(계정 없음)</button>
         </div>
     </div><div class="card-body">
         <div class="alert alert-light border small mb-3"><i class="fas fa-info-circle text-primary me-1"></i>
             <strong>디자이너 계정 등록</strong>은 로그인 계정을 만들어 우리 미용실 소속으로 귀속시킵니다(디자이너는 직접 회원가입 불가). <strong>분배율</strong>은 결제액에서 PG·영업수수료를 뺀 <strong>분배가능액 중 디자이너 몫</strong> 비율이며, 나머지는 원장(사장님) 몫입니다.</div>
-        <div class="table-responsive"><table class="table table-hover align-middle">
+        <div class="table-responsive"><table class="table table-hover align-middle staff-mgmt-table">
             <thead><tr><th>ID</th><th>이름</th><th>코드</th><th>디자이너 분배율</th><th>상태</th><th>액션</th></tr></thead>
             <tbody>${staff.map(s => `<tr>
-                <td>${s.id}</td><td class="fw-bold">${s.name}</td><td><code>${s.staff_code}</code></td>
-                <td style="max-width:200px">
+                <td data-label="ID">${s.id}</td><td class="fw-bold" data-label="이름">${s.name}</td><td data-label="코드"><code>${s.staff_code}</code></td>
+                <td data-label="분배율" style="max-width:200px">
                     <div class="input-group input-group-sm">
                         <input type="number" class="form-control" id="share_${s.id}" value="${Math.round((s.share_rate??0.5)*100)}" min="0" max="100" step="1" style="max-width:80px">
                         <span class="input-group-text">%</span>
@@ -2943,8 +2943,8 @@ async function loadOwnerStaff(c, t) {
                     </div>
                     <small class="text-muted">원장 몫 <span id="ownerShare_${s.id}">${100-Math.round((s.share_rate??0.5)*100)}</span>%</small>
                 </td>
-                <td>${s.is_active?'<span class="badge bg-success">활성</span>':'<span class="badge bg-danger">비활성</span>'}</td>
-                <td><button class="btn btn-sm btn-outline-${s.is_active?'danger':'success'}" onclick="toggleStaff(${s.id},${!s.is_active})">${s.is_active?'비활성화':'활성화'}</button></td>
+                <td data-label="상태">${s.is_active?'<span class="badge bg-success">활성</span>':'<span class="badge bg-danger">비활성</span>'}</td>
+                <td data-label="액션"><button class="btn btn-sm btn-outline-${s.is_active?'danger':'success'}" onclick="toggleStaff(${s.id},${!s.is_active})">${s.is_active?'비활성화':'활성화'}</button></td>
             </tr>`).join('')}</tbody>
         </table></div></div></div>`;
     // 입력 시 원장 몫 즉시 반영
@@ -3271,9 +3271,9 @@ async function loadStaffSalesData() {
             <div><span>결제 건수</span><strong>${data.count}건</strong></div>
             <div><span>총 매출</span><strong class="text-primary">${formatMoney(data.total_amount)}</strong></div>
         </div>
-        ${data.transactions.length ? `<div class="table-responsive"><table class="table table-sm">
+        ${data.transactions.length ? `<div class="table-responsive"><table class="table table-sm staff-sales-tx-table">
             <thead><tr><th>ID</th><th>금액</th><th>승인일</th><th>등록일</th></tr></thead>
-            <tbody>${data.transactions.map(tx=>`<tr><td>${tx.id}</td><td class="fw-bold">${formatMoney(tx.amount)}</td><td>${formatDate(tx.approved_at)}</td><td>${formatDate(tx.created_at)}</td></tr>`).join('')}</tbody>
+            <tbody>${data.transactions.map(tx=>`<tr><td data-label="ID">${tx.id}</td><td class="fw-bold" data-label="금액">${formatMoney(tx.amount)}</td><td data-label="승인일">${formatDate(tx.approved_at)}</td><td data-label="등록일">${formatDate(tx.created_at)}</td></tr>`).join('')}</tbody>
         </table></div>` : '<div class="empty-state compact"><i class="fas fa-receipt"></i><p>선택한 기간에 결제 내역이 없습니다.</p></div>'}`;
     } catch (e) {
         result.innerHTML = `<div class="alert alert-danger">${escapeHtml(e.message)}</div>`;
