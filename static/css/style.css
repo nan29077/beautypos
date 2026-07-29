@@ -1774,3 +1774,349 @@ body[data-page="admin-metrics"] .card[style*="linear-gradient"] { background: li
     }
     body.admin-mobile-ui .mobile-card-table td::before { flex-basis: 40%; }
 }
+
+/* 원장 광고분석 — 모바일 전용 정보 밀도와 터치 흐름 */
+@media (max-width: 767.98px) {
+    body.role-mobile-ui[data-page="owner-analysis"] .page-content {
+        padding-right: 10px !important;
+        padding-left: 10px !important;
+        overflow-x: hidden;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .owner-analysis-page {
+        display: flex;
+        flex-direction: column;
+        gap: 11px;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .owner-analysis-page > .mb-3 {
+        margin-bottom: 0 !important;
+    }
+
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-page-header {
+        margin-bottom: 0 !important;
+        padding: 15px;
+        border: 0;
+        border-radius: 18px;
+        align-items: flex-start !important;
+        background:
+            radial-gradient(circle at 92% 5%, rgba(125,211,252,.24), transparent 38%),
+            linear-gradient(135deg, #10243e, #164e72);
+        box-shadow: 0 10px 26px rgba(15,76,129,.16);
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-page-title {
+        width: 100%;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-page-title h5 {
+        color: #fff;
+        font-size: 1.02rem !important;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-page-title h5 i {
+        color: #7dd3fc !important;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-page-title small {
+        display: block;
+        margin-top: 5px;
+        color: rgba(255,255,255,.7) !important;
+        font-size: .7rem;
+        line-height: 1.45;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-page-actions {
+        width: 100%;
+        display: grid !important;
+        grid-template-columns: 1fr 1fr;
+        gap: 7px !important;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-page-actions .btn {
+        width: 100%;
+        min-width: 0;
+        min-height: 42px;
+        margin: 0;
+        border-color: rgba(255,255,255,.24);
+        color: #fff;
+        background: rgba(255,255,255,.1);
+        font-size: .73rem !important;
+        white-space: nowrap;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-page-actions .btn-primary {
+        border-color: #0ea5e9;
+        background: linear-gradient(135deg, #0ea5e9, #2363ad);
+    }
+
+    body.role-mobile-ui[data-page="owner-analysis"] #collectStatus:not(:empty) {
+        padding: 10px 11px;
+        border: 1px solid #dce8f2;
+        border-radius: 14px;
+        background: #fff;
+        box-shadow: 0 3px 12px rgba(16,36,62,.045);
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #collectStatus > .d-flex {
+        gap: 6px !important;
+        line-height: 1.45;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #collectStatus .badge {
+        min-height: 27px;
+        display: inline-flex;
+        align-items: center;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-notice {
+        margin-bottom: 0 !important;
+        padding: 11px 12px;
+        align-items: flex-start;
+        border-radius: 14px;
+        font-size: .72rem;
+        line-height: 1.5;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-notice-icon {
+        font-size: .9rem;
+    }
+
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisToday > .d-flex {
+        margin-bottom: 8px !important;
+        align-items: flex-start !important;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisToday h6 {
+        width: 100%;
+        line-height: 1.4;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisToday h6 small {
+        display: block;
+        margin: 3px 0 0 25px !important;
+        font-size: .65rem;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisToday > .d-flex > .d-flex {
+        width: 100%;
+        display: grid !important;
+        grid-template-columns: 1fr;
+        gap: 7px !important;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisToday .btn-group {
+        width: 100%;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisToday .badge {
+        width: fit-content;
+        max-width: 100%;
+        min-height: 30px;
+        display: inline-flex;
+        align-items: center;
+        white-space: normal;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisToday > .row {
+        margin: 0;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 7px;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisToday > .row > [class*="col"] {
+        width: auto;
+        padding: 0;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisToday .card {
+        min-height: 116px;
+        border-radius: 14px !important;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisToday .card-body {
+        min-height: 114px;
+        padding: 11px 5px !important;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisToday .card-body > .small {
+        font-size: .62rem !important;
+        line-height: 1.3;
+        white-space: nowrap;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisToday .fw-bold[style*="font-size"] {
+        margin: 5px 0 3px;
+        color: #10243e;
+        font-size: 1.32rem !important;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisToday .card-body > div:last-child {
+        font-size: .62rem !important;
+        line-height: 1.35;
+        text-align: center;
+    }
+
+    body.role-mobile-ui[data-page="owner-analysis"] .card {
+        overflow: hidden;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .card-header {
+        padding: 12px 13px !important;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .card-body {
+        padding: 12px !important;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .card-header h6 {
+        font-size: .84rem;
+        line-height: 1.4;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisCompare .card-header > small {
+        width: 100%;
+        font-size: .64rem;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisCompare .alert {
+        padding: 10px 11px !important;
+        font-size: .7rem;
+        line-height: 1.5;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .cmp-card {
+        margin-bottom: 9px;
+        padding: 11px;
+        border-radius: 14px;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .cmp-card-head {
+        margin-bottom: 8px;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .cmp-card-body {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .cmp-card-item {
+        min-width: 0;
+        padding: 7px 6px;
+        border-top: 0;
+        border-left: 1px solid #e9eef4;
+        text-align: center;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .cmp-card-item:first-child {
+        padding-top: 7px;
+        border-left: 0;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .cmp-card-metric {
+        font-size: .62rem;
+        white-space: nowrap;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .cmp-card-value {
+        margin: 3px 0;
+        font-size: 1.08rem;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .cmp-card-change {
+        min-height: 30px;
+        font-size: .57rem;
+        line-height: 1.3;
+    }
+
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisTrend .card-header .btn-group {
+        width: 100%;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisTrend .card-body > p {
+        font-size: .68rem;
+        line-height: 1.5;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .trend-pane > div[style*="height"] {
+        height: 190px !important;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] canvas {
+        max-height: 190px !important;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #reviewTrendToggle {
+        width: 100%;
+        justify-content: flex-start;
+        padding-right: 2px !important;
+        padding-left: 2px !important;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .trend-history {
+        margin-top: 10px;
+        border-radius: 12px;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .trend-history-head {
+        padding: 9px 10px;
+        gap: 3px;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .trend-history-head strong {
+        font-size: .73rem;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .trend-history-head span {
+        font-size: .61rem;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .trend-history .table-responsive {
+        max-height: 250px;
+        overflow-x: auto !important;
+        overflow-y: auto !important;
+        border-radius: 0;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior: contain;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .trend-history-table {
+        min-width: 560px;
+        font-size: .68rem;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .trend-history-table th,
+    body.role-mobile-ui[data-page="owner-analysis"] .trend-history-table td {
+        padding: 8px 9px;
+    }
+
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisDetail .card-header {
+        align-items: stretch !important;
+        flex-direction: column;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisDetail #analysisRange {
+        width: 100% !important;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-detail-grid {
+        gap: 10px;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-detail-section {
+        padding: 12px;
+        border-radius: 13px;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-detail-section > h6 {
+        margin-bottom: 9px;
+        font-size: .78rem;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #aiRecommendBtn {
+        width: 100%;
+    }
+
+    body.role-mobile-ui[data-page="owner-analysis"] #managePanel .card-header h6 {
+        font-size: .8rem;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #managePanel .col-md-6 + .col-md-6 {
+        padding-top: 4px;
+        border-top: 1px solid #e9eef4;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #managePanel .input-group > * {
+        width: 100%;
+        flex: 1 1 100%;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #managePanel .input-group > .btn {
+        width: 46px;
+        flex: 0 0 46px;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #managePanel #newCompMemo {
+        max-width: none !important;
+    }
+
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-bottom-actions {
+        margin-top: 0 !important;
+        padding-bottom: 4px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-bottom-actions .btn {
+        width: 100%;
+        min-width: 0;
+        margin: 0 !important;
+        font-size: .74rem !important;
+        white-space: nowrap;
+    }
+}
+
+@media (max-width: 360px) {
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisToday > .row {
+        gap: 5px;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisToday .card-body {
+        padding-right: 3px !important;
+        padding-left: 3px !important;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-page-actions .btn,
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-bottom-actions .btn {
+        font-size: .67rem !important;
+    }
+}

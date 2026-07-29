@@ -3106,7 +3106,7 @@ async function loadOwnerAnalysis(c, t) {
     <!-- 3) 순위 변화 -->
     <div id="analysisTrend" class="mb-3"></div>
 
-    <!-- 4) 자세히 보기 (접어둠) -->
+    <!-- 4) 날짜별 상세 기록 -->
     <div id="analysisDetail" class="mb-3"></div>
 
     <!-- 5) 설정 패널 (하단, 토글) -->
