@@ -2388,6 +2388,7 @@ body[data-page="admin-metrics"] .card[style*="linear-gradient"] { background: li
     .modal-content {
         border-radius: 20px 20px 0 0 !important;
         border: none !important;
+        overflow: hidden !important;
         max-height: 90vh !important;
         transform: translateY(100%);
         transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1);
@@ -2395,18 +2396,32 @@ body[data-page="admin-metrics"] .card[style*="linear-gradient"] { background: li
     .modal.show .modal-content {
         transform: translateY(0) !important;
     }
-    /* 드래그 핸들 */
+    /* 드래그 핸들 — 헤더 그라디언트 안에 반투명 흰 바로 표시
+       (modal-content::before를 그라디언트 배경으로 채워 흰 띠 제거) */
     .modal-content::before {
         content: '';
         display: block;
-        width: 40px;
-        height: 4px;
-        background: #dee2e6;
-        border-radius: 2px;
-        margin: 12px auto 0;
+        height: 28px;
+        background-image:
+            linear-gradient(rgba(255,255,255,.35), rgba(255,255,255,.35)),
+            linear-gradient(135deg, #1e3a5f 0%, #2d6096 100%);
+        background-size: 40px 4px, 100% 100%;
+        background-position: center 12px, 0 0;
+        background-repeat: no-repeat, no-repeat;
     }
     .modal-header {
-        padding-top: .6rem !important;
+        padding-top: 0 !important;
+    }
+    /* 분석 결과 모달 — 확인 버튼 풀너비 */
+    #analysisResultModal .modal-footer {
+        padding: .5rem 1.2rem 1.4rem;
+    }
+    #analysisResultModal .modal-footer .btn {
+        width: 100%;
+        min-height: 50px;
+        border-radius: 10px;
+        font-size: 1rem;
+        font-weight: 700;
     }
     /* scrollable 모달 */
     .modal-dialog-scrollable .modal-content {
