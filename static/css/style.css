@@ -718,10 +718,16 @@ body[data-page="owner-analysis"] #analysisCompare .fw-bold {
     align-items: center;
 }
 .trend-period-badge { font-size: .72rem; font-weight: 700; border-radius: 6px; padding: 3px 8px; }
-/* 카드 상단 색상 구분선 */
+/* 카드 상단 색상 구분선 + 헤더 배경 */
 .trend-rank-card    { border-top: 4px solid #3b82f6 !important; }
 .trend-blog-card    { border-top: 4px solid #10b981 !important; }
 .trend-visitor-card { border-top: 4px solid #8b5cf6 !important; }
+.trend-rank-card    .card-header { background: #eff6ff; }
+.trend-blog-card    .card-header { background: #f0fdf4; }
+.trend-visitor-card .card-header { background: #faf5ff; }
+.trend-rank-card    .card-header h6 { color: #1d4ed8; }
+.trend-blog-card    .card-header h6 { color: #065f46; }
+.trend-visitor-card .card-header h6 { color: #5b21b6; }
 /* 차트 래퍼 touch-action: 가로 스크롤 시 세로 흔들림 방지 */
 .trend-pane { touch-action: pan-x; }
 .trend-pane canvas { touch-action: pan-x; }

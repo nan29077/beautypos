@@ -3429,7 +3429,7 @@ async function loadOwnerAnalysis(c, t) {
                 <i class="fas fa-chart-line me-1"></i>경쟁 업체와 비교 차트
             </button>
             <button class="analysis-tab-btn" data-tab="detail">
-                <i class="fas fa-calendar-days me-1"></i>상세 비교
+                <i class="fas fa-calendar-days me-1"></i>종합 비교
             </button>
         </div>
     </div>
@@ -3922,7 +3922,9 @@ function renderCollectStatus(status) {
     const box = document.getElementById('collectStatus');
     if (!box || !status) return;
     const hasToday = status.has_today_data;
-    const last = status.last_collected_at ? status.last_collected_at.replace('T', ' ').slice(0, 16) : null;
+    const last = status.last_collected_at
+        ? status.last_collected_at.replace('T', ' ').slice(0, 16)
+        : (localStorage.getItem('lastAnalysisAt') || null);
     box.innerHTML = `<div class="d-flex align-items-center gap-2 flex-wrap small">
         <span class="badge ${hasToday ? 'bg-success' : 'bg-secondary'}">
             <i class="fas fa-${hasToday ? 'circle-check' : 'circle-minus'} me-1"></i>${hasToday ? '오늘 데이터 있음' : '오늘 데이터 없음'}
@@ -3971,6 +3973,13 @@ async function fetchAnalysisNow() {
         await nextFrame();
         await loadAnalysisTrend();
         await nextFrame();
+        // 수집 완료 시각을 localStorage에 저장하고 collectStatus를 강제 갱신
+        // (후속 API 호출이 구 데이터를 반환해 덮어쓰는 경우를 방지)
+        const _d = new Date(), _p = n => String(n).padStart(2, '0');
+        const _kst = new Date(_d.getTime() + (540 + _d.getTimezoneOffset()) * 60000);
+        const _nowStr = `${_kst.getFullYear()}-${_p(_kst.getMonth()+1)}-${_p(_kst.getDate())} ${_p(_kst.getHours())}:${_p(_kst.getMinutes())}`;
+        localStorage.setItem('lastAnalysisAt', _nowStr);
+        renderCollectStatus({ ...res.collection_status, last_collected_at: _nowStr });
         // 결과를 Bootstrap 모달로 표시 (alert는 메인 스레드 차단)
         const resultBody = document.getElementById('analysisResultBody');
         const resultModalEl = document.getElementById('analysisResultModal');
