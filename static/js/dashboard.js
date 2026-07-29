@@ -3421,17 +3421,17 @@ async function loadOwnerAnalysis(c, t) {
 
     <!-- 탭 네비게이션 -->
     <div class="analysis-tab-wrap mb-3">
-        <nav class="analysis-tab-nav" role="tablist">
-            <button class="analysis-tab-btn active" onclick="switchAnalysisTab(‘compare’, this)">
+        <div class="analysis-tab-nav">
+            <button class="analysis-tab-btn active" data-tab="compare">
                 <i class="fas fa-scale-balanced me-1"></i>경쟁 비교
             </button>
-            <button class="analysis-tab-btn" onclick="switchAnalysisTab(‘trend’, this)">
+            <button class="analysis-tab-btn" data-tab="trend">
                 <i class="fas fa-chart-line me-1"></i>추이 차트
             </button>
-            <button class="analysis-tab-btn" onclick="switchAnalysisTab(‘detail’, this)">
+            <button class="analysis-tab-btn" data-tab="detail">
                 <i class="fas fa-calendar-days me-1"></i>상세 기록
             </button>
-        </nav>
+        </div>
     </div>
 
     <!-- 탭 패널 -->
@@ -3489,6 +3489,13 @@ async function loadOwnerAnalysis(c, t) {
         <button class="btn btn-outline-secondary" onclick="navigate(‘owner-adorders’)"><i class="fas fa-list me-1"></i>주문 내역 보기</button>
     </div>
     </div>`;
+
+    // onclick 속성은 Bootstrap이 nav[role=tablist] 자식에서 초기화하므로
+    // data-tab + addEventListener(이벤트 위임) 방식으로 클릭을 처리한다
+    c.querySelector('.analysis-tab-nav')?.addEventListener('click', e => {
+        const btn = e.target.closest('.analysis-tab-btn');
+        if (btn) switchAnalysisTab(btn.dataset.tab, btn);
+    });
 
     loadAnalysisOverview();
     reloadAnalysis();
