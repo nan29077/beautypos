@@ -2402,20 +2402,26 @@ body[data-page="admin-metrics"] .card[style*="linear-gradient"] { background: li
     .modal.show .modal-content {
         transform: translateY(0) !important;
     }
-    /* 드래그 핸들 — 헤더 그라디언트 안에 반투명 흰 바로 표시 */
+    /* modal-content::before 완전 제거 — overflow:hidden 밖으로 삐져나오는 문제 폐기 */
     .modal-content::before {
-        content: '';
-        display: block;
-        height: 28px;
-        background-image:
-            linear-gradient(rgba(255,255,255,.35), rgba(255,255,255,.35)),
-            linear-gradient(135deg, #1e3a5f 0%, #2d6096 100%);
-        background-size: 40px 4px, 100% 100%;
-        background-position: center 12px, 0 0;
-        background-repeat: no-repeat, no-repeat;
+        display: none !important;
+        content: none !important;
     }
+    /* 드래그 핸들 — modal-header 내부 상단에 절대 위치, modal-content 경계 안에서만 렌더링 */
     .modal-header {
-        padding-top: 0 !important;
+        position: relative !important;
+        padding-top: 24px !important;
+    }
+    .modal-header::before {
+        content: '';
+        position: absolute;
+        top: 10px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 40px;
+        height: 4px;
+        background: rgba(255,255,255,0.5);
+        border-radius: 2px;
     }
     .modal-body {
         padding: 24px 20px !important;
