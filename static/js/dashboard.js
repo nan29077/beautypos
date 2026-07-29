@@ -4306,14 +4306,14 @@ async function loadCRM(c, t){
     try { crmStaffCache = await apiGet('/api/crm/staff?'+crmScopeQS()); } catch(e){ crmStaffCache=[]; }
     try { crmServiceCache = await apiGet('/api/crm/services'); } catch(e){ crmServiceCache=[]; }
     const tabs=[
-        {id:'dashboard',icon:'fa-gauge-high',label:'대시보드'},
-        {id:'customers',icon:'fa-users',label:'고객관리'},
-        {id:'reservations',icon:'fa-calendar-check',label:'예약'},
-        {id:'staff',icon:'fa-user-group',label:'직원관리'},
-        {id:'services',icon:'fa-scissors',label:'시술관리'},
+        {id:'dashboard',icon:'fa-chart-bar',label:'홈'},
+        {id:'customers',icon:'fa-users',label:'고객'},
+        {id:'reservations',icon:'fa-calendar-alt',label:'예약'},
+        {id:'staff',icon:'fa-user-tie',label:'직원'},
+        {id:'services',icon:'fa-cut',label:'시술'},
         {id:'messages',icon:'fa-comment-dots',label:'메시지'},
-        {id:'analytics',icon:'fa-chart-bar',label:'분석'},
-        {id:'marketing',icon:'fa-bullhorn',label:'마케팅'},
+        {id:'analytics',icon:'fa-chart-line',label:'분석'},
+        {id:'marketing',icon:'fa-gift',label:'혜택'},
     ];
     if(!tabs.find(x=>x.id===crmTab)) crmTab='dashboard';
     const scopeToggle = crmMe.is_designer ? `
@@ -4329,21 +4329,24 @@ async function loadCRM(c, t){
             </div>
             ${scopeToggle}
         </div>
-        <div class="d-flex flex-wrap gap-1 p-1 mb-4" style="background:#f3f4f6;border-radius:14px;width:fit-content;max-width:100%" id="crmTabBar">
-            ${tabs.map(crmTabBtn).join('')}
+        <div class="crm-tabbar-wrap mb-4" id="crmTabBarWrap">
+            <div class="d-flex flex-wrap gap-1 p-1" style="background:#f3f4f6;border-radius:14px;width:fit-content;max-width:100%" id="crmTabBar">
+                ${tabs.map(crmTabBtn).join('')}
+            </div>
         </div>
         <div id="crmTabBody"><div class="text-center py-5"><div class="spinner-border text-primary"></div></div></div>`;
     crmSwitchTab(crmTab);
 }
 function crmTabBtn(tb){
     const a=tb.id===crmTab;
-    return `<button class="crm-tab btn" data-tab="${tb.id}" onclick="crmSwitchTab('${tb.id}')" style="border:none;border-radius:10px;padding:.5rem .95rem;font-size:.88rem;background:${a?'#fff':'transparent'};color:${a?'#667eea':'#6b7280'};font-weight:${a?'700':'500'};box-shadow:${a?'0 2px 8px rgba(102,126,234,.15)':'none'}"><i class="fas ${tb.icon} me-2"></i>${tb.label}</button>`;
+    return `<button class="crm-tab btn${a?' crm-tab-active':''}" data-tab="${tb.id}" onclick="crmSwitchTab('${tb.id}')" style="border:none;border-radius:10px;padding:.5rem .95rem;font-size:.88rem;background:${a?'#fff':'transparent'};color:${a?'#667eea':'#6b7280'};font-weight:${a?'700':'500'};box-shadow:${a?'0 2px 8px rgba(102,126,234,.15)':'none'}"><i class="fas ${tb.icon} me-1"></i><span>${tb.label}</span></button>`;
 }
 function crmSetScope(s){ crmScope=s; loadCRM(document.getElementById('pageContent'), document.createElement('span')); }
 function crmSwitchTab(tab){
     crmTab=tab; crmDestroyCharts();
     document.querySelectorAll('#crmTabBar .crm-tab').forEach(el=>{
         const a=el.dataset.tab===tab;
+        el.classList.toggle('crm-tab-active',a);
         el.style.background=a?'#fff':'transparent'; el.style.color=a?'#667eea':'#6b7280';
         el.style.fontWeight=a?'700':'500'; el.style.boxShadow=a?'0 2px 8px rgba(102,126,234,.15)':'none';
     });
@@ -4466,9 +4469,25 @@ function crmCustomerTable(data){
             <td><small class="text-muted">${c.last_visit?crmDateOnly(c.last_visit):'방문없음'}</small>${due}</td>
         </tr>`;
     }).join('');
-    return `<div class="table-responsive"><table class="table table-hover align-middle mb-0">
+    const cards=data.map(c=>{
+        const gc=CRM_GRADE_COLORS[c.grade]||'#94a3b8';
+        return `<button class="crm-cust-mobile-card" onclick="crmCustomerDetail(${c.id})">
+            <div style="width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.92rem;flex-shrink:0">${escapeHtml((c.name||'?')[0])}</div>
+            <div style="flex:1;min-width:0">
+                <div class="d-flex align-items-center gap-1 flex-wrap">
+                    <span class="fw-bold" style="font-size:.88rem">${escapeHtml(c.name)}</span>
+                    <span class="badge" style="background:${gc};font-size:.62rem;padding:2px 6px">${escapeHtml(c.grade)}</span>
+                    ${c.allergy_memo?'<i class="fas fa-triangle-exclamation text-warning" style="font-size:.68rem" title="알레르기/주의"></i>':''}
+                </div>
+                <div style="font-size:.74rem;color:#6b7280;margin-top:2px">${escapeHtml(c.phone||'-')} · ${c.visit_count}회 방문 · ${formatMoney(c.total_spent)}</div>
+            </div>
+            <i class="fas fa-chevron-right" style="color:#c8d3de;font-size:.72rem;flex-shrink:0"></i>
+        </button>`;
+    }).join('');
+    return `<div class="crm-cust-table-wrap"><div class="table-responsive"><table class="table table-hover align-middle mb-0">
         <thead class="table-light"><tr><th>고객</th><th>등급</th><th>태그</th><th class="text-center">방문</th><th class="text-end">누적매출</th><th class="text-center">포인트</th><th>최근/예상</th></tr></thead>
-        <tbody>${rows}</tbody></table></div>`;
+        <tbody>${rows}</tbody></table></div></div>
+    <div class="crm-cust-card-list">${cards}</div>`;
 }
 function crmCustomerForm(existing){
     const c=existing||{}; const isEdit=!!(existing&&existing.id);
@@ -4998,7 +5017,7 @@ async function crmRenderServices(body){
                     <button class="btn btn-sm btn-outline-danger" title="삭제" onclick="crmServiceDelete(${s.id})"><i class="fas fa-trash"></i></button>
                 </div>` : ''}
             </div>`).join('');
-            sections+=`<section class="crm-service-section"><h6><i class="fas fa-folder me-1"></i>${escapeHtml(cat)}</h6><div class="crm-service-grid">${cards}</div></section>`;
+            sections+=`<section class="crm-service-section"><h6 class="crm-svc-cat-hdr" onclick="this.closest('.crm-service-section').classList.toggle('crm-svc-collapsed')"><i class="fas fa-folder me-1"></i>${escapeHtml(cat)}<span class="crm-svc-badge ms-2">${cats[cat].length}</span><i class="fas fa-chevron-down crm-svc-arrow"></i></h6><div class="crm-service-grid">${cards}</div></section>`;
         });
         body.innerHTML=`<div class="card data-card"><div class="card-header d-flex justify-content-between align-items-center"><div><h6 class="mb-1">시술관리</h6><small class="text-muted">${canManage?'시술 메뉴의 가격과 소요시간을 관리합니다.':'매장에서 제공하는 시술 메뉴를 확인합니다.'}</small></div>${canManage?'<button class="btn btn-sm btn-primary" onclick="crmServiceForm()"><i class="fas fa-plus me-1"></i>시술 추가</button>':''}</div><div class="card-body">${sections||'<div class="empty-state compact"><i class="fas fa-scissors"></i><p>등록된 시술이 없습니다.</p></div>'}</div></div>`;
     }catch(e){ body.innerHTML=`<div class="alert alert-danger">${escapeHtml(e.message)}</div>`; }

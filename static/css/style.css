@@ -2277,3 +2277,241 @@ body[data-page="admin-metrics"] .card[style*="linear-gradient"] { background: li
         font-size: .82rem !important;
     }
 }
+
+/* === CRM 모바일 Bottom Sheet & UI v2 === */
+
+/* ── 1. Bottom Sheet Modal (≤768px) ─────────────────────── */
+@media (max-width: 768px) {
+    /* 모달 컨테이너: 하단 정렬 */
+    .modal {
+        align-items: flex-end !important;
+        padding: 0 !important;
+    }
+    /* modal-dialog: full-width, 마진 제거, Bootstrap dialog 애니메이션 무효화 */
+    .modal-dialog {
+        margin: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        transform: none !important;
+        transition: none !important;
+    }
+    /* modal-content가 Bottom Sheet 슬라이드 담당 */
+    .modal-content {
+        border-radius: 20px 20px 0 0 !important;
+        border: none !important;
+        max-height: 90vh !important;
+        transform: translateY(100%);
+        transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1);
+    }
+    .modal.show .modal-content {
+        transform: translateY(0) !important;
+    }
+    /* 드래그 핸들 */
+    .modal-content::before {
+        content: '';
+        display: block;
+        width: 40px;
+        height: 4px;
+        background: #dee2e6;
+        border-radius: 2px;
+        margin: 12px auto 0;
+    }
+    .modal-header {
+        padding-top: .6rem !important;
+    }
+    /* scrollable 모달 */
+    .modal-dialog-scrollable .modal-content {
+        overflow: hidden !important;
+    }
+    .modal-dialog-scrollable .modal-body {
+        overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch !important;
+        overscroll-behavior-y: contain;
+    }
+}
+
+/* ── 2. 탭바 래퍼 (fade gradient) ───────────────────────── */
+.crm-tabbar-wrap {
+    position: relative;
+}
+
+/* ── 3. 탭 Pill 스타일 + 스크롤바 숨김 + fade hint (모바일) */
+@media (max-width: 767.98px) {
+    body.role-mobile-ui #crmTabBarWrap::after {
+        content: '';
+        position: absolute;
+        right: 0;
+        top: 0;
+        bottom: 0;
+        width: 36px;
+        background: linear-gradient(to left, rgba(243,246,250,.97), transparent);
+        pointer-events: none;
+        z-index: 2;
+    }
+    body.role-mobile-ui #crmTabBarWrap::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 10px;
+        background: linear-gradient(to right, rgba(243,246,250,.97), transparent);
+        pointer-events: none;
+        z-index: 2;
+    }
+    body.role-mobile-ui #crmTabBar::-webkit-scrollbar { display: none !important; }
+    body.role-mobile-ui #crmTabBar {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+        overflow-x: auto !important;
+        flex-wrap: nowrap !important;
+        width: 100% !important;
+        max-width: 100% !important;
+    }
+
+    /* 탭 버튼 — 인라인 스타일 전면 오버라이드 */
+    body.role-mobile-ui #crmTabBar .crm-tab {
+        background: transparent !important;
+        color: #8a9ab0 !important;
+        font-weight: 400 !important;
+        box-shadow: none !important;
+        border-radius: 20px !important;
+        padding: 5px 10px !important;
+        font-size: .7rem !important;
+        min-width: 0 !important;
+        display: inline-flex !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        gap: 3px !important;
+        border: none !important;
+        flex-shrink: 0;
+    }
+    body.role-mobile-ui #crmTabBar .crm-tab i {
+        margin: 0 !important;
+        font-size: .82rem !important;
+    }
+    body.role-mobile-ui #crmTabBar .crm-tab span {
+        font-size: .63rem !important;
+        line-height: 1;
+        white-space: nowrap;
+    }
+    body.role-mobile-ui #crmTabBar .crm-tab.crm-tab-active {
+        background: #0f6cbd !important;
+        color: #fff !important;
+        font-weight: 600 !important;
+        box-shadow: 0 2px 8px rgba(15,76,129,.2) !important;
+    }
+}
+
+/* ── 4. 고객 테이블 ↔ 카드 뷰 전환 ──────────────────────── */
+.crm-cust-table-wrap { display: block; }
+.crm-cust-card-list  { display: none; }
+
+@media (max-width: 767.98px) {
+    .crm-cust-table-wrap { display: none !important; }
+    .crm-cust-card-list  { display: block !important; }
+}
+
+.crm-cust-mobile-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 11px 14px;
+    border: none;
+    background: transparent;
+    border-bottom: 1px solid #f3f4f6;
+    text-align: left;
+    cursor: pointer;
+    transition: background .12s;
+}
+.crm-cust-mobile-card:last-child { border-bottom: none; }
+.crm-cust-mobile-card:active { background: #f6f8fb; }
+
+/* ── 5. 시술 아코디언 카테고리 헤더 ────────────────────── */
+.crm-svc-cat-hdr {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    user-select: none;
+    padding: 8px 12px;
+    margin: 0 -12px;
+    border-radius: 10px;
+    transition: background .15s;
+    color: #506070;
+    font-size: .82rem;
+    font-weight: 800;
+}
+.crm-svc-cat-hdr:hover { background: rgba(0,0,0,.04); }
+
+.crm-svc-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #e3e9f1;
+    color: #607086;
+    border-radius: 10px;
+    padding: 1px 7px;
+    font-size: .63rem;
+    font-weight: 700;
+}
+.crm-svc-arrow {
+    margin-left: auto;
+    font-size: .68rem;
+    transition: transform .22s ease;
+    color: #9ca3af;
+}
+.crm-service-section.crm-svc-collapsed .crm-svc-arrow {
+    transform: rotate(-90deg);
+}
+
+@media (max-width: 767.98px) {
+    .crm-service-section .crm-service-grid {
+        overflow: hidden;
+        max-height: 3000px;
+        transition: max-height .3s ease, opacity .2s;
+        opacity: 1;
+    }
+    .crm-service-section.crm-svc-collapsed .crm-service-grid {
+        max-height: 0 !important;
+        opacity: 0;
+    }
+
+    /* 예약 날짜 네비 full-width */
+    #crmTabBody .d-flex.align-items-center.gap-2.mb-3 {
+        flex-wrap: wrap;
+    }
+    #crmTabBody .btn-group.btn-group-sm {
+        width: 100%;
+    }
+    #crmTabBody .btn-group.btn-group-sm .btn {
+        flex: 1;
+    }
+
+    /* 메시지 서브탭 full-width */
+    #msgPills {
+        display: flex !important;
+        width: 100% !important;
+    }
+    #msgPills .nav-link {
+        flex: 1 !important;
+        text-align: center !important;
+        font-size: .72rem !important;
+        padding: 6px 4px !important;
+    }
+
+    /* 마케팅 서브탭 full-width */
+    #mkPills {
+        display: flex !important;
+        width: 100% !important;
+    }
+    #mkPills .nav-link {
+        flex: 1 !important;
+        text-align: center !important;
+        font-size: .72rem !important;
+        padding: 6px 4px !important;
+    }
+
+    /* 분석 기간 선택 full-width */
+    #crmAnRange { width: 100% !important; }
+}
