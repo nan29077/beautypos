@@ -15,7 +15,7 @@ from app.models.settlement import (
     MerchantSalesAssignment, FeePolicy, PayoutRequest, PayoutStatus,
 )
 from app.auth.dependencies import get_current_user, require_roles
-from app.services.settlement_service import compute_distribution
+from app.services.settlement_service import compute_distribution, get_fee_rates
 from app.services.visibility import commission_visible_for
 from app.schemas.schemas import PayoutRequestCreate
 
@@ -39,7 +39,8 @@ def _date_range(range_str: str):
 @router.get("/merchants")
 def list_my_merchants(db: Session = Depends(get_db), user: User = Depends(require_sales)):
     assigns = db.query(MerchantSalesAssignment).filter(
-        MerchantSalesAssignment.sales_manager_user_id == user.id
+        MerchantSalesAssignment.sales_manager_user_id == user.id,
+        MerchantSalesAssignment.is_active == True,  # noqa: E712
     ).all()
     results = []
     for a in assigns:
@@ -63,6 +64,7 @@ def merchant_stats(
     assign = db.query(MerchantSalesAssignment).filter(
         MerchantSalesAssignment.merchant_id == mid,
         MerchantSalesAssignment.sales_manager_user_id == user.id,
+        MerchantSalesAssignment.is_active == True,  # noqa: E712
     ).first()
     if not assign:
         raise HTTPException(status_code=403, detail="Not assigned to this merchant")
@@ -80,8 +82,8 @@ def merchant_stats(
 
     gross = sum(float(t.amount) for t in txns)
 
-    fp = db.query(FeePolicy).filter(FeePolicy.merchant_id == mid).first()
-    fee_rate = float(fp.pg_fee_rate) if fp else 0.033
+    # 기본 수수료율은 정산 로직(settlement_service)과 반드시 같아야 한다.
+    fee_rate, _ = get_fee_rates(db, mid)
     pg_fee = round(gross * fee_rate, 2)
     commission = round(gross * float(assign.commission_rate), 2)
 
@@ -113,6 +115,7 @@ def merchant_breakdown(
     assign = db.query(MerchantSalesAssignment).filter(
         MerchantSalesAssignment.merchant_id == mid,
         MerchantSalesAssignment.sales_manager_user_id == user.id,
+        MerchantSalesAssignment.is_active == True,  # noqa: E712
     ).first()
     if not assign and user.role != UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="Not assigned to this merchant")
@@ -177,7 +180,8 @@ def create_payout_request(req: PayoutRequestCreate, db: Session = Depends(get_db
 @router.get("/dashboard-stats")
 def sales_dashboard_stats(db: Session = Depends(get_db), user: User = Depends(require_sales)):
     assigns = db.query(MerchantSalesAssignment).filter(
-        MerchantSalesAssignment.sales_manager_user_id == user.id
+        MerchantSalesAssignment.sales_manager_user_id == user.id,
+        MerchantSalesAssignment.is_active == True,  # noqa: E712
     ).all()
     merchant_ids = [a.merchant_id for a in assigns]
 

@@ -13,6 +13,7 @@ from app.database import get_db
 from app.models.user import User, UserRole
 from app.models.merchant import Merchant
 from app.models.pg import PGProvider, MerchantPGConfig, PGConfigStatus
+from app.models.terminal import TerminalDevice
 from app.models.transaction import Transaction
 from app.models.settlement import (
     FeePolicy, MerchantSalesAssignment, Settlement, PayoutRequest, PayoutStatus,
@@ -189,6 +190,42 @@ def test_pg_config(mid: int, config_id: int = Query(...), db: Session = Depends(
 def list_pg_providers(db: Session = Depends(get_db), _=Depends(require_admin)):
     providers = db.query(PGProvider).all()
     return [{"id": p.id, "code": p.code, "name": p.name} for p in providers]
+
+
+# ─── Terminals ───────────────────────────────────────────────
+
+@router.get("/terminals")
+def list_terminals(
+    merchant_id: Optional[int] = None,
+    db: Session = Depends(get_db), _=Depends(require_admin),
+):
+    """단말기 목록. API 키는 해시로만 보관되므로 절대 반환하지 않는다."""
+    q = db.query(TerminalDevice)
+    if merchant_id:
+        q = q.filter(TerminalDevice.merchant_id == merchant_id)
+    terminals = q.order_by(TerminalDevice.id).all()
+    merchant_names = {m.id: m.name for m in db.query(Merchant).all()}
+
+    results = []
+    for t in terminals:
+        txn_count = db.query(func.count(Transaction.id)).filter(
+            Transaction.terminal_id == t.id,
+        ).scalar() or 0
+        last_txn = db.query(Transaction).filter(
+            Transaction.terminal_id == t.id,
+        ).order_by(Transaction.created_at.desc()).first()
+        results.append({
+            "id": t.id,
+            "merchant_id": t.merchant_id,
+            "merchant_name": merchant_names.get(t.merchant_id, f"가맹점#{t.merchant_id}"),
+            "terminal_serial": t.terminal_serial,
+            "memo": t.memo,
+            "is_active": t.is_active,
+            "transaction_count": int(txn_count),
+            "last_transaction_at": str(last_txn.created_at) if last_txn else None,
+            "created_at": str(t.created_at),
+        })
+    return results
 
 
 # ─── Transactions ────────────────────────────────────────────
@@ -767,8 +804,11 @@ def toggle_user_active(uid: int, db: Session = Depends(get_db), _=Depends(requir
 # ─── Landing Stats ──────────────────────────────────────────
 
 @router.get("/stats/landing")
-def landing_stats(db: Session = Depends(get_db)):
-    """Public stats for landing page + enhanced admin dashboard."""
+def landing_stats(db: Session = Depends(get_db), _=Depends(require_admin)):
+    """Aggregated stats for the admin dashboard home.
+
+    매출 총액과 최근 결제 내역이 포함되므로 최고관리자만 조회할 수 있다.
+    """
     total_merchants = db.query(func.count(Merchant.id)).scalar() or 0
     total_transactions = db.query(func.count(Transaction.id)).scalar() or 0
     total_ad_orders = db.query(func.count(AdOrder.id)).scalar() or 0
@@ -850,8 +890,10 @@ def list_settlements(
     if merchant_id:
         q = q.filter(Settlement.merchant_id == merchant_id)
     settlements = q.order_by(Settlement.created_at.desc()).all()
+    merchant_names = {m.id: m.name for m in db.query(Merchant).all()}
     return [{
         "id": s.id, "merchant_id": s.merchant_id,
+        "merchant_name": merchant_names.get(s.merchant_id, f"가맹점#{s.merchant_id}"),
         "period_start": str(s.period_start), "period_end": str(s.period_end),
         "gross_amount": float(s.gross_amount), "pg_fee_amount": float(s.pg_fee_amount),
         "net_amount": float(s.net_amount), "commission_amount": float(s.commission_amount),
@@ -878,8 +920,15 @@ def calculate_settlement(
         → 분배가능액 9,500원 (원장 ↔ 디자이너 share_rate로 분배)
     """
     from datetime import datetime as dt
+    merchant = db.query(Merchant).filter(Merchant.id == merchant_id).first()
+    if not merchant:
+        raise HTTPException(status_code=404, detail="가맹점을 찾을 수 없습니다")
+
     start = dt.fromisoformat(period_start)
     end = dt.fromisoformat(period_end)
+    # 종료일을 날짜만 받으면 00:00 이 되어 마지막 하루가 통째로 빠진다. 그날 끝까지 포함시킨다.
+    if end.hour == 0 and end.minute == 0 and end.second == 0:
+        end = end + timedelta(days=1) - timedelta(microseconds=1)
 
     txns = db.query(Transaction).filter(
         Transaction.merchant_id == merchant_id,
@@ -893,8 +942,10 @@ def calculate_settlement(
     fee_rate = float(fp.pg_fee_rate) if fp else 0.035  # 기본 3.5%
     pg_fee = round(gross * fee_rate, 2)
 
+    # 해제된 배정으로 커미션이 잡히지 않도록 활성 배정만 사용한다 (settlement_service 와 동일 기준).
     assign = db.query(MerchantSalesAssignment).filter(
-        MerchantSalesAssignment.merchant_id == merchant_id
+        MerchantSalesAssignment.merchant_id == merchant_id,
+        MerchantSalesAssignment.is_active == True,  # noqa: E712
     ).first()
     commission = round(gross * float(assign.commission_rate), 2) if assign else 0
     platform_amount = round(pg_fee - commission, 2)  # ADPAY 플랫폼 몫
@@ -912,6 +963,7 @@ def calculate_settlement(
     db.refresh(settlement)
     return {
         "id": settlement.id, "gross_amount": gross,
+        "merchant_name": merchant.name,
         "pg_fee_amount": pg_fee, "commission_amount": commission,
         "platform_amount": platform_amount,
         "net_amount": net, "transactions_count": len(txns),

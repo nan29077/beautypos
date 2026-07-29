@@ -8,7 +8,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
-from app.api.admin_routes import landing_stats
 from app.api.admin_routes import router as admin_router
 from app.api.auth_routes import router as auth_router
 from app.api.crm_routes import router as crm_router
@@ -67,8 +66,6 @@ app.include_router(owner_router)
 app.include_router(sales_router)
 app.include_router(designer_router)
 app.include_router(crm_router)
-
-app.get("/api/stats/landing", tags=["public"])(landing_stats)
 
 
 @app.get("/api/public/review/{token}")
