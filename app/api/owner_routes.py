@@ -25,7 +25,7 @@ from app.models.ad import (
     AdOrder, AdOrderType, AdOrderStatus,
     AdOrderBlogDetail, AdOrderBlogImage,
     AdOrderPlaceTrafficDetail,
-    AdPlaceProfile, AdCompetitor, AdMetric,
+    AdPlaceProfile, AdCompetitor, AdMetric, PlaceMetricSnapshot,
 )
 from app.models.receipt_review import ReceiptReviewConfig, ReceiptReview
 from app.models.affiliate_mall import AffiliateMall
@@ -38,6 +38,7 @@ from app.models.system_config import (
 from app.auth.dependencies import get_current_user, require_roles
 from app.services.settlement_service import compute_distribution
 from app.services.visibility import commission_visible_for
+from app.services import naver_place
 from app.schemas.schemas import (
     StaffCreate, StaffUpdate, DesignerCreate, DesignerUpdate,
     AdBlogOrderCreate, AdPlaceTrafficOrderCreate,
@@ -434,6 +435,74 @@ def owner_settlement_breakdown(
 
 # ─── Ad Analysis ────────────────────────────────────────────
 
+def _delta(today_value, yesterday_value):
+    """어제 대비 증감. 한쪽이라도 값이 없으면 None."""
+    if today_value is None or yesterday_value is None:
+        return None
+    return today_value - yesterday_value
+
+
+def _daily_change(db: Session, merchant_id: int, place_url: str) -> dict:
+    """오늘/어제 지표와 증감을 계산한다 (순위는 값이 작아질수록 상승)."""
+    today = datetime.utcnow().date()
+    yesterday = today - timedelta(days=1)
+    rows = {
+        m.date: m for m in db.query(AdMetric).filter(
+            AdMetric.merchant_id == merchant_id,
+            AdMetric.place_url == place_url,
+            AdMetric.date.in_([today, yesterday]),
+        ).all()
+    }
+    cur, prev = rows.get(today), rows.get(yesterday)
+    return {
+        "has_today": cur is not None,
+        "today": {
+            "date": str(today),
+            "blog_review_count": cur.blog_review_count if cur else None,
+            "visitor_review_count": cur.visitor_review_count if cur else None,
+            "place_rank": cur.place_rank if cur else None,
+        },
+        "yesterday": {
+            "date": str(yesterday),
+            "blog_review_count": prev.blog_review_count if prev else None,
+            "visitor_review_count": prev.visitor_review_count if prev else None,
+            "place_rank": prev.place_rank if prev else None,
+        },
+        "blog_delta": _delta(
+            cur.blog_review_count if cur else None,
+            prev.blog_review_count if prev else None,
+        ),
+        "visitor_delta": _delta(
+            cur.visitor_review_count if cur else None,
+            prev.visitor_review_count if prev else None,
+        ),
+        # 순위는 숫자가 줄어야 상승이므로 (어제 - 오늘) 로 계산해 양수를 '상승'으로 맞춘다.
+        "rank_delta": _delta(
+            prev.place_rank if prev else None,
+            cur.place_rank if cur else None,
+        ),
+    }
+
+
+def _collection_status(db: Session, merchant_id: int) -> dict:
+    """마지막 자동 수집 시각과 오늘 수집 여부."""
+    today = datetime.utcnow().date()
+    last = db.query(PlaceMetricSnapshot).filter(
+        PlaceMetricSnapshot.merchant_id == merchant_id,
+    ).order_by(PlaceMetricSnapshot.collected_at.desc()).first()
+    today_count = db.query(func.count(AdMetric.id)).filter(
+        AdMetric.merchant_id == merchant_id,
+        AdMetric.date == today,
+        AdMetric.source == "api",
+    ).scalar() or 0
+    return {
+        "last_collected_at": str(last.collected_at) if last and last.collected_at else None,
+        "last_keyword": last.keyword if last else None,
+        "has_today_data": today_count > 0,
+        "today_count": int(today_count),
+    }
+
+
 @router.get("/ad/analysis")
 def ad_analysis(
     range: str = Query("all", pattern="^(day|week|month|all)$"),
@@ -460,6 +529,7 @@ def ad_analysis(
             my_metrics.append({
                 "place_url": p.place_url, "nickname": p.nickname,
                 "analysis_keyword": p.analysis_keyword,
+                "daily_change": _daily_change(db, merchant.id, p.place_url),
                 "data": [{
                     "date": str(m.date), "blog_review_count": m.blog_review_count,
                     "visitor_review_count": m.visitor_review_count,
@@ -477,6 +547,7 @@ def ad_analysis(
         ).order_by(AdMetric.date.desc()).all()
         comp_metrics.append({
             "place_url": c.competitor_place_url, "memo": c.memo,
+            "daily_change": _daily_change(db, merchant.id, c.competitor_place_url),
             "data": [{
                 "date": str(m.date), "blog_review_count": m.blog_review_count,
                 "visitor_review_count": m.visitor_review_count,
@@ -492,6 +563,90 @@ def ad_analysis(
             "analysis_keyword": p.analysis_keyword,
         } for p in profiles],
         "competitor_list": [{"id": c.id, "place_url": c.competitor_place_url, "memo": c.memo} for c in competitors],
+        "collection_status": _collection_status(db, merchant.id),
+    }
+
+
+# ─── Naver Place 자동 수집 ───────────────────────────────────
+
+@router.post("/ad/fetch-now")
+async def ad_fetch_now(
+    force: bool = Query(False, description="오늘 수집분이 있어도 강제로 다시 조회"),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_owner),
+):
+    """네이버 플레이스 리뷰 수 / 검색 순위를 즉시 수집한다 (병렬 조회)."""
+    merchant = _get_owner_merchant(user, db)
+
+    # 강제 재수집 연타는 네이버 요청 한도를 소진시키므로 쿨다운을 둔다.
+    if force:
+        last = db.query(PlaceMetricSnapshot).filter(
+            PlaceMetricSnapshot.merchant_id == merchant.id,
+        ).order_by(PlaceMetricSnapshot.collected_at.desc()).first()
+        if last and last.collected_at:
+            waited = (datetime.utcnow() - last.collected_at).total_seconds()
+            cooldown = naver_place.FORCE_REFRESH_COOLDOWN_SECONDS
+            if waited < cooldown:
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"방금 수집했습니다. {int(cooldown - waited)}초 후에 다시 시도해주세요.",
+                )
+
+    try:
+        result = await naver_place.fetch_all_for_merchant(merchant.id, db=db, force=force)
+    except Exception as exc:  # noqa: BLE001 — 수집 실패가 500 으로 전파되지 않게 한다
+        raise HTTPException(status_code=502, detail=f"네이버 수집에 실패했습니다: {exc}") from exc
+
+    result["collection_status"] = _collection_status(db, merchant.id)
+    return result
+
+
+@router.get("/ad/analysis/history")
+def ad_analysis_history(
+    days: int = Query(30, ge=1, le=365),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_owner),
+):
+    """일별 히스토리(블로그/방문자 리뷰 수, 순위)를 대상별로 반환한다."""
+    merchant = _get_owner_merchant(user, db)
+    today = datetime.utcnow().date()
+    start = today - timedelta(days=days - 1)
+
+    profiles = db.query(AdPlaceProfile).filter(AdPlaceProfile.merchant_id == merchant.id).all()
+    competitors = db.query(AdCompetitor).filter(AdCompetitor.merchant_id == merchant.id).all()
+
+    targets = [
+        {"kind": "my", "label": p.nickname or p.place_url, "place_url": p.place_url}
+        for p in profiles if p.place_url
+    ] + [
+        {"kind": "competitor", "label": c.memo or c.competitor_place_url,
+         "place_url": c.competitor_place_url}
+        for c in competitors
+    ]
+
+    dates = [str(start + timedelta(days=i)) for i in range((today - start).days + 1)]
+    series = []
+    for target in targets:
+        rows = db.query(AdMetric).filter(
+            AdMetric.merchant_id == merchant.id,
+            AdMetric.place_url == target["place_url"],
+            AdMetric.date >= start,
+            AdMetric.date <= today,
+        ).order_by(AdMetric.date.asc()).all()
+        by_date = {str(r.date): r for r in rows}
+        series.append({
+            **target,
+            "blog": [by_date[d].blog_review_count if d in by_date else None for d in dates],
+            "visitor": [by_date[d].visitor_review_count if d in by_date else None for d in dates],
+            "rank": [by_date[d].place_rank if d in by_date else None for d in dates],
+            "daily_change": _daily_change(db, merchant.id, target["place_url"]),
+        })
+
+    return {
+        "days": days,
+        "dates": dates,
+        "series": series,
+        "collection_status": _collection_status(db, merchant.id),
     }
 
 

@@ -2874,11 +2874,17 @@ async function loadOwnerAnalysis(c, t) {
             <select class="form-select form-select-sm" style="width:110px" id="analysisRange" onchange="reloadAnalysis()">
                 <option value="all">전체</option><option value="month">1개월</option><option value="week">1주</option><option value="day">1일</option>
             </select>
+            <button class="btn btn-sm btn-primary" onclick="fetchAnalysisNow()" id="fetchNowBtn">
+                <i class="fas fa-rotate me-1"></i>지금 수집
+            </button>
             <button class="btn btn-sm btn-outline-primary" onclick="toggleManagePanel()">
                 <i class="fas fa-cog me-1"></i>관리
             </button>
         </div>
     </div>
+
+    <!-- 자동 수집 상태 -->
+    <div id="collectStatus" class="mb-3"></div>
 
     <!-- 관리 패널 (토글) -->
     <div id="managePanel" style="display:none" class="mb-3">
@@ -2914,10 +2920,137 @@ async function loadOwnerAnalysis(c, t) {
     <!-- 비교 요약 대시보드 -->
     <div id="analysisSummary"><div class="text-center py-5"><div class="spinner-border text-primary"></div><p class="text-muted mt-2">분석 데이터를 불러오는 중...</p></div></div>
 
+    <!-- 일별 트렌드 차트 -->
+    <div id="analysisTrend" class="mb-3"></div>
+
     <!-- 상세 데이터 영역 -->
     <div id="analysisDetail" class="mt-3"></div>`;
 
     reloadAnalysis();
+    loadAnalysisTrend();
+}
+
+// ─── 네이버 플레이스 자동 수집 ───────────────────────────────
+
+let analysisTrendCharts = [];
+
+function destroyAnalysisTrendCharts() {
+    analysisTrendCharts.forEach(ch => { try { ch.destroy(); } catch (e) {} });
+    analysisTrendCharts = [];
+}
+
+function renderCollectStatus(status) {
+    const box = document.getElementById('collectStatus');
+    if (!box || !status) return;
+    const hasToday = status.has_today_data;
+    const last = status.last_collected_at ? status.last_collected_at.replace('T', ' ').slice(0, 16) : null;
+    box.innerHTML = `<div class="d-flex align-items-center gap-2 flex-wrap small">
+        <span class="badge ${hasToday ? 'bg-success' : 'bg-secondary'}">
+            <i class="fas fa-${hasToday ? 'circle-check' : 'circle-minus'} me-1"></i>${hasToday ? '오늘 데이터 있음' : '오늘 데이터 없음'}
+        </span>
+        ${status.today_count ? `<span class="text-muted">오늘 ${status.today_count}건 수집</span>` : ''}
+        <span class="text-muted"><i class="fas fa-clock me-1"></i>마지막 수집: ${last ? escapeHtml(last) : '없음'}</span>
+        ${status.last_keyword ? `<span class="text-muted"><i class="fas fa-magnifying-glass me-1"></i>${escapeHtml(status.last_keyword)}</span>` : ''}
+    </div>`;
+}
+
+async function fetchAnalysisNow() {
+    const btn = document.getElementById('fetchNowBtn');
+    if (!btn) return;
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>수집중...';
+    const box = document.getElementById('collectStatus');
+    if (box) box.innerHTML = '<div class="small text-muted"><i class="fas fa-spinner fa-spin me-1"></i>네이버 플레이스에서 리뷰 수와 검색 순위를 조회하고 있습니다...</div>';
+
+    try {
+        const res = await apiPost('/api/owner/ad/fetch-now?force=true', {});
+        renderCollectStatus(res.collection_status);
+        const failed = (res.results || []).filter(r => !r.ok);
+        let msg = `수집 완료 — ${res.collected}건 저장 (${res.elapsed_seconds}초)`;
+        if (failed.length) msg += `\n실패 ${failed.length}건: ` + failed.map(f => `${f.label}(${f.error || '알 수 없음'})`).join(', ');
+        alert(msg);
+        await reloadAnalysis();
+        await loadAnalysisTrend();
+    } catch (e) {
+        if (box) box.innerHTML = `<div class="alert alert-danger py-2 mb-0 small"><i class="fas fa-exclamation-circle me-1"></i>${escapeHtml(e.message)}</div>`;
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = original;
+    }
+}
+
+async function loadAnalysisTrend(days) {
+    const box = document.getElementById('analysisTrend');
+    if (!box) return;
+    const period = days || parseInt(document.getElementById('trendDays')?.value || '30', 10);
+    try {
+        const data = await apiGet(`/api/owner/ad/analysis/history?days=${period}`);
+        renderCollectStatus(data.collection_status);
+
+        const series = (data.series || []).filter(s => (s.blog || []).some(v => v !== null) || (s.rank || []).some(v => v !== null));
+        if (series.length === 0) {
+            box.innerHTML = `<div class="card border-0 shadow-sm"><div class="card-body text-center text-muted py-4">
+                <i class="fas fa-chart-line fa-2x mb-2 d-block opacity-50"></i>
+                <p class="mb-1">일별 트렌드 데이터가 아직 없습니다</p>
+                <small>상단 <strong>지금 수집</strong> 버튼을 눌러 네이버 지표를 수집하세요</small>
+            </div></div>`;
+            destroyAnalysisTrendCharts();
+            return;
+        }
+
+        const labels = (data.dates || []).map(d => d.slice(5));
+        box.innerHTML = `<div class="card border-0 shadow-sm">
+            <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <h6 class="mb-0 fw-bold"><i class="fas fa-chart-line text-primary me-2"></i>일별 트렌드</h6>
+                <select class="form-select form-select-sm" style="width:110px" id="trendDays" onchange="loadAnalysisTrend()">
+                    <option value="7" ${period === 7 ? 'selected' : ''}>최근 7일</option>
+                    <option value="30" ${period === 30 ? 'selected' : ''}>최근 30일</option>
+                    <option value="90" ${period === 90 ? 'selected' : ''}>최근 90일</option>
+                </select>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-lg-4"><div class="small fw-bold text-muted mb-1">블로그 리뷰 수</div><canvas id="trendBlog" height="170"></canvas></div>
+                    <div class="col-lg-4"><div class="small fw-bold text-muted mb-1">방문자 리뷰 수</div><canvas id="trendVisitor" height="170"></canvas></div>
+                    <div class="col-lg-4"><div class="small fw-bold text-muted mb-1">플레이스 순위 (위쪽이 상위)</div><canvas id="trendRank" height="170"></canvas></div>
+                </div>
+            </div>
+        </div>`;
+
+        destroyAnalysisTrendCharts();
+        const palette = ['#6366f1', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#06b6d4', '#ec4899'];
+        const buildSets = key => series.map((s, i) => ({
+            label: s.label + (s.kind === 'my' ? ' (우리)' : ''),
+            data: s[key],
+            borderColor: palette[i % palette.length],
+            backgroundColor: palette[i % palette.length] + '22',
+            borderWidth: s.kind === 'my' ? 3 : 2,
+            borderDash: s.kind === 'my' ? [] : [5, 4],
+            tension: .3,
+            spanGaps: true,
+            pointRadius: 2,
+        }));
+        const baseOpts = {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } },
+            scales: { x: { ticks: { font: { size: 9 }, maxTicksLimit: 8 } }, y: { ticks: { font: { size: 9 } } } },
+        };
+
+        const bc = document.getElementById('trendBlog');
+        if (bc) analysisTrendCharts.push(new Chart(bc, { type: 'line', data: { labels, datasets: buildSets('blog') }, options: baseOpts }));
+        const vc = document.getElementById('trendVisitor');
+        if (vc) analysisTrendCharts.push(new Chart(vc, { type: 'line', data: { labels, datasets: buildSets('visitor') }, options: baseOpts }));
+        const rc = document.getElementById('trendRank');
+        if (rc) analysisTrendCharts.push(new Chart(rc, {
+            type: 'line',
+            data: { labels, datasets: buildSets('rank') },
+            options: { ...baseOpts, scales: { ...baseOpts.scales, y: { ...baseOpts.scales.y, reverse: true, ticks: { ...baseOpts.scales.y.ticks, precision: 0, callback: v => v + '위' } } } },
+        }));
+    } catch (e) {
+        box.innerHTML = `<div class="alert alert-warning py-2 mb-0 small"><i class="fas fa-exclamation-triangle me-1"></i>트렌드 로딩 실패: ${escapeHtml(e.message)}</div>`;
+    }
 }
 
 function toggleManagePanel() {
@@ -3003,6 +3136,29 @@ async function removeCompetitor(id) {
     } catch (e) { alert('삭제 실패: ' + e.message); }
 }
 
+// 어제 대비 증감 배지 (오늘/어제 데이터가 모두 있을 때만 표시)
+function dailyChangeRow(dc) {
+    if (!dc) return '';
+    if (!dc.has_today) {
+        return '<div class="small text-muted mt-2"><i class="fas fa-circle-minus me-1"></i>오늘 수집 데이터가 없습니다</div>';
+    }
+    const chip = (label, delta, reverse) => {
+        if (delta === null || delta === undefined) return `<span class="badge bg-light text-muted fw-normal">${label} -</span>`;
+        if (delta === 0) return `<span class="badge bg-light text-muted fw-normal">${label} 변동없음</span>`;
+        const up = delta > 0;
+        const good = reverse ? up : up;
+        const cls = good ? 'bg-success bg-opacity-10 text-success' : 'bg-danger bg-opacity-10 text-danger';
+        const arrow = up ? '↑' : '↓';
+        return `<span class="badge ${cls} fw-bold">${label} ${arrow}${Math.abs(delta)}</span>`;
+    };
+    return `<div class="d-flex gap-1 flex-wrap mt-2 align-items-center">
+        <small class="text-muted me-1">어제 대비</small>
+        ${chip('블로그', dc.blog_delta, false)}
+        ${chip('방문자', dc.visitor_delta, false)}
+        ${chip('순위', dc.rank_delta, true)}
+    </div>`;
+}
+
 function trendIcon(value, reverse) {
     // reverse: 순위의 경우 값이 양수면 순위 상승(좋음)
     if (value === 0 || value === null || value === undefined) return '<span class="text-muted">-</span>';
@@ -3021,6 +3177,13 @@ async function reloadAnalysis() {
         const comp = summary.comparison;
         const dataStatus = summary.data_status || {};
         let summaryHtml = '';
+
+        // place_url 기준 어제 대비 증감 조회용 맵
+        const changeByUrl = {};
+        [...(detail.my_places || []), ...(detail.competitors || [])].forEach(p => {
+            if (p.place_url) changeByUrl[p.place_url] = p.daily_change;
+        });
+        renderCollectStatus(detail.collection_status);
 
         if (dataStatus.target_count > 0) {
             const ready = dataStatus.ready_count || 0;
@@ -3161,6 +3324,7 @@ async function reloadAnalysis() {
                         <div class="col-3"><div class="bg-light rounded p-2"><div class="fw-bold text-warning">${m.latest_rank ? m.latest_rank + '위' : '-'}</div><small class="text-muted">순위</small> ${trendIcon(m.rank_trend, true)}</div></div>
                         <div class="col-3"><div class="bg-light rounded p-2"><div class="fw-bold text-info">${m.data_count}</div><small class="text-muted">데이터</small></div></div>
                     </div>`;
+                    detailHtml += dailyChangeRow(changeByUrl[place.place_url]);
                 } else {
                     detailHtml += `<p class="text-muted small mb-0">수집된 데이터가 없습니다</p>`;
                 }
@@ -3198,6 +3362,7 @@ async function reloadAnalysis() {
                         <div class="col-3"><div class="bg-light rounded p-2"><div class="fw-bold text-warning">${m.latest_rank ? m.latest_rank + '위' : '-'}</div><small class="text-muted">순위</small> ${trendIcon(m.rank_trend, true)}</div></div>
                         <div class="col-3"><div class="bg-light rounded p-2"><div class="fw-bold text-info">${m.data_count}</div><small class="text-muted">데이터</small></div></div>
                     </div>`;
+                    detailHtml += dailyChangeRow(changeByUrl[comp_item.place_url]);
                 } else {
                     detailHtml += `<p class="text-muted small mb-0">수집된 데이터가 없습니다</p>`;
                 }

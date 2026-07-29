@@ -6,7 +6,7 @@ from app.models.pg import PGProvider, MerchantPGConfig
 from app.models.transaction import Transaction
 from app.models.settlement import Settlement, FeePolicy, MerchantSalesAssignment, PayoutRequest
 from app.models.ad import (
-    AdPlaceProfile, AdCompetitor, AdMetric,
+    AdPlaceProfile, AdCompetitor, AdMetric, PlaceMetricSnapshot,
     AdOrder, AdOrderBlogDetail, AdOrderBlogImage,
     AdOrderPlaceTrafficDetail,
 )
@@ -25,7 +25,7 @@ __all__ = [
     "PGProvider", "MerchantPGConfig",
     "Transaction",
     "Settlement", "FeePolicy", "MerchantSalesAssignment", "PayoutRequest",
-    "AdPlaceProfile", "AdCompetitor", "AdMetric",
+    "AdPlaceProfile", "AdCompetitor", "AdMetric", "PlaceMetricSnapshot",
     "AdOrder", "AdOrderBlogDetail", "AdOrderBlogImage",
     "AdOrderPlaceTrafficDetail",
     "ReceiptReviewConfig", "ReceiptReview",
