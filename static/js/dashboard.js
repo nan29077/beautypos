@@ -3407,29 +3407,48 @@ async function loadOwnerAnalysis(c, t) {
     </div>
 
     <!-- 자동 수집 상태 -->
-    <div id="collectStatus" class="mb-3"></div>
+    <div id="collectStatus" class="mb-2"></div>
 
-    <!-- 자동 수집 안내 (현황 카드 바로 위) -->
+    <!-- 자동 수집 안내 -->
     <div class="analysis-notice mb-3">
         <span class="analysis-notice-icon">📅</span>
         <span>순위는 <strong>매일 오후 2시</strong>에 자동으로 업데이트됩니다.
-            지금 바로 확인하려면 <strong>‘광고 분석하기’</strong> 버튼을 눌러주세요.</span>
+            지금 바로 확인하려면 <strong>’광고 분석하기’</strong> 버튼을 눌러주세요.</span>
     </div>
 
-    <!-- 1) 오늘 우리 매장 현황 -->
+    <!-- 상단 요약 카드 — 항상 보임 -->
     <div id="analysisToday" class="mb-3"></div>
 
-    <!-- 2) 경쟁업체 비교 -->
-    <div id="analysisCompare" class="mb-3"></div>
+    <!-- 탭 네비게이션 -->
+    <div class="analysis-tab-wrap mb-3">
+        <nav class="analysis-tab-nav" role="tablist">
+            <button class="analysis-tab-btn active" onclick="switchAnalysisTab(‘compare’, this)">
+                <i class="fas fa-scale-balanced me-1"></i>경쟁 비교
+            </button>
+            <button class="analysis-tab-btn" onclick="switchAnalysisTab(‘trend’, this)">
+                <i class="fas fa-chart-line me-1"></i>추이 차트
+            </button>
+            <button class="analysis-tab-btn" onclick="switchAnalysisTab(‘detail’, this)">
+                <i class="fas fa-calendar-days me-1"></i>상세 기록
+            </button>
+        </nav>
+    </div>
 
-    <!-- 3) 순위 변화 -->
-    <div id="analysisTrend" class="mb-3"></div>
+    <!-- 탭 패널 -->
+    <div class="analysis-tab-content">
+        <div id="tab-compare" class="analysis-tab-pane">
+            <div id="analysisCompare"></div>
+        </div>
+        <div id="tab-trend" class="analysis-tab-pane" style="display:none">
+            <div id="analysisTrend"></div>
+        </div>
+        <div id="tab-detail" class="analysis-tab-pane" style="display:none">
+            <div id="analysisDetail"></div>
+        </div>
+    </div>
 
-    <!-- 4) 날짜별 상세 기록 -->
-    <div id="analysisDetail" class="mb-3"></div>
-
-    <!-- 5) 설정 패널 (하단, 토글) -->
-    <div id="managePanel" style="display:none" class="mb-3">
+    <!-- 설정 패널 (토글) -->
+    <div id="managePanel" style="display:none" class="mt-3 mb-3">
         <div class="card border-secondary border-opacity-25">
             <div class="card-header bg-light border-0">
                 <h6 class="mb-0 fw-bold"><i class="fas fa-gear text-secondary me-2"></i>광고 분석설정 — 우리 매장과 경쟁업체 등록</h6>
@@ -3466,8 +3485,8 @@ async function loadOwnerAnalysis(c, t) {
 
     <!-- 하단 액션 -->
     <div class="analysis-bottom-actions text-center mt-3">
-        <button class="btn btn-outline-primary me-2" onclick="navigate('owner-adorder-new')"><i class="fas fa-bullhorn me-1"></i>광고 주문하기</button>
-        <button class="btn btn-outline-secondary" onclick="navigate('owner-adorders')"><i class="fas fa-list me-1"></i>주문 내역 보기</button>
+        <button class="btn btn-outline-primary me-2" onclick="navigate(‘owner-adorder-new’)"><i class="fas fa-bullhorn me-1"></i>광고 주문하기</button>
+        <button class="btn btn-outline-secondary" onclick="navigate(‘owner-adorders’)"><i class="fas fa-list me-1"></i>주문 내역 보기</button>
     </div>
     </div>`;
 
@@ -3983,6 +4002,27 @@ function toggleManagePanel() {
         loadManageLists();
         // 설정 패널이 화면 아래에 있으므로 열 때 위치로 이동시켜 준다.
         try { panel.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) { panel.scrollIntoView(); }
+    }
+}
+
+function switchAnalysisTab(tabName, btnEl) {
+    document.querySelectorAll('.analysis-tab-btn').forEach(b => b.classList.remove('active'));
+    if (btnEl) btnEl.classList.add('active');
+    document.querySelectorAll('.analysis-tab-pane').forEach(p => { p.style.display = 'none'; });
+    const pane = document.getElementById('tab-' + tabName);
+    if (pane) pane.style.display = '';
+
+    // 숨겨진 상태에서 생성된 차트는 크기 0이므로 탭 진입 시 리사이즈
+    if (tabName === 'trend') {
+        requestAnimationFrame(() => {
+            ['rank', 'blog', 'visitor'].forEach(metric => {
+                if (!analysisTrendCharts[metric]) {
+                    renderTrendChart(metric);
+                } else {
+                    try { analysisTrendCharts[metric].resize(); } catch (e) {}
+                }
+            });
+        });
     }
 }
 
