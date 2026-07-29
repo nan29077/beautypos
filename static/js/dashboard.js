@@ -1990,7 +1990,7 @@ async function loadAdminMetricHistory() {
         const rows = await apiGet(`/api/admin/ad/metrics?merchant_id=${merchantId}&place_url=${encodeURIComponent(target.place_url)}`);
         history.innerHTML = rows.length ? `<div class="table-responsive"><table class="table table-sm align-middle mb-0">
             <thead><tr><th>날짜</th><th>키워드</th><th>블로그 리뷰</th><th>방문자 리뷰</th><th>순위</th></tr></thead>
-            <tbody>${rows.map(row => `<tr><td>${row.date}</td><td>${escapeHtml(row.search_keyword || '-')}</td><td>${row.blog_review_count}</td><td>${row.visitor_review_count}</td><td>${row.place_rank ? row.place_rank + '위' : '-'}</td></tr>`).join('')}</tbody>
+            <tbody>${rows.map(row => `<tr><td>${row.date}</td><td>${escapeHtml(row.search_keyword || '-')}</td><td>${row.blog_review_count}</td><td>${row.visitor_review_count}</td><td>${formatRank(row.place_rank)}</td></tr>`).join('')}</tbody>
         </table></div>` : '<div class="text-center text-muted py-3">아직 입력된 데이터가 없습니다.</div>';
         enhanceRoleMobilePage(history);
     } catch (e) {
@@ -3046,7 +3046,7 @@ async function loadAnalysisTrend(days) {
         if (rc) analysisTrendCharts.push(new Chart(rc, {
             type: 'line',
             data: { labels, datasets: buildSets('rank') },
-            options: { ...baseOpts, scales: { ...baseOpts.scales, y: { ...baseOpts.scales.y, reverse: true, ticks: { ...baseOpts.scales.y.ticks, precision: 0, callback: v => v + '위' } } } },
+            options: { ...baseOpts, scales: { ...baseOpts.scales, y: { ...baseOpts.scales.y, reverse: true, ticks: { ...baseOpts.scales.y.ticks, precision: 0, callback: v => v >= RANK_OUT_OF_RANGE ? '200+' : v + '위' } } } },
         }));
     } catch (e) {
         box.innerHTML = `<div class="alert alert-warning py-2 mb-0 small"><i class="fas fa-exclamation-triangle me-1"></i>트렌드 로딩 실패: ${escapeHtml(e.message)}</div>`;
@@ -3134,6 +3134,13 @@ async function removeCompetitor(id) {
         loadManageLists();
         reloadAnalysis();
     } catch (e) { alert('삭제 실패: ' + e.message); }
+}
+
+// 순위 표기 — 200위까지 수집하며, 그 밖이면 "200위 밖"으로 표시
+const RANK_OUT_OF_RANGE = 201;
+function formatRank(value) {
+    if (value === null || value === undefined || value === 0) return '-';
+    return value >= RANK_OUT_OF_RANGE ? '200위 밖' : value + '위';
 }
 
 // 어제 대비 증감 배지 (오늘/어제 데이터가 모두 있을 때만 표시)
@@ -3272,18 +3279,18 @@ async function reloadAnalysis() {
                         <h6 class="text-muted small text-uppercase mb-3">플레이스 순위</h6>
                         <div class="row">
                             <div class="col-6 border-end">
-                                <div class="fs-3 fw-bold text-primary">${comp.my_latest_rank ? comp.my_latest_rank + '위' : '-'}</div>
+                                <div class="fs-3 fw-bold text-primary">${formatRank(comp.my_latest_rank)}</div>
                                 <small class="text-muted">우리 매장</small>
                             </div>
                             <div class="col-6">
-                                <div class="fs-3 fw-bold text-danger">${comp.comp_latest_rank ? comp.comp_latest_rank + '위' : '-'}</div>
+                                <div class="fs-3 fw-bold text-danger">${formatRank(comp.comp_latest_rank)}</div>
                                 <small class="text-muted">경쟁업체</small>
                             </div>
                         </div>
                         ${comp.my_best_rank || comp.comp_best_rank ? `
                         <div class="mt-2 small text-muted">
-                            최고순위: <span class="text-primary fw-bold">${comp.my_best_rank ? comp.my_best_rank + '위' : '-'}</span> vs
-                            <span class="text-danger fw-bold">${comp.comp_best_rank ? comp.comp_best_rank + '위' : '-'}</span>
+                            최고순위: <span class="text-primary fw-bold">${formatRank(comp.my_best_rank)}</span> vs
+                            <span class="text-danger fw-bold">${formatRank(comp.comp_best_rank)}</span>
                         </div>` : ''}
                     </div>
                 </div>
@@ -3321,7 +3328,7 @@ async function reloadAnalysis() {
                     detailHtml += `<div class="row g-2 text-center">
                         <div class="col-3"><div class="bg-light rounded p-2"><div class="fw-bold text-primary">${m.latest_blog_reviews}</div><small class="text-muted">블로그</small> ${trendIcon(m.blog_trend, false)}</div></div>
                         <div class="col-3"><div class="bg-light rounded p-2"><div class="fw-bold text-success">${m.latest_visitor_reviews}</div><small class="text-muted">방문자</small> ${trendIcon(m.visitor_trend, false)}</div></div>
-                        <div class="col-3"><div class="bg-light rounded p-2"><div class="fw-bold text-warning">${m.latest_rank ? m.latest_rank + '위' : '-'}</div><small class="text-muted">순위</small> ${trendIcon(m.rank_trend, true)}</div></div>
+                        <div class="col-3"><div class="bg-light rounded p-2"><div class="fw-bold text-warning">${formatRank(m.latest_rank)}</div><small class="text-muted">순위</small> ${trendIcon(m.rank_trend, true)}</div></div>
                         <div class="col-3"><div class="bg-light rounded p-2"><div class="fw-bold text-info">${m.data_count}</div><small class="text-muted">데이터</small></div></div>
                     </div>`;
                     detailHtml += dailyChangeRow(changeByUrl[place.place_url]);
@@ -3359,7 +3366,7 @@ async function reloadAnalysis() {
                     detailHtml += `<div class="row g-2 text-center">
                         <div class="col-3"><div class="bg-light rounded p-2"><div class="fw-bold text-primary">${m.latest_blog_reviews}</div><small class="text-muted">블로그</small> ${trendIcon(m.blog_trend, false)}</div></div>
                         <div class="col-3"><div class="bg-light rounded p-2"><div class="fw-bold text-success">${m.latest_visitor_reviews}</div><small class="text-muted">방문자</small> ${trendIcon(m.visitor_trend, false)}</div></div>
-                        <div class="col-3"><div class="bg-light rounded p-2"><div class="fw-bold text-warning">${m.latest_rank ? m.latest_rank + '위' : '-'}</div><small class="text-muted">순위</small> ${trendIcon(m.rank_trend, true)}</div></div>
+                        <div class="col-3"><div class="bg-light rounded p-2"><div class="fw-bold text-warning">${formatRank(m.latest_rank)}</div><small class="text-muted">순위</small> ${trendIcon(m.rank_trend, true)}</div></div>
                         <div class="col-3"><div class="bg-light rounded p-2"><div class="fw-bold text-info">${m.data_count}</div><small class="text-muted">데이터</small></div></div>
                     </div>`;
                     detailHtml += dailyChangeRow(changeByUrl[comp_item.place_url]);
@@ -3388,7 +3395,7 @@ async function reloadAnalysis() {
                 detailHtml += `<div class="mb-3"><strong class="small">${p.nickname||p.place_url}</strong>`;
                 if (p.data.length > 0) {
                     detailHtml += `<div class="table-responsive"><table class="table table-sm table-hover mt-1 mb-0"><thead class="table-light"><tr><th>날짜</th><th>블로그리뷰</th><th>방문자리뷰</th><th>순위</th></tr></thead><tbody>`;
-                    p.data.forEach(d => { detailHtml += `<tr><td>${d.date}</td><td>${d.blog_review_count}</td><td>${d.visitor_review_count}</td><td>${d.place_rank||'-'}</td></tr>`; });
+                    p.data.forEach(d => { detailHtml += `<tr><td>${d.date}</td><td>${d.blog_review_count}</td><td>${d.visitor_review_count}</td><td>${formatRank(d.place_rank)}</td></tr>`; });
                     detailHtml += '</tbody></table></div>';
                 } else { detailHtml += '<p class="text-muted small">데이터 없음</p>'; }
                 detailHtml += '</div>';
@@ -3400,7 +3407,7 @@ async function reloadAnalysis() {
                 detailHtml += `<div class="mb-3"><strong class="small">${p.memo||p.place_url}</strong>`;
                 if (p.data.length > 0) {
                     detailHtml += `<div class="table-responsive"><table class="table table-sm table-hover mt-1 mb-0"><thead class="table-light"><tr><th>날짜</th><th>블로그리뷰</th><th>방문자리뷰</th><th>순위</th></tr></thead><tbody>`;
-                    p.data.forEach(d => { detailHtml += `<tr><td>${d.date}</td><td>${d.blog_review_count}</td><td>${d.visitor_review_count}</td><td>${d.place_rank||'-'}</td></tr>`; });
+                    p.data.forEach(d => { detailHtml += `<tr><td>${d.date}</td><td>${d.blog_review_count}</td><td>${d.visitor_review_count}</td><td>${formatRank(d.place_rank)}</td></tr>`; });
                     detailHtml += '</tbody></table></div>';
                 } else { detailHtml += '<p class="text-muted small">데이터 없음</p>'; }
                 detailHtml += '</div>';

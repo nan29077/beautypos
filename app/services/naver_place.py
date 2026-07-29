@@ -32,7 +32,12 @@ PC_UA = (
 )
 
 REQUEST_TIMEOUT = 8.0
-MAX_RANK_SCAN = 50  # pcmap 목록 1페이지 기준 최대 순위
+
+# 순위 수집 범위. pcmap SSR 은 1회 최대 100건(display 상한)이므로
+# 100건 단위로 페이지네이션해 200위까지 확인한다.
+MAX_RANK_SCAN = 200
+RANK_PAGE_SIZE = 100
+RANK_OUT_OF_RANGE = MAX_RANK_SCAN + 1  # 200위 밖(=201)을 뜻하는 센티넬
 
 # 네이버는 동시 요청이 많으면 429(Too Many Requests)를 반환한다.
 # 병렬 처리로 속도를 확보하되 차단되지 않도록 동시 요청 수를 제한하고 재시도한다.
@@ -45,7 +50,11 @@ FORCE_REFRESH_COOLDOWN_SECONDS = 60
 
 PLACE_DETAIL_URL = "https://m.place.naver.com/place/{place_id}/home"
 PCMAP_LIST_URL = "https://pcmap.place.naver.com/place/list"
+PCMAP_GRAPHQL_URL = "https://pcmap-api.place.naver.com/place/graphql"
 MOBILE_SEARCH_URL = "https://m.search.naver.com/search.naver"
+
+# GraphQL 인라인 리터럴로 넣을 때 따옴표를 붙이면 안 되는 enum 키
+_GQL_ENUM_KEYS = {"sortingOrder"}
 
 _RE_VISITOR = re.compile(r'"visitorReviewsTotal"\s*:\s*(\d+)')
 _RE_BLOG = re.compile(r'"cafeBlogReviewsTotal"\s*:\s*(\d+)')
@@ -292,43 +301,175 @@ def _find_ref_lists(node: Any, depth: int = 0) -> List[List[Any]]:
     return found
 
 
-def _parse_pcmap_ranking(html: str) -> List[Dict[str, Any]]:
-    """pcmap 목록 페이지에서 광고를 제외한 순위 목록을 만든다.
+def _find_items_path(node: Any, depth: int = 0, path: tuple = ()) -> Optional[tuple]:
+    """`items` 목록이 놓인 경로를 찾는다 (음식점/카페는 `businesses` 아래에 있다)."""
+    if depth > 3 or not isinstance(node, dict):
+        return None
+    items = node.get("items")
+    if isinstance(items, list) and items and all(
+        isinstance(i, dict) and "__ref" in i for i in items
+    ):
+        return path
+    for key, value in node.items():
+        if key != "items" and isinstance(value, dict):
+            found = _find_items_path(value, depth + 1, path + (key,))
+            if found is not None:
+                return found
+    return None
 
-    Apollo 상태에서 광고는 `adBusinesses` 키로 분리되어 있으므로 해당 키를 건너뛰고,
-    남은 목록 중 가장 긴 것을 순위 목록으로 사용한다.
-    '새로오픈'(newOpening) 항목은 순위 계산에서 제외한다.
+
+def _gql_literal(value: Any, key: Optional[str] = None) -> str:
+    """JSON 값을 GraphQL 인라인 리터럴로 변환한다.
+
+    변수 선언을 쓰지 않으므로 업종별 input 타입명(BeautyListInput 등)을 알 필요가 없다.
     """
-    state = _extract_apollo_state(html)
-    root = state.get("ROOT_QUERY") or {}
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return json.dumps(value)
+    if isinstance(value, str):
+        # enum 값은 따옴표 없이 그대로 넣어야 한다.
+        return value if key in _GQL_ENUM_KEYS else json.dumps(value, ensure_ascii=False)
+    if isinstance(value, list):
+        return "[" + ",".join(_gql_literal(v) for v in value) + "]"
+    if isinstance(value, dict):
+        return "{" + ",".join(f"{k}:{_gql_literal(v, k)}" for k, v in value.items()) + "}"
+    return "null"
 
-    best_items: List[Any] = []
-    for key, value in root.items():
-        if key.startswith("adBusinesses") or not isinstance(value, dict):
-            continue  # 광고 목록은 순위에서 제외
-        for candidate in _find_ref_lists(value):
-            if len(candidate) > len(best_items):
-                best_items = candidate
 
-    ranking: List[Dict[str, Any]] = []
-    for item in best_items:
-        ref = item.get("__ref") if isinstance(item, dict) else item
-        entry = state.get(ref) if isinstance(ref, str) else None
-        if not isinstance(entry, dict):
-            continue
-        if entry.get("newOpening"):
+def _entries_to_ranking(entries: List[Dict[str, Any]], ranking: List[Dict[str, Any]]) -> None:
+    """조회 결과를 순위 목록에 이어붙인다 (새로오픈 제외, 중복 제거)."""
+    seen = {r["place_id"] for r in ranking}
+    for entry in entries:
+        if not isinstance(entry, dict) or entry.get("newOpening"):
             continue  # 새로오픈 배지 노출 업체는 순위에서 제외
         place_id = str(entry.get("id") or "").strip()
-        if not place_id:
-            continue
+        if not place_id or place_id in seen:
+            continue  # 페이지 경계에서 중복이 생길 수 있어 걸러낸다
+        seen.add(place_id)
         ranking.append({
             "place_id": place_id,
             "name": entry.get("name"),
             "rank": len(ranking) + 1,
         })
         if len(ranking) >= MAX_RANK_SCAN:
-            break
-    return ranking
+            return
+
+
+def _next_page_start(raw_consumed: int) -> int:
+    """네이버는 새로오픈 포함 '원본 개수' 기준으로 페이징하므로 그 값으로 start를 계산한다."""
+    return raw_consumed + 1
+
+
+def _parse_pcmap_page(html: str) -> Dict[str, Any]:
+    """pcmap 1페이지에서 순위 목록과 다음 페이지 조회용 컨텍스트를 함께 뽑아낸다.
+
+    Apollo 상태에서 광고는 `adBusinesses` 키로 분리되어 있으므로 해당 키를 건너뛰고,
+    남은 목록 중 가장 긴 것을 순위 목록으로 사용한다.
+    """
+    state = _extract_apollo_state(html)
+    root = state.get("ROOT_QUERY") or {}
+
+    best_key: Optional[str] = None
+    best_value: Optional[Dict[str, Any]] = None
+    best_items: List[Any] = []
+    for key, value in root.items():
+        if key.startswith("adBusinesses") or not isinstance(value, dict):
+            continue  # 광고 목록은 순위에서 제외
+        for candidate in _find_ref_lists(value):
+            if len(candidate) > len(best_items):
+                best_key, best_value, best_items = key, value, candidate
+
+    ranking: List[Dict[str, Any]] = []
+    entries = []
+    for item in best_items:
+        ref = item.get("__ref") if isinstance(item, dict) else item
+        entry = state.get(ref) if isinstance(ref, str) else None
+        if isinstance(entry, dict):
+            entries.append(entry)
+    _entries_to_ranking(entries, ranking)
+    raw_consumed = len(entries)
+
+    # 다음 페이지 요청에 필요한 정보(필드명 / input / items 경로)를 그대로 재사용한다.
+    context: Optional[Dict[str, Any]] = None
+    if best_key and "(" in best_key:
+        field = best_key.split("(")[0]
+        try:
+            args = json.loads(best_key[len(field) + 1:-1])
+            gql_input = args.get("input")
+            if isinstance(gql_input, dict):
+                context = {
+                    "field": field,
+                    "input": gql_input,
+                    "path": _find_items_path(best_value) or (),
+                }
+        except (json.JSONDecodeError, ValueError):
+            context = None
+
+    return {"ranking": ranking, "context": context, "raw_consumed": raw_consumed}
+
+
+def _parse_pcmap_ranking(html: str) -> List[Dict[str, Any]]:
+    """pcmap 목록 페이지에서 광고·새로오픈을 제외한 순위 목록을 만든다."""
+    return _parse_pcmap_page(html)["ranking"]
+
+
+async def _fetch_rank_page(
+    client: httpx.AsyncClient,
+    context: Dict[str, Any],
+    start: int,
+    semaphore: Optional[asyncio.Semaphore] = None,
+) -> List[Dict[str, Any]]:
+    """pcmap GraphQL 로 2페이지 이후(101위~)를 조회한다. 실패하면 빈 목록."""
+    gql_input = dict(context["input"])
+    gql_input["start"] = start
+    gql_input["display"] = RANK_PAGE_SIZE
+
+    selection = "items { id name newOpening }"
+    for part in reversed(context["path"]):
+        selection = "%s { %s }" % (part, selection)
+    query = "query { result: %s(input: %s) { %s } }" % (
+        context["field"], _gql_literal(gql_input), selection,
+    )
+
+    headers = {
+        **_headers(mobile=False, referer="https://pcmap.place.naver.com/"),
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "Origin": "https://pcmap.place.naver.com",
+    }
+    try:
+        if semaphore is not None:
+            async with semaphore:
+                response = await client.post(PCMAP_GRAPHQL_URL, json={"query": query}, headers=headers)
+        else:
+            response = await client.post(PCMAP_GRAPHQL_URL, json={"query": query}, headers=headers)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("순위 다음 페이지 조회 실패 (start=%s): %s", start, exc)
+        return []
+
+    if response.status_code != 200:
+        logger.warning("순위 다음 페이지 조회 실패 (start=%s): HTTP %s", start, response.status_code)
+        return []
+    try:
+        payload = response.json()
+    except ValueError:
+        return []
+    if payload.get("errors"):
+        logger.warning("순위 다음 페이지 GraphQL 오류 (start=%s): %s", start, payload["errors"][:1])
+        return []
+
+    node = (payload.get("data") or {}).get("result")
+    for part in context["path"]:
+        if not isinstance(node, dict):
+            return []
+        node = node.get(part)
+    if not isinstance(node, dict):
+        return []
+    items = node.get("items")
+    return items if isinstance(items, list) else []
 
 
 def _parse_mobile_search_ranking(html: str) -> List[Dict[str, Any]]:
@@ -371,8 +512,13 @@ async def fetch_rank_list(
     keyword: str,
     client: Optional[httpx.AsyncClient] = None,
     semaphore: Optional[asyncio.Semaphore] = None,
+    wanted_ids: Optional[set] = None,
 ) -> List[Dict[str, Any]]:
-    """키워드 1건에 대한 순위 목록(광고·새로오픈 제외)을 조회한다."""
+    """키워드 1건에 대한 순위 목록(광고·새로오픈 제외)을 최대 200위까지 조회한다.
+
+    `wanted_ids` 를 주면 찾는 대상이 모두 나온 시점에 조회를 멈춘다.
+    대부분의 매장이 100위 안에 있으므로 보통 1회 요청으로 끝나 속도가 유지된다.
+    """
     keyword = (keyword or "").strip()
     if not keyword:
         return []
@@ -383,14 +529,35 @@ async def fetch_rank_list(
         response = await _get(
             client,
             PCMAP_LIST_URL,
-            params={"query": keyword},
+            # SSR 은 display 최대 100건까지 허용한다.
+            params={"query": keyword, "display": RANK_PAGE_SIZE},
             headers=_headers(mobile=False, referer="https://pcmap.place.naver.com/"),
             semaphore=semaphore,
         )
         if response is not None and response.status_code == 200:
-            ranking = _parse_pcmap_ranking(response.text)
+            parsed = _parse_pcmap_page(response.text)
+            ranking = parsed["ranking"]
+            context = parsed["context"]
+            raw_consumed = parsed["raw_consumed"]
             if ranking:
-                return ranking
+                # 찾는 대상이 1페이지에 모두 있으면 추가 요청 없이 종료한다.
+                while (
+                    context
+                    and len(ranking) < MAX_RANK_SCAN
+                    and not _all_found(ranking, wanted_ids)
+                ):
+                    entries = await _fetch_rank_page(
+                        client, context,
+                        start=_next_page_start(raw_consumed), semaphore=semaphore,
+                    )
+                    if not entries:
+                        break
+                    raw_consumed += len(entries)
+                    before = len(ranking)
+                    _entries_to_ranking(entries, ranking)
+                    if len(ranking) == before:
+                        break  # 더 이상 새로운 항목이 없으면 중단
+                return ranking[:MAX_RANK_SCAN]
         logger.warning("pcmap 순위 조회 실패 (%s), 모바일 검색으로 폴백합니다", keyword)
 
         # 폴백: 모바일 검색 결과 HTML 파싱
@@ -413,20 +580,45 @@ async def fetch_rank_list(
             await client.aclose()
 
 
+def _all_found(ranking: List[Dict[str, Any]], wanted_ids: Optional[set]) -> bool:
+    """찾는 대상이 모두 순위 목록에 나왔는지 확인한다."""
+    if not wanted_ids:
+        return False  # 대상 지정이 없으면 200위까지 모두 수집
+    found = {r["place_id"] for r in ranking}
+    return all(str(pid) in found for pid in wanted_ids)
+
+
+def _rank_of(ranking: List[Dict[str, Any]], place_id: str) -> Optional[int]:
+    """순위 목록에서 place_id 의 순위를 찾는다.
+
+    - 목록에 있으면 해당 순위
+    - 목록은 받았지만 없으면 RANK_OUT_OF_RANGE(201) = '200위 밖'
+    - 목록 자체를 못 받았으면 None = '확인 불가'
+    """
+    if not ranking:
+        return None
+    for entry in ranking:
+        if entry["place_id"] == str(place_id):
+            return entry["rank"]
+    return RANK_OUT_OF_RANGE
+
+
 async def fetch_place_rank(
     keyword: str,
     place_id: str,
     client: Optional[httpx.AsyncClient] = None,
     semaphore: Optional[asyncio.Semaphore] = None,
 ) -> Optional[int]:
-    """검색 순위를 반환한다. 광고·새로오픈은 제외하며, 못 찾으면 None."""
+    """검색 순위를 반환한다 (광고·새로오픈 제외, 최대 200위).
+
+    200위 안에 없으면 RANK_OUT_OF_RANGE(201), 조회 자체가 실패하면 None.
+    """
     if not place_id:
         return None
-    ranking = await fetch_rank_list(keyword, client=client, semaphore=semaphore)
-    for entry in ranking:
-        if entry["place_id"] == str(place_id):
-            return entry["rank"]
-    return None
+    ranking = await fetch_rank_list(
+        keyword, client=client, semaphore=semaphore, wanted_ids={str(place_id)},
+    )
+    return _rank_of(ranking, place_id)
 
 
 # ─── 가맹점 단위 병렬 수집 ───────────────────────────────────
@@ -455,8 +647,18 @@ async def collect_targets(targets: List[Dict[str, Any]]) -> List[Dict[str, Any]]
         })
         review_ids = [t["place_id"] for t in resolved if t.get("place_id")]
 
+        # 키워드별로 '찾아야 할 place_id' 를 넘겨, 모두 찾으면 다음 페이지를 조회하지 않는다.
+        wanted_by_keyword = {k: set() for k in keywords}
+        for t in resolved:
+            kw = (t.get("keyword") or "").strip()
+            if kw and t.get("place_id"):
+                wanted_by_keyword[kw].add(str(t["place_id"]))
+
         rank_task = asyncio.gather(*[
-            fetch_rank_list(k, client=client, semaphore=semaphore) for k in keywords
+            fetch_rank_list(
+                k, client=client, semaphore=semaphore, wanted_ids=wanted_by_keyword.get(k),
+            )
+            for k in keywords
         ])
         review_task = asyncio.gather(*[
             fetch_place_reviews(pid, client=client, semaphore=semaphore) for pid in review_ids
@@ -474,12 +676,16 @@ async def collect_targets(targets: List[Dict[str, Any]]) -> List[Dict[str, Any]]
         keyword = (target.get("keyword") or "").strip() or None
         reviews = reviews_by_id.get(place_id) if place_id else None
 
+        # 200위 안에 없으면 RANK_OUT_OF_RANGE(201), 조회 실패면 None
         rank = None
         if place_id and keyword:
-            for entry in rank_by_keyword.get(keyword, []):
-                if entry["place_id"] == place_id:
-                    rank = entry["rank"]
-                    break
+            rank = _rank_of(rank_by_keyword.get(keyword, []), place_id)
+
+        # 리뷰 조회에 실패한 채로 순위 목록에도 없다면 존재하지 않는 플레이스일 가능성이 높다.
+        # 이 경우를 '200위 밖'으로 단정하지 않고 수집 실패로 남긴다.
+        if reviews is None and rank == RANK_OUT_OF_RANGE:
+            rank = None
+        found = bool(reviews) or rank is not None
 
         collected.append({
             **target,
@@ -489,8 +695,8 @@ async def collect_targets(targets: List[Dict[str, Any]]) -> List[Dict[str, Any]]
             "visitor_count": reviews["visitor_count"] if reviews else None,
             "place_name": reviews.get("name") if reviews else None,
             "rank": rank,
-            "ok": bool(reviews) or rank is not None,
-            "error": None if (reviews or rank is not None) else _failure_reason(place_id, keyword),
+            "ok": found,
+            "error": None if found else _failure_reason(place_id, keyword),
         })
     return collected
 
