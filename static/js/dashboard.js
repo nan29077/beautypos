@@ -2939,6 +2939,30 @@ function destroyAnalysisTrendCharts() {
     analysisTrendCharts = [];
 }
 
+// 트렌드 지표 탭 전환 (한 번에 차트 1개만 표시해 스크롤 길이를 억제)
+function switchTrendMetric(metric) {
+    document.querySelectorAll('#analysisTrend .trend-pane').forEach(pane => {
+        pane.style.display = pane.dataset.metric === metric ? '' : 'none';
+    });
+    document.querySelectorAll('#trendMetricTabs button').forEach(btn => {
+        const active = btn.dataset.metric === metric;
+        btn.classList.toggle('btn-primary', active);
+        btn.classList.toggle('btn-outline-primary', !active);
+    });
+    // 숨겨진 상태에서 그려진 차트는 크기가 어긋날 수 있어 다시 맞춘다.
+    analysisTrendCharts.forEach(ch => { try { ch.resize(); } catch (e) {} });
+}
+
+// 광고 분석 하단 탭 전환
+function switchAnalysisTab(name) {
+    document.querySelectorAll('#analysisTabPanes .analysis-pane').forEach(pane => {
+        pane.style.display = pane.dataset.pane === name ? '' : 'none';
+    });
+    document.querySelectorAll('#analysisTabs .nav-link').forEach(link => {
+        link.classList.toggle('active', link.dataset.pane === name);
+    });
+}
+
 function renderCollectStatus(status) {
     const box = document.getElementById('collectStatus');
     if (!box || !status) return;
@@ -3000,25 +3024,33 @@ async function loadAnalysisTrend(days) {
         }
 
         const labels = (data.dates || []).map(d => d.slice(5));
+        // 지표별 탭으로 한 번에 하나의 차트만 보여 페이지가 길어지지 않도록 한다.
         box.innerHTML = `<div class="card border-0 shadow-sm">
             <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <h6 class="mb-0 fw-bold"><i class="fas fa-chart-line text-primary me-2"></i>일별 트렌드</h6>
-                <select class="form-select form-select-sm" style="width:110px" id="trendDays" onchange="loadAnalysisTrend()">
-                    <option value="7" ${period === 7 ? 'selected' : ''}>최근 7일</option>
-                    <option value="30" ${period === 30 ? 'selected' : ''}>최근 30일</option>
-                    <option value="90" ${period === 90 ? 'selected' : ''}>최근 90일</option>
-                </select>
-            </div>
-            <div class="card-body">
-                <div class="row g-3">
-                    <div class="col-lg-4"><div class="small fw-bold text-muted mb-1">블로그 리뷰 수</div><canvas id="trendBlog" height="170"></canvas></div>
-                    <div class="col-lg-4"><div class="small fw-bold text-muted mb-1">방문자 리뷰 수</div><canvas id="trendVisitor" height="170"></canvas></div>
-                    <div class="col-lg-4"><div class="small fw-bold text-muted mb-1">플레이스 순위 (위쪽이 상위)</div><canvas id="trendRank" height="170"></canvas></div>
+                <div class="d-flex gap-2 align-items-center">
+                    <div class="btn-group btn-group-sm" role="group" id="trendMetricTabs">
+                        <button type="button" class="btn btn-primary" data-metric="blog" onclick="switchTrendMetric('blog')">블로그</button>
+                        <button type="button" class="btn btn-outline-primary" data-metric="visitor" onclick="switchTrendMetric('visitor')">방문자</button>
+                        <button type="button" class="btn btn-outline-primary" data-metric="rank" onclick="switchTrendMetric('rank')">순위</button>
+                    </div>
+                    <select class="form-select form-select-sm" style="width:110px" id="trendDays" onchange="loadAnalysisTrend()">
+                        <option value="7" ${period === 7 ? 'selected' : ''}>최근 7일</option>
+                        <option value="30" ${period === 30 ? 'selected' : ''}>최근 30일</option>
+                        <option value="90" ${period === 90 ? 'selected' : ''}>최근 90일</option>
+                    </select>
                 </div>
+            </div>
+            <div class="card-body pt-2">
+                <div class="trend-pane" data-metric="blog"><div class="small fw-bold text-muted mb-1">블로그 리뷰 수</div><div style="height:240px"><canvas id="trendBlog"></canvas></div></div>
+                <div class="trend-pane" data-metric="visitor" style="display:none"><div class="small fw-bold text-muted mb-1">방문자 리뷰 수</div><div style="height:240px"><canvas id="trendVisitor"></canvas></div></div>
+                <div class="trend-pane" data-metric="rank" style="display:none"><div class="small fw-bold text-muted mb-1">플레이스 순위 (위쪽이 상위)</div><div style="height:240px"><canvas id="trendRank"></canvas></div></div>
             </div>
         </div>`;
 
         destroyAnalysisTrendCharts();
+        // 숨겨진 컨테이너에서 생성하면 크기가 0이 되므로 잠시 모두 보이게 한 뒤 생성한다.
+        document.querySelectorAll('#analysisTrend .trend-pane').forEach(p => { p.style.display = ''; });
         const palette = ['#6366f1', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#06b6d4', '#ec4899'];
         const buildSets = key => series.map((s, i) => ({
             label: s.label + (s.kind === 'my' ? ' (우리)' : ''),
@@ -3048,6 +3080,7 @@ async function loadAnalysisTrend(days) {
             data: { labels, datasets: buildSets('rank') },
             options: { ...baseOpts, scales: { ...baseOpts.scales, y: { ...baseOpts.scales.y, reverse: true, ticks: { ...baseOpts.scales.y.ticks, precision: 0, callback: v => v >= RANK_OUT_OF_RANGE ? '200+' : v + '위' } } } },
         }));
+        switchTrendMetric('blog');
     } catch (e) {
         box.innerHTML = `<div class="alert alert-warning py-2 mb-0 small"><i class="fas fa-exclamation-triangle me-1"></i>트렌드 로딩 실패: ${escapeHtml(e.message)}</div>`;
     }
@@ -3074,15 +3107,20 @@ async function loadManageLists() {
         }
         document.getElementById('profileList').innerHTML = profileHtml;
 
-        // 경쟁업체 목록
-        let compHtml = '';
-        if (data.competitor_list && data.competitor_list.length > 0) {
-            compHtml = data.competitor_list.map(c => `<div class="analysis-target-chip competitor">
+        // 경쟁업체 목록 (최대 등록 개수 안내 포함)
+        const compList = data.competitor_list || [];
+        const maxComp = MAX_COMPETITORS;
+        let compHtml = `<div class="small text-muted mb-1">등록 ${compList.length} / ${maxComp}개</div>`;
+        if (compList.length > 0) {
+            compHtml += compList.map(c => `<div class="analysis-target-chip competitor">
                 <span><strong>${escapeHtml(c.memo||c.place_url)}</strong><small>${escapeHtml(c.place_url)}</small></span>
                 <button type="button" onclick="removeCompetitor(${c.id})" aria-label="경쟁업체 삭제"><i class="fas fa-times"></i></button>
             </div>`).join('');
         } else {
-            compHtml = '<small class="text-muted">등록된 경쟁업체가 없습니다</small>';
+            compHtml += '<small class="text-muted">등록된 경쟁업체가 없습니다</small>';
+        }
+        if (compList.length >= maxComp) {
+            compHtml += `<div class="small text-danger mt-1"><i class="fas fa-circle-info me-1"></i>최대 ${maxComp}개까지 등록할 수 있습니다</div>`;
         }
         document.getElementById('competitorList').innerHTML = compHtml;
     } catch (e) { console.error(e); }
@@ -3138,6 +3176,8 @@ async function removeCompetitor(id) {
 
 // 순위 표기 — 200위까지 수집하며, 그 밖이면 "200위 밖"으로 표시
 const RANK_OUT_OF_RANGE = 201;
+// 경쟁업체 등록 상한 (서버 owner_routes.MAX_COMPETITORS 와 동일)
+const MAX_COMPETITORS = 5;
 function formatRank(value) {
     if (value === null || value === undefined || value === 0) return '-';
     return value >= RANK_OUT_OF_RANGE ? '200위 밖' : value + '위';
@@ -3299,6 +3339,65 @@ async function reloadAnalysis() {
 
         document.getElementById('analysisSummary').innerHTML = summaryHtml;
 
+        // ── 개별 비교: 우리 매장 vs 각 경쟁업체 (1:1) ──
+        let versusHtml = '';
+        const h2h = summary.head_to_head || [];
+        if (h2h.length === 0) {
+            versusHtml = `<div class="text-center py-4 text-muted">
+                <i class="fas fa-users fa-2x mb-2 d-block opacity-50"></i>
+                <p class="mb-1">개별 비교할 경쟁업체가 없습니다</p>
+                <small>상단 <strong>관리</strong> 버튼에서 경쟁업체를 추가하세요 (최대 ${summary.max_competitors || 5}개)</small>
+            </div>`;
+        } else {
+            const gapCell = (mine, theirs, gap, isRank) => {
+                if (gap === null || gap === undefined) {
+                    return `<td class="text-center">${isRank ? formatRank(mine) : (mine ?? '-')}</td>
+                            <td class="text-center">${isRank ? formatRank(theirs) : (theirs ?? '-')}</td>
+                            <td class="text-center text-muted">-</td>`;
+                }
+                const cls = gap === 0 ? 'text-muted' : (gap > 0 ? 'text-success' : 'text-danger');
+                // 순위가 '200위 밖'(센티넬)이면 정확한 차이를 알 수 없으므로 우열만 표시한다
+                const outOfRange = isRank && (mine >= RANK_OUT_OF_RANGE || theirs >= RANK_OUT_OF_RANGE);
+                let gapText;
+                if (gap === 0) gapText = '동률';
+                else if (outOfRange) gapText = gap > 0 ? '앞섬' : '뒤짐';
+                else gapText = (gap > 0 ? '+' : '') + gap;
+                return `<td class="text-center fw-bold">${isRank ? formatRank(mine) : mine}</td>
+                        <td class="text-center">${isRank ? formatRank(theirs) : theirs}</td>
+                        <td class="text-center fw-bold ${cls}">${gapText}</td>`;
+            };
+            versusHtml = h2h.map(h => {
+                if (!h.has_data) {
+                    return `<div class="border rounded-3 p-3 mb-2">
+                        <h6 class="fw-bold mb-1"><i class="fas fa-store text-danger me-1"></i>${escapeHtml(h.name)}</h6>
+                        <p class="text-muted small mb-0">아직 수집된 데이터가 없습니다. 상단 <strong>지금 수집</strong>을 눌러주세요.</p>
+                    </div>`;
+                }
+                const badge = h.verdict === 'ahead'
+                    ? '<span class="badge bg-success">우세</span>'
+                    : (h.verdict === 'behind' ? '<span class="badge bg-danger">열세</span>' : '<span class="badge bg-secondary">대등</span>');
+                return `<div class="border rounded-3 p-3 mb-2">
+                    <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                        <h6 class="fw-bold mb-0"><i class="fas fa-code-compare text-primary me-1"></i>우리 매장 vs ${escapeHtml(h.name)}</h6>
+                        <span>${badge} <small class="text-muted ms-1">${h.wins}승 ${h.losses}패</small></span>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-sm mb-0 align-middle">
+                            <thead class="table-light"><tr>
+                                <th style="width:28%">지표</th><th class="text-center">우리 매장</th>
+                                <th class="text-center">${escapeHtml(h.name)}</th><th class="text-center">차이</th>
+                            </tr></thead>
+                            <tbody>
+                                <tr><td><i class="fas fa-blog text-info me-1"></i>블로그 리뷰</td>${gapCell(h.my_blog, h.comp_blog, h.blog_gap, false)}</tr>
+                                <tr><td><i class="fas fa-users text-success me-1"></i>방문자 리뷰</td>${gapCell(h.my_visitor, h.comp_visitor, h.visitor_gap, false)}</tr>
+                                <tr><td><i class="fas fa-trophy text-warning me-1"></i>플레이스 순위</td>${gapCell(h.my_rank, h.comp_rank, h.rank_gap, true)}</tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
         // ── 상세 데이터 (우리 매장 + 경쟁업체 비교 테이블) ──
         let detailHtml = '';
 
@@ -3379,45 +3478,60 @@ async function reloadAnalysis() {
         detailHtml += '</div></div>';
 
         // 상세 데이터 테이블 (기존 원본 데이터 접근)
+        let recordsHtml = '';
         if (detail.my_places.length > 0 || detail.competitors.length > 0) {
-            detailHtml += `<div class="card border-0 shadow-sm">
-                <div class="card-header bg-white border-0">
-                    <h6 class="mb-0 fw-bold"><i class="fas fa-table text-secondary me-2"></i>상세 데이터 기록</h6>
-                </div>
-                <div class="card-body">
-                    <ul class="nav nav-tabs nav-fill mb-3" id="detailTabs">
+            recordsHtml += `<ul class="nav nav-tabs nav-fill mb-3" id="detailTabs">
                         <li class="nav-item"><a class="nav-link active small" href="#" onclick="event.preventDefault();switchDetailTab('my')" style="font-weight:700;border-width:3px;"><i class="fas fa-store me-1"></i>우리 매장</a></li>
                         <li class="nav-item"><a class="nav-link small" href="#" onclick="event.preventDefault();switchDetailTab('comp')" style="font-weight:700;border-width:3px;"><i class="fas fa-users me-1"></i>경쟁업체</a></li>
                     </ul>
-                    <div id="detailTabMy">`;
+                    <div id="detailTabMy" class="analysis-scroll">`;
 
             detail.my_places.forEach(p => {
-                detailHtml += `<div class="mb-3"><strong class="small">${p.nickname||p.place_url}</strong>`;
+                recordsHtml += `<div class="mb-3"><strong class="small">${p.nickname||p.place_url}</strong>`;
                 if (p.data.length > 0) {
-                    detailHtml += `<div class="table-responsive"><table class="table table-sm table-hover mt-1 mb-0"><thead class="table-light"><tr><th>날짜</th><th>블로그리뷰</th><th>방문자리뷰</th><th>순위</th></tr></thead><tbody>`;
-                    p.data.forEach(d => { detailHtml += `<tr><td>${d.date}</td><td>${d.blog_review_count}</td><td>${d.visitor_review_count}</td><td>${formatRank(d.place_rank)}</td></tr>`; });
-                    detailHtml += '</tbody></table></div>';
-                } else { detailHtml += '<p class="text-muted small">데이터 없음</p>'; }
-                detailHtml += '</div>';
+                    recordsHtml += `<div class="table-responsive"><table class="table table-sm table-hover mt-1 mb-0"><thead class="table-light"><tr><th>날짜</th><th>블로그리뷰</th><th>방문자리뷰</th><th>순위</th></tr></thead><tbody>`;
+                    p.data.forEach(d => { recordsHtml += `<tr><td>${d.date}</td><td>${d.blog_review_count}</td><td>${d.visitor_review_count}</td><td>${formatRank(d.place_rank)}</td></tr>`; });
+                    recordsHtml += '</tbody></table></div>';
+                } else { recordsHtml += '<p class="text-muted small">데이터 없음</p>'; }
+                recordsHtml += '</div>';
             });
 
-            detailHtml += `</div><div id="detailTabComp" style="display:none">`;
+            recordsHtml += `</div><div id="detailTabComp" class="analysis-scroll" style="display:none">`;
 
             detail.competitors.forEach(p => {
-                detailHtml += `<div class="mb-3"><strong class="small">${p.memo||p.place_url}</strong>`;
+                recordsHtml += `<div class="mb-3"><strong class="small">${p.memo||p.place_url}</strong>`;
                 if (p.data.length > 0) {
-                    detailHtml += `<div class="table-responsive"><table class="table table-sm table-hover mt-1 mb-0"><thead class="table-light"><tr><th>날짜</th><th>블로그리뷰</th><th>방문자리뷰</th><th>순위</th></tr></thead><tbody>`;
-                    p.data.forEach(d => { detailHtml += `<tr><td>${d.date}</td><td>${d.blog_review_count}</td><td>${d.visitor_review_count}</td><td>${formatRank(d.place_rank)}</td></tr>`; });
-                    detailHtml += '</tbody></table></div>';
-                } else { detailHtml += '<p class="text-muted small">데이터 없음</p>'; }
-                detailHtml += '</div>';
+                    recordsHtml += `<div class="table-responsive"><table class="table table-sm table-hover mt-1 mb-0"><thead class="table-light"><tr><th>날짜</th><th>블로그리뷰</th><th>방문자리뷰</th><th>순위</th></tr></thead><tbody>`;
+                    p.data.forEach(d => { recordsHtml += `<tr><td>${d.date}</td><td>${d.blog_review_count}</td><td>${d.visitor_review_count}</td><td>${formatRank(d.place_rank)}</td></tr>`; });
+                    recordsHtml += '</tbody></table></div>';
+                } else { recordsHtml += '<p class="text-muted small">데이터 없음</p>'; }
+                recordsHtml += '</div>';
             });
 
-            detailHtml += '</div></div></div>';
+            recordsHtml += '</div>';
+        } else {
+            recordsHtml = '<p class="text-muted small mb-0 text-center py-4">기록된 데이터가 없습니다</p>';
         }
 
+        // ── 탭으로 묶어 스크롤이 과도하게 길어지지 않도록 한다 ──
+        const compCount = summary.competitors.length;
+        const tabbedHtml = `<div class="card border-0 shadow-sm mb-3">
+            <div class="card-header bg-white border-0 pb-0">
+                <ul class="nav nav-tabs card-header-tabs" id="analysisTabs">
+                    <li class="nav-item"><a class="nav-link active small fw-bold" href="#" data-pane="versus" onclick="event.preventDefault();switchAnalysisTab('versus')"><i class="fas fa-code-compare me-1"></i>개별 비교${compCount ? ` <span class="badge bg-primary ms-1">${compCount}</span>` : ''}</a></li>
+                    <li class="nav-item"><a class="nav-link small fw-bold" href="#" data-pane="places" onclick="event.preventDefault();switchAnalysisTab('places')"><i class="fas fa-store me-1"></i>매장 현황</a></li>
+                    <li class="nav-item"><a class="nav-link small fw-bold" href="#" data-pane="records" onclick="event.preventDefault();switchAnalysisTab('records')"><i class="fas fa-table me-1"></i>상세 기록</a></li>
+                </ul>
+            </div>
+            <div class="card-body" id="analysisTabPanes">
+                <div class="analysis-pane" data-pane="versus">${versusHtml}</div>
+                <div class="analysis-pane" data-pane="places" style="display:none">${detailHtml}</div>
+                <div class="analysis-pane" data-pane="records" style="display:none">${recordsHtml}</div>
+            </div>
+        </div>`;
+
         // 데이터 기반 마케팅 추천 섹션
-        detailHtml += `<div class="card border-0 shadow-sm mb-3">
+        let bottomHtml = `<div class="card border-0 shadow-sm mb-3">
             <div class="card-header border-0" style="background:linear-gradient(135deg,rgba(99,102,241,.1),rgba(168,85,247,.1))">
                 <div class="d-flex justify-content-between align-items-center">
                     <h6 class="mb-0 fw-bold"><i class="fas fa-wand-magic-sparkles me-2" style="color:#6366f1"></i>비교 기반 실행 전략</h6>
@@ -3437,12 +3551,12 @@ async function reloadAnalysis() {
         </div>`;
 
         // 하단 액션 버튼
-        detailHtml += `<div class="text-center mt-3">
+        bottomHtml += `<div class="text-center mt-3">
             <button class="btn btn-outline-primary me-2" onclick="navigate('owner-adorder-new')"><i class="fas fa-bullhorn me-1"></i>광고 주문하기</button>
             <button class="btn btn-outline-secondary" onclick="navigate('owner-adorders')"><i class="fas fa-list me-1"></i>주문 내역 보기</button>
         </div>`;
 
-        document.getElementById('analysisDetail').innerHTML = detailHtml;
+        document.getElementById('analysisDetail').innerHTML = tabbedHtml + bottomHtml;
 
     } catch (e) {
         document.getElementById('analysisSummary').innerHTML = `<div class="alert alert-danger"><i class="fas fa-exclamation-circle me-2"></i>${escapeHtml(e.message)}</div>`;
@@ -3450,8 +3564,11 @@ async function reloadAnalysis() {
 }
 
 function switchDetailTab(tab) {
-    document.getElementById('detailTabMy').style.display = tab === 'my' ? '' : 'none';
-    document.getElementById('detailTabComp').style.display = tab === 'comp' ? '' : 'none';
+    const myPane = document.getElementById('detailTabMy');
+    const compPane = document.getElementById('detailTabComp');
+    if (!myPane || !compPane) return;  // 기록 데이터가 없으면 탭이 없다
+    myPane.style.display = tab === 'my' ? '' : 'none';
+    compPane.style.display = tab === 'comp' ? '' : 'none';
     document.querySelectorAll('#detailTabs .nav-link').forEach((el, i) => {
         const isActive = (i === 0 && tab === 'my') || (i === 1 && tab === 'comp');
         el.classList.toggle('active', isActive);

@@ -50,6 +50,9 @@ router = APIRouter(prefix="/api/owner", tags=["owner"])
 
 require_owner = require_roles([UserRole.ADMIN, UserRole.OWNER])
 
+# 광고 분석에서 비교할 수 있는 경쟁업체 최대 개수
+MAX_COMPETITORS = 5
+
 
 def _get_owner_merchant(user: User, db: Session) -> Merchant:
     """Get the merchant owned by this user."""
@@ -813,6 +816,8 @@ def ad_analysis_summary(
         "my_places": my_summaries,
         "competitors": comp_summaries,
         "comparison": comparison,
+        "head_to_head": _head_to_head(my_valid, comp_summaries),
+        "max_competitors": MAX_COMPETITORS,
         "range": range,
         "analysis_keyword": primary_keyword,
         "data_status": {
@@ -823,6 +828,64 @@ def ad_analysis_summary(
             "needs_admin_action": bool(missing_targets or stale_targets),
         },
     }
+
+
+def _head_to_head(my_valid: list, comp_summaries: list) -> list:
+    """우리 매장 대표값과 각 경쟁업체를 1:1 로 비교한 결과를 만든다.
+
+    종합(평균) 비교와 별개로, 경쟁업체별 우열을 개별 확인하기 위한 데이터.
+    """
+    if not my_valid:
+        return []
+
+    # 우리 매장이 여러 곳이면 가장 상위 순위인 곳을 대표로 삼는다.
+    def _rank_key(summary):
+        rank = summary["metrics"]["latest_rank"]
+        return rank if rank is not None else 10 ** 6
+
+    mine = min(my_valid, key=_rank_key)
+    my_metrics = mine["metrics"]
+
+    results = []
+    for comp in comp_summaries:
+        metrics = comp["metrics"]
+        if not metrics:
+            results.append({
+                "competitor_id": comp["id"],
+                "name": comp["name"],
+                "place_url": comp["place_url"],
+                "has_data": False,
+            })
+            continue
+
+        blog_gap = (my_metrics["latest_blog_reviews"] or 0) - (metrics["latest_blog_reviews"] or 0)
+        visitor_gap = (my_metrics["latest_visitor_reviews"] or 0) - (metrics["latest_visitor_reviews"] or 0)
+        # 순위는 숫자가 작을수록 상위이므로 (상대 - 우리) 가 양수면 우리가 앞선다.
+        my_rank, comp_rank = my_metrics["latest_rank"], metrics["latest_rank"]
+        rank_gap = (comp_rank - my_rank) if (my_rank and comp_rank) else None
+
+        wins = sum([blog_gap > 0, visitor_gap > 0, bool(rank_gap and rank_gap > 0)])
+        losses = sum([blog_gap < 0, visitor_gap < 0, bool(rank_gap and rank_gap < 0)])
+
+        results.append({
+            "competitor_id": comp["id"],
+            "name": comp["name"],
+            "place_url": comp["place_url"],
+            "has_data": True,
+            "my_blog": my_metrics["latest_blog_reviews"],
+            "comp_blog": metrics["latest_blog_reviews"],
+            "blog_gap": blog_gap,
+            "my_visitor": my_metrics["latest_visitor_reviews"],
+            "comp_visitor": metrics["latest_visitor_reviews"],
+            "visitor_gap": visitor_gap,
+            "my_rank": my_rank,
+            "comp_rank": comp_rank,
+            "rank_gap": rank_gap,
+            "wins": wins,
+            "losses": losses,
+            "verdict": "ahead" if wins > losses else ("behind" if losses > wins else "even"),
+        })
+    return results
 
 
 # ─── Delete Place Profile & Competitor ────────────────────────
@@ -880,6 +943,15 @@ def create_place_profile(req: AdPlaceProfileCreate, db: Session = Depends(get_db
 def create_competitor(req: AdCompetitorCreate, db: Session = Depends(get_db), user: User = Depends(require_owner)):
     merchant = _get_owner_merchant(user, db)
     url = _normalize_place_url(req.competitor_place_url)
+    registered = db.query(func.count(AdCompetitor.id)).filter(
+        AdCompetitor.merchant_id == merchant.id,
+    ).scalar() or 0
+    if registered >= MAX_COMPETITORS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"경쟁업체는 최대 {MAX_COMPETITORS}개까지 등록할 수 있습니다. "
+                   f"기존 항목을 삭제한 뒤 추가해주세요.",
+        )
     duplicate = db.query(AdCompetitor).filter(
         AdCompetitor.merchant_id == merchant.id,
         AdCompetitor.competitor_place_url == url,
