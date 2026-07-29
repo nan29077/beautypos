@@ -3426,10 +3426,10 @@ async function loadOwnerAnalysis(c, t) {
                 <i class="fas fa-scale-balanced me-1"></i>경쟁 비교
             </button>
             <button class="analysis-tab-btn" data-tab="trend">
-                <i class="fas fa-chart-line me-1"></i>추이 차트
+                <i class="fas fa-chart-line me-1"></i>경쟁 업체와 비교 차트
             </button>
             <button class="analysis-tab-btn" data-tab="detail">
-                <i class="fas fa-calendar-days me-1"></i>상세 기록
+                <i class="fas fa-calendar-days me-1"></i>상세 비교
             </button>
         </div>
     </div>
@@ -3774,24 +3774,25 @@ function renderTrendChart(metric) {
     if (!canvas || typeof Chart === 'undefined') return;
 
     const { labels, series } = analysisTrendData;
-    const COMP_COLORS = ['#94a3b8', '#cbd5e1', '#9ca3af', '#a8b2c0'];
+    const COMP_COLORS = ['#ef4444', '#f59e0b', '#10b981', '#8b5cf6', '#f97316'];
     const datasets = series.map((s, i) => {
         const isMine = s.kind === 'my';
         const compIdx = series.filter((x, j) => x.kind !== 'my' && j < i).length;
+        const compColor = COMP_COLORS[compIdx % COMP_COLORS.length];
         return {
             label: s.label + (isMine ? ' (우리)' : ''),
             data: s[metric],
-            borderColor: isMine ? '#2563eb' : COMP_COLORS[compIdx % COMP_COLORS.length],
-            backgroundColor: isMine ? 'rgba(37,99,235,.1)' : 'transparent',
-            borderWidth: isMine ? 4 : 1.5,
+            borderColor: isMine ? '#2563eb' : compColor,
+            backgroundColor: isMine ? 'rgba(37,99,235,.1)' : compColor + '18',
+            borderWidth: isMine ? 4 : 2,
             borderDash: isMine ? [] : [5, 4],
             tension: .3,
             spanGaps: true,
-            pointRadius: isMine ? 6 : 2,
-            pointHoverRadius: isMine ? 10 : 5,
-            pointBackgroundColor: isMine ? '#2563eb' : 'transparent',
-            pointBorderColor: isMine ? '#fff' : COMP_COLORS[compIdx % COMP_COLORS.length],
-            pointBorderWidth: isMine ? 2 : 1,
+            pointRadius: isMine ? 6 : 3,
+            pointHoverRadius: isMine ? 10 : 6,
+            pointBackgroundColor: isMine ? '#2563eb' : compColor,
+            pointBorderColor: '#fff',
+            pointBorderWidth: isMine ? 2 : 1.5,
         };
     });
     // 애니메이션을 끄면 렌더 직후 1초간 이어지던 캔버스 재도색이 사라진다.
@@ -3833,18 +3834,18 @@ function renderTrendSummary(metric) {
     const arrow = rawChange === null ? '─' : (rawChange > 0 ? '<span class="text-success">▲</span>' : (rawChange < 0 ? '<span class="text-danger">▼</span>' : '─'));
     const absChange = rawChange !== null && rawChange !== 0 ? ` ${Math.abs(rawChange).toLocaleString('ko-KR')}` : '';
     const fmt = v => isRank ? v + '위' : v.toLocaleString('ko-KR') + '개';
-    return `<div class="trend-summary">
-        <div class="trend-summary-item">
-            <div class="trend-summary-label">${isRank ? '최고 순위' : '최고값'}</div>
-            <div class="trend-summary-value">${fmt(best)}</div>
+    return `<div class="stat-mini-cards">
+        <div class="stat-mini-card">
+            <div class="label">${isRank ? '최고 순위' : '최고값'}</div>
+            <div class="value">${fmt(best)}</div>
         </div>
-        <div class="trend-summary-item">
-            <div class="trend-summary-label">평균</div>
-            <div class="trend-summary-value">${fmt(avg)}</div>
+        <div class="stat-mini-card">
+            <div class="label">${isRank ? '평균 순위' : '평균값'}</div>
+            <div class="value">${fmt(avg)}</div>
         </div>
-        <div class="trend-summary-item">
-            <div class="trend-summary-label">최근값</div>
-            <div class="trend-summary-value">${fmt(last)} ${arrow}${absChange}</div>
+        <div class="stat-mini-card">
+            <div class="label">${isRank ? '최근 순위' : '최근값'}</div>
+            <div class="value">${fmt(last)} ${arrow}${absChange}</div>
         </div>
     </div>`;
 }
@@ -4027,10 +4028,10 @@ async function loadAnalysisTrend(days) {
                 </div>
             </div>
 
-            <div class="card border-0 shadow-sm trend-metric-card">
+            <div class="card border-0 shadow-sm trend-metric-card trend-rank-card">
                 <div class="card-header">
-                    <h6 class="mb-0 fw-bold"><i class="fas fa-trophy text-warning me-2"></i>플레이스 순위 변화</h6>
-                    <span class="badge bg-secondary bg-opacity-10 text-secondary trend-period-badge">${period}일간 · 위로 갈수록 높은 순위</span>
+                    <h6 class="mb-0 fw-bold"><i class="fas fa-trophy me-2" style="color:#3b82f6"></i>플레이스 순위 변화</h6>
+                    <span class="badge trend-period-badge" style="background:#3b82f620;color:#3b82f6">${period}일간 · 위로 갈수록 높은 순위</span>
                 </div>
                 <div class="card-body pt-2">
                     <div class="trend-pane" data-metric="rank"><div style="height:240px"><canvas id="trendRank"></canvas></div></div>
@@ -4039,10 +4040,10 @@ async function loadAnalysisTrend(days) {
                 </div>
             </div>
 
-            <div class="card border-0 shadow-sm trend-metric-card">
+            <div class="card border-0 shadow-sm trend-metric-card trend-blog-card">
                 <div class="card-header">
-                    <h6 class="mb-0 fw-bold"><i class="fas fa-blog text-info me-2"></i>블로그 리뷰 변화</h6>
-                    <span class="badge bg-secondary bg-opacity-10 text-secondary trend-period-badge">${period}일간</span>
+                    <h6 class="mb-0 fw-bold"><i class="fas fa-blog me-2" style="color:#10b981"></i>블로그 리뷰 변화</h6>
+                    <span class="badge trend-period-badge" style="background:#10b98120;color:#10b981">${period}일간</span>
                 </div>
                 <div class="card-body pt-2">
                     <div class="trend-pane" data-metric="blog"><div style="height:200px"><canvas id="trendBlog"></canvas></div></div>
@@ -4051,10 +4052,10 @@ async function loadAnalysisTrend(days) {
                 </div>
             </div>
 
-            <div class="card border-0 shadow-sm trend-metric-card">
+            <div class="card border-0 shadow-sm trend-metric-card trend-visitor-card">
                 <div class="card-header">
-                    <h6 class="mb-0 fw-bold"><i class="fas fa-users text-success me-2"></i>방문자 리뷰 변화</h6>
-                    <span class="badge bg-secondary bg-opacity-10 text-secondary trend-period-badge">${period}일간</span>
+                    <h6 class="mb-0 fw-bold"><i class="fas fa-users me-2" style="color:#8b5cf6"></i>방문자 리뷰 변화</h6>
+                    <span class="badge trend-period-badge" style="background:#8b5cf620;color:#8b5cf6">${period}일간</span>
                 </div>
                 <div class="card-body pt-2">
                     <div class="trend-pane" data-metric="visitor"><div style="height:200px"><canvas id="trendVisitor"></canvas></div></div>

@@ -717,19 +717,19 @@ body[data-page="owner-analysis"] #analysisCompare .fw-bold {
     justify-content: space-between;
     align-items: center;
 }
-.trend-period-badge { font-size: .72rem; font-weight: 700; }
-.trend-summary {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px 20px;
-    background: #f8fafc;
-    border-radius: 10px;
-    padding: 10px 14px;
-    margin: 10px 0 8px;
-}
-.trend-summary-item { display: flex; flex-direction: column; min-width: 72px; }
-.trend-summary-label { font-size: .68rem; color: #6b7280; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
-.trend-summary-value { font-size: 1rem; font-weight: 800; color: #1e293b; margin-top: 1px; }
+.trend-period-badge { font-size: .72rem; font-weight: 700; border-radius: 6px; padding: 3px 8px; }
+/* 카드 상단 색상 구분선 */
+.trend-rank-card    { border-top: 4px solid #3b82f6 !important; }
+.trend-blog-card    { border-top: 4px solid #10b981 !important; }
+.trend-visitor-card { border-top: 4px solid #8b5cf6 !important; }
+/* 차트 래퍼 touch-action: 가로 스크롤 시 세로 흔들림 방지 */
+.trend-pane { touch-action: pan-x; }
+.trend-pane canvas { touch-action: pan-x; }
+/* 요약 통계 미니 카드 */
+.stat-mini-cards { display: flex; gap: 8px; margin: 10px 0 12px; }
+.stat-mini-card { flex: 1; background: #fff; border-radius: 8px; padding: 10px 8px; text-align: center; box-shadow: 0 1px 4px rgba(0,0,0,0.08); border: 1px solid #f0f4f8; }
+.stat-mini-card .label { font-size: 0.68rem; color: #6b7280; font-weight: 600; display: block; margin-bottom: 4px; }
+.stat-mini-card .value { font-size: 0.95rem; font-weight: 800; color: #1e3a5f; line-height: 1.2; }
 
 .trend-history {
     margin-top: 13px;
