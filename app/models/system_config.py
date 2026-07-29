@@ -31,3 +31,6 @@ AD_PLACE_TRAFFIC_ENABLED = "ad_place_traffic_enabled"  # 플레이스 유입 광
 COMMISSION_VISIBLE_TO_SALES = "commission_visible_to_sales"        # 딜러(영업)에게 표시
 COMMISSION_VISIBLE_TO_OWNER = "commission_visible_to_owner"        # 사장님에게 표시
 COMMISSION_VISIBLE_TO_DESIGNER = "commission_visible_to_designer"  # 디자이너에게 표시
+
+# ─── 외부 서비스 연동 ───────────────────────────────────────
+OPENAI_API_KEY = "openai_api_key"  # AI 마케팅 추천용 (Fernet 암호화 저장)

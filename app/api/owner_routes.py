@@ -4,6 +4,7 @@ Covers: transactions, staff management, staff sales, ad analysis, ad orders,
         receipt review management, merchant info update.
 """
 import json
+import logging
 import uuid
 import base64
 import io
@@ -39,6 +40,7 @@ from app.auth.dependencies import get_current_user, require_roles
 from app.services.settlement_service import compute_distribution
 from app.services.visibility import commission_visible_for
 from app.services import naver_place
+from app.services import ai_service
 from app.schemas.schemas import (
     StaffCreate, StaffUpdate, DesignerCreate, DesignerUpdate,
     AdBlogOrderCreate, AdPlaceTrafficOrderCreate,
@@ -868,6 +870,38 @@ def ad_analysis_overview(
         "has_data": bool(mine and ready),
         "collection_status": _collection_status(db, merchant.id),
     }
+
+
+@router.get("/ad/recommendation")
+async def ad_recommendation(
+    db: Session = Depends(get_db),
+    user: User = Depends(require_owner),
+):
+    """마케팅 추천 문구.
+
+    최고관리자가 OpenAI API 키를 등록해 두면 AI 추천을 사용하고,
+    없으면 화면의 기존 규칙 기반 문구를 그대로 쓰도록 mode 를 내려준다.
+    """
+    merchant = _get_owner_merchant(user, db)
+    overview = ad_analysis_overview(period="day", db=db, user=user)
+
+    if not ai_service.is_configured(db):
+        return {"ai_enabled": False, "mode": "rule", "text": None}
+
+    context = {
+        "merchant_name": merchant.name,
+        "my_place": overview.get("my_place"),
+        "competitors": [c for c in overview.get("competitors", []) if c.get("has_data")],
+    }
+    try:
+        text = await ai_service.generate_ad_recommendation(db, context)
+    except Exception as exc:  # noqa: BLE001 — AI 실패 시 규칙 기반으로 되돌린다
+        logging.getLogger(__name__).warning("AI 추천 생성 실패: %s", exc)
+        text = None
+
+    if not text:
+        return {"ai_enabled": True, "mode": "rule", "text": None}
+    return {"ai_enabled": True, "mode": "ai", "text": text}
 
 
 # ─── Ad Analysis Comparison Summary ──────────────────────────

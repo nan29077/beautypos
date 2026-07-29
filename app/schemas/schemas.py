@@ -208,3 +208,9 @@ class ReceiptReviewConfigUpdate(BaseModel):
     place_url: Optional[str] = None
     welcome_message: Optional[str] = None
     is_active: Optional[bool] = None
+
+
+# ─── AI 설정 (Admin) ─────────────────────────────────────────
+
+class AISettingsUpdate(BaseModel):
+    api_key: str

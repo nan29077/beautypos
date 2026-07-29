@@ -28,6 +28,7 @@ from app.models.system_config import (
     SystemConfig, AD_ORDER_MGMT_ENABLED, AD_BLOG_ENABLED, AD_PLACE_TRAFFIC_ENABLED,
     COMMISSION_VISIBLE_TO_SALES, COMMISSION_VISIBLE_TO_OWNER, COMMISSION_VISIBLE_TO_DESIGNER,
 )
+from app.services import ai_service
 from app.services.encryption import encrypt_value, decrypt_value, mask_value
 from app.services.pg_service import get_pg_provider
 from app.services.settlement_service import compute_distribution
@@ -35,7 +36,7 @@ from app.schemas.schemas import (
     MerchantCreate, MerchantUpdate, PGConfigCreate,
     AdMetricCreate, AdOrderStatusUpdate,
     FeePolicyUpdate, SalesAssignmentCreate, SalesAssignmentUpdate,
-    CommissionVisibilityUpdate, StaffShareRateUpdate,
+    CommissionVisibilityUpdate, StaffShareRateUpdate, AISettingsUpdate,
 )
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -1353,3 +1354,52 @@ def admin_settlement_breakdown(
     result["merchant_name"] = merchant.name
     result["show_sales_commission"] = True
     return result
+
+
+# ═══════════════════════════════════════════════════════════
+# AI 설정 (OpenAI API 키 관리)
+# ═══════════════════════════════════════════════════════════
+
+@router.get("/settings/ai")
+def get_ai_settings(db: Session = Depends(get_db), _=Depends(require_admin)):
+    """OpenAI API 키 등록 여부와 마스킹된 값을 반환한다 (평문은 노출하지 않는다)."""
+    key = ai_service.get_api_key(db)
+    return {
+        "configured": key is not None,
+        "masked_key": ai_service.mask_api_key(key) if key else None,
+    }
+
+
+@router.post("/settings/ai")
+def save_ai_settings(
+    req: AISettingsUpdate,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin),
+):
+    """OpenAI API 키를 암호화해 저장/갱신한다."""
+    key = (req.api_key or "").strip()
+    if not key:
+        raise HTTPException(status_code=400, detail="API 키를 입력해주세요")
+    if not key.startswith("sk-") or len(key) < 20:
+        raise HTTPException(status_code=400, detail="올바른 OpenAI API 키 형식이 아닙니다 (sk- 로 시작)")
+    ai_service.save_api_key(db, key)
+    return {"ok": True, "configured": True, "masked_key": ai_service.mask_api_key(key)}
+
+
+@router.delete("/settings/ai")
+def delete_ai_settings(db: Session = Depends(get_db), _=Depends(require_admin)):
+    """저장된 OpenAI API 키를 삭제한다."""
+    removed = ai_service.delete_api_key(db)
+    if not removed:
+        raise HTTPException(status_code=404, detail="등록된 API 키가 없습니다")
+    return {"ok": True, "configured": False}
+
+
+@router.get("/settings/ai/status")
+async def test_ai_connection(db: Session = Depends(get_db), _=Depends(require_admin)):
+    """저장된 키로 OpenAI 에 실제 요청을 보내 연결 상태를 확인한다."""
+    key = ai_service.get_api_key(db)
+    if not key:
+        return {"configured": False, "ok": False, "detail": "등록된 API 키가 없습니다."}
+    result = await ai_service.test_connection(key)
+    return {"configured": True, **result}
