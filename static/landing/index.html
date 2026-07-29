@@ -40,7 +40,7 @@
             height:100dvh;
             pointer-events:none;
             background:url('/static/img/landing-salon-background.jpg') 58% center/cover no-repeat;
-            filter:saturate(1.08) contrast(1.06);
+            filter:saturate(1.13) contrast(1.12);
             transform:translate3d(0,0,0);
             will-change:transform;
         }
@@ -48,7 +48,7 @@
             content:"";
             position:absolute;
             inset:0;
-            background:linear-gradient(110deg,rgba(247,251,254,.90) 0%,rgba(247,251,254,.68) 46%,rgba(8,42,69,.28) 100%);
+            background:linear-gradient(110deg,rgba(247,251,254,.52) 0%,rgba(247,251,254,.34) 46%,rgba(8,42,69,.16) 100%);
         }
         main,footer,.site-nav{position:relative;z-index:1}
         a{text-decoration:none}
@@ -234,7 +234,7 @@
         @media(max-width:767px){
             .site-nav{padding:10px 0}.nav-inner{width:calc(100% - 26px)}.nav-toggle{display:block}.nav-links{position:absolute;top:68px;left:13px;right:13px;padding:15px;border:1px solid var(--line);border-radius:17px;display:none;align-items:stretch;flex-direction:column;gap:5px;background:#fff;box-shadow:0 20px 50px rgba(60,38,46,.13)}.nav-links.open{display:flex}.nav-links>a{padding:11px 12px}.nav-cta{text-align:center}
             .hero{padding:120px 0 58px}.hero-grid,.section-inner{width:calc(100% - 28px)}h1{font-size:2.65rem}.hero-copy{font-size:.95rem}.hero-actions>a{width:100%}.trust-row{gap:10px}
-            .landing-fixed-bg{background-position:58% center}.landing-fixed-bg::after{background:rgba(255,250,247,.76)}.visual{min-height:375px}.visual::before{display:none}.pos-card{right:8px;bottom:38px;width:min(280px,90%)}.card-sales{left:7px;bottom:0}.card-rank{right:8px;top:18px}.float-card{padding:13px}.float-card strong{font-size:.91rem}
+            .landing-fixed-bg{background-position:58% center}.landing-fixed-bg::after{background:rgba(255,250,247,.55)}.visual{min-height:375px}.visual::before{display:none}.pos-card{right:8px;bottom:38px;width:min(280px,90%)}.card-sales{left:7px;bottom:0}.card-rank{right:8px;top:18px}.float-card{padding:13px}.float-card strong{font-size:.91rem}
             .strip-inner{grid-template-columns:1fr 1fr}.strip-item{padding:18px 8px;font-size:.7rem}.section{padding:75px 0}.section-head{margin-bottom:33px}.feature-grid,.flow-grid,.outcome-list,.roles{grid-template-columns:1fr}.feature-card,.flow-card{min-height:auto}.one-data{align-items:flex-start;flex-direction:column}.one-data-items{flex-wrap:wrap}.impact{padding:35px 0}.impact-grid{width:calc(100% - 28px);grid-template-columns:1fr}.impact-copy{padding:0 0 14px}.impact-item,.impact-item:nth-child(2){padding:15px 0;border-left:0;border-top:1px solid rgba(255,255,255,.15)}.outcome-intro{padding:27px}.outcome-intro h2{font-size:1.75rem}.metric-cards{grid-template-columns:1fr 1fr}.metric:last-child{grid-column:1/-1}.insight-panel{padding:15px}.device-grid{grid-template-columns:1fr;gap:32px}.device-visual img{height:clamp(300px,72vw,420px)}.device-copy h2{font-size:1.85rem}.rival-box{padding:13px}.rival-table{font-size:.68rem}.cta{padding-bottom:55px}.cta-box{width:calc(100% - 28px);padding:51px 21px;border-radius:25px}.footer-inner{align-items:flex-start;flex-direction:column;gap:17px}
         }
         @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.reveal{opacity:1;transform:none;transition:none}}
@@ -243,9 +243,9 @@
         :root{--rose:#0f6cbd;--rose-dark:#0f4c81;--violet:#1b3a5c;--coral:#0ea5e9;--blush:#eaf6fd;--cream:#f7fbfe;--ink:#10243e;--muted:#66788c;--line:#dbe8f2;--shadow:0 24px 70px rgba(15,76,129,.13)}
         body{background:#18334e}
         .hero{background:linear-gradient(90deg,rgba(247,251,254,.30),rgba(247,251,254,.02))}
-        .strip{background:rgba(255,255,255,.86);backdrop-filter:blur(10px)}
-        .section{background:rgba(247,251,254,.84);backdrop-filter:blur(6px)}
-        .all-in-one{background:rgba(255,255,255,.88)}
+        .strip{background:rgba(255,255,255,.74);backdrop-filter:blur(2px)}
+        .section{background:rgba(247,251,254,.68);backdrop-filter:blur(1px)}
+        .all-in-one{background:rgba(255,255,255,.72)}
         .site-nav.scrolled{border-bottom-color:rgba(219,232,242,.92);background:rgba(247,251,254,.93);box-shadow:0 8px 28px rgba(15,76,129,.06)}
         .brand-mark{background:linear-gradient(145deg,#1b3a5c,#0ea5e9);box-shadow:0 10px 26px rgba(15,108,189,.24)}
         .brand-copy small{color:#718ba1}
@@ -260,7 +260,7 @@
         .pos-card{background:rgba(13,27,42,.84)}
         .card-rank>i{color:#0f6cbd;background:#e7f5fc}
         .feature-icon{color:#0f6cbd;background:#eaf6fd}
-        .growth{background:rgba(235,246,252,.86)}
+        .growth{background:rgba(235,246,252,.72)}
         .panel-top span{color:#0f5f98;background:#eaf6fd}
         .metric em{color:#16825d}
         .chart i{background:linear-gradient(#81c7e9,#0f6cbd)}
@@ -280,15 +280,15 @@
         @media(max-width:767px){
             .landing-fixed-bg{
                 background-position:60% center;
-                filter:saturate(1.05) contrast(1.04);
+                filter:saturate(1.11) contrast(1.10);
             }
             .landing-fixed-bg::after{
-                background:linear-gradient(180deg,rgba(247,251,254,.66),rgba(238,247,252,.73));
+                background:linear-gradient(180deg,rgba(247,251,254,.46),rgba(238,247,252,.56));
             }
-            .strip{background:rgba(255,255,255,.80)}
-            .section{background:rgba(247,251,254,.78);backdrop-filter:blur(4px)}
-            .all-in-one{background:rgba(255,255,255,.82)}
-            .growth{background:rgba(235,246,252,.82)}
+            .strip{background:rgba(255,255,255,.68);backdrop-filter:none}
+            .section{background:rgba(247,251,254,.64);backdrop-filter:none}
+            .all-in-one{background:rgba(255,255,255,.68)}
+            .growth{background:rgba(235,246,252,.68)}
         }
 
         /* Three-scene beauty business hero slider */
