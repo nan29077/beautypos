@@ -39,6 +39,11 @@ class Settings(BaseSettings):
     # Allow override for local dev (SQLite)
     DATABASE_URL_OVERRIDE: str = ""
 
+    # 플레이스 순위 자동 수집 스케줄러 (한국 시간 기준)
+    RANK_SCHEDULER_ENABLED: bool = True
+    RANK_SCHEDULER_HOUR: int = 14
+    RANK_SCHEDULER_MINUTE: int = 0
+
     @property
     def cors_origins(self) -> list[str]:
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]

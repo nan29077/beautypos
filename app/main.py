@@ -34,9 +34,15 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     from app.init_db import init_db
+    from app.services import rank_scheduler
 
     init_db()
-    yield
+    # 매일 오후 2시(KST) 플레이스 순위 자동 수집
+    rank_scheduler.start(_app)
+    try:
+        yield
+    finally:
+        await rank_scheduler.stop(_app)
 
 
 app = FastAPI(
