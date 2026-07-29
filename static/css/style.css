@@ -161,7 +161,22 @@ body { background: #f0f2f5; margin: 0; min-height: 100vh; -webkit-font-smoothing
 .form-label { font-weight: 600; font-size: 0.85rem; color: #374151; }
 
 /* ─── Modals ─── */
-.modal-content { border-radius: 1rem; border: none; }
+.modal-content {
+    border-radius: 16px;
+    border: none;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(15,23,42,.2);
+}
+.modal-header {
+    background: linear-gradient(135deg, #1e3a5f 0%, #2d6096 100%);
+    border-bottom: none;
+    padding: 1rem 1.4rem;
+}
+.modal-header .modal-title { color: #fff; font-weight: 700; }
+.modal-header .btn-close { filter: invert(1) brightness(2); opacity: .8; }
+.modal-header .btn-close:hover { opacity: 1; }
+.modal-body { padding: 1.4rem; background: #fff; }
+.modal-footer { background: #f8fafc; border-top: 1px solid #e9edf3 !important; padding: .9rem 1.4rem; gap: .5rem; }
 
 /* ─── Alert clean style ─── */
 .alert { border-radius: 12px; border: none; font-size: .88rem; }
@@ -563,6 +578,7 @@ body[data-page="owner-analysis"] #analysisCompare .fw-bold {
 }
 .analysis-tab-nav {
     display: flex;
+    justify-content: center;
     gap: 2px;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
@@ -691,6 +707,29 @@ body[data-page="owner-analysis"] #analysisCompare .fw-bold {
 }
 .analysis-progress strong { color: #0f6cbd; font-size: 1.15rem; }
 .analysis-progress span { font-size: .78rem; }
+
+/* ─── 추이 차트 개별 카드 ──────────────────────────────── */
+.trend-metric-card .card-header {
+    background: #fff;
+    border-bottom: 1px solid #f0f4f8;
+    padding: 11px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.trend-period-badge { font-size: .72rem; font-weight: 700; }
+.trend-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 20px;
+    background: #f8fafc;
+    border-radius: 10px;
+    padding: 10px 14px;
+    margin: 10px 0 8px;
+}
+.trend-summary-item { display: flex; flex-direction: column; min-width: 72px; }
+.trend-summary-label { font-size: .68rem; color: #6b7280; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.trend-summary-value { font-size: 1rem; font-weight: 800; color: #1e293b; margin-top: 1px; }
 
 .trend-history {
     margin-top: 13px;

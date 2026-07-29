@@ -3774,17 +3774,26 @@ function renderTrendChart(metric) {
     if (!canvas || typeof Chart === 'undefined') return;
 
     const { labels, series } = analysisTrendData;
-    const datasets = series.map((s, i) => ({
-        label: s.label + (s.kind === 'my' ? ' (우리)' : ''),
-        data: s[metric],
-        borderColor: TREND_PALETTE[i % TREND_PALETTE.length],
-        backgroundColor: TREND_PALETTE[i % TREND_PALETTE.length] + '22',
-        borderWidth: s.kind === 'my' ? 3 : 2,
-        borderDash: s.kind === 'my' ? [] : [5, 4],
-        tension: .3,
-        spanGaps: true,
-        pointRadius: 2,
-    }));
+    const COMP_COLORS = ['#94a3b8', '#cbd5e1', '#9ca3af', '#a8b2c0'];
+    const datasets = series.map((s, i) => {
+        const isMine = s.kind === 'my';
+        const compIdx = series.filter((x, j) => x.kind !== 'my' && j < i).length;
+        return {
+            label: s.label + (isMine ? ' (우리)' : ''),
+            data: s[metric],
+            borderColor: isMine ? '#2563eb' : COMP_COLORS[compIdx % COMP_COLORS.length],
+            backgroundColor: isMine ? 'rgba(37,99,235,.1)' : 'transparent',
+            borderWidth: isMine ? 4 : 1.5,
+            borderDash: isMine ? [] : [5, 4],
+            tension: .3,
+            spanGaps: true,
+            pointRadius: isMine ? 6 : 2,
+            pointHoverRadius: isMine ? 10 : 5,
+            pointBackgroundColor: isMine ? '#2563eb' : 'transparent',
+            pointBorderColor: isMine ? '#fff' : COMP_COLORS[compIdx % COMP_COLORS.length],
+            pointBorderWidth: isMine ? 2 : 1,
+        };
+    });
     // 애니메이션을 끄면 렌더 직후 1초간 이어지던 캔버스 재도색이 사라진다.
     const options = {
         responsive: true,
@@ -3806,6 +3815,38 @@ function renderTrendChart(metric) {
         };
     }
     analysisTrendCharts[metric] = new Chart(canvas, { type: 'line', data: { labels, datasets }, options });
+}
+
+function renderTrendSummary(metric) {
+    if (!analysisTrendData) return '';
+    const { series = [] } = analysisTrendData;
+    const myData = series.find(s => s.kind === 'my');
+    if (!myData) return '';
+    const values = (myData[metric] || []).filter(v => v !== null && v !== undefined);
+    if (!values.length) return '';
+    const isRank = metric === 'rank';
+    const best = isRank ? Math.min(...values) : Math.max(...values);
+    const avg = Math.round(values.reduce((a, b) => a + b, 0) / values.length);
+    const last = values[values.length - 1];
+    const prev = values.length > 1 ? values[values.length - 2] : null;
+    const rawChange = prev !== null ? (isRank ? prev - last : last - prev) : null;
+    const arrow = rawChange === null ? '─' : (rawChange > 0 ? '<span class="text-success">▲</span>' : (rawChange < 0 ? '<span class="text-danger">▼</span>' : '─'));
+    const absChange = rawChange !== null && rawChange !== 0 ? ` ${Math.abs(rawChange).toLocaleString('ko-KR')}` : '';
+    const fmt = v => isRank ? v + '위' : v.toLocaleString('ko-KR') + '개';
+    return `<div class="trend-summary">
+        <div class="trend-summary-item">
+            <div class="trend-summary-label">${isRank ? '최고 순위' : '최고값'}</div>
+            <div class="trend-summary-value">${fmt(best)}</div>
+        </div>
+        <div class="trend-summary-item">
+            <div class="trend-summary-label">평균</div>
+            <div class="trend-summary-value">${fmt(avg)}</div>
+        </div>
+        <div class="trend-summary-item">
+            <div class="trend-summary-label">최근값</div>
+            <div class="trend-summary-value">${fmt(last)} ${arrow}${absChange}</div>
+        </div>
+    </div>`;
 }
 
 function renderTrendHistoryTable(metric) {
@@ -3929,8 +3970,21 @@ async function fetchAnalysisNow() {
         await nextFrame();
         await loadAnalysisTrend();
         await nextFrame();
-        // alert 는 메인 스레드를 막으므로 화면 갱신이 모두 그려진 뒤에 띄운다.
-        alert(msg);
+        // 결과를 Bootstrap 모달로 표시 (alert는 메인 스레드 차단)
+        const resultBody = document.getElementById('analysisResultBody');
+        const resultModalEl = document.getElementById('analysisResultModal');
+        if (resultBody && resultModalEl) {
+            const hasFail = failed.length > 0;
+            resultBody.innerHTML = `<div class="text-center py-2">
+                <i class="fas fa-${hasFail ? 'exclamation-circle text-warning' : 'circle-check text-success'} fa-2x mb-3 d-block"></i>
+                <p class="fw-bold mb-1">${res.collected}건 저장 완료</p>
+                <p class="text-muted small mb-0"><i class="fas fa-clock me-1"></i>소요 시간: ${res.elapsed_seconds}초</p>
+                ${hasFail ? `<div class="alert alert-warning mt-3 mb-0 small text-start"><i class="fas fa-triangle-exclamation me-1"></i>실패 ${failed.length}건: ${failed.map(f => escapeHtml(f.label) + '(' + escapeHtml(f.error || '알 수 없음') + ')').join(', ')}</div>` : ''}
+            </div>`;
+            new bootstrap.Modal(resultModalEl).show();
+        } else {
+            alert(msg);
+        }
     } catch (e) {
         if (box) box.innerHTML = `<div class="alert alert-danger py-2 mb-0 small"><i class="fas fa-exclamation-circle me-1"></i>${escapeHtml(e.message)}</div>`;
     } finally {
@@ -3964,32 +4018,48 @@ async function loadAnalysisTrend(days) {
         const labels = dates.map(d => d.slice(5));
         destroyAnalysisTrendCharts();
         analysisTrendData = { labels, dates, series };
-        // 순위와 리뷰 추이를 모두 펼친 상태로 보여준다.
-        box.innerHTML = `<div class="card border-0 shadow-sm">
-            <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center flex-wrap gap-2">
-                <h6 class="mb-0 fw-bold"><i class="fas fa-chart-line text-primary me-2"></i>순위 변화</h6>
+        // 순위와 리뷰 추이를 3개 별도 카드로 나누어 보여준다.
+        box.innerHTML = `<div class="d-flex flex-column" style="gap:16px">
+            <div class="d-flex justify-content-end mb-1">
                 <div class="btn-group btn-group-sm">
                     <button type="button" class="btn ${period === 7 ? 'btn-primary' : 'btn-outline-primary'}" onclick="loadAnalysisTrend(7)">최근 7일</button>
                     <button type="button" class="btn ${period === 30 ? 'btn-primary' : 'btn-outline-primary'}" onclick="loadAnalysisTrend(30)">최근 30일</button>
                 </div>
             </div>
-            <div class="card-body pt-2">
-                <p class="text-muted small mb-2"><i class="fas fa-circle-info me-1"></i>지난 ${period}일간 우리 매장과 경쟁업체의 순위 변화예요. <strong>선이 위로 갈수록 순위가 높습니다.</strong></p>
-                <div class="trend-pane" data-metric="rank"><div style="height:250px"><canvas id="trendRank"></canvas></div></div>
-                ${renderTrendHistoryTable('rank')}
 
-                <div class="mt-3 border-top pt-2">
-                    <button class="btn btn-sm btn-link text-decoration-none px-0 fw-bold" type="button" onclick="toggleReviewTrend()" id="reviewTrendToggle">
-                        <i class="fas fa-chevron-down me-1" id="reviewTrendCaret"></i>리뷰 수 변화 접기
-                    </button>
-                    <div id="reviewTrendBody">
-                        <div class="small fw-bold text-muted mt-2 mb-1">블로그 리뷰 수</div>
-                        <div class="trend-pane" data-metric="blog"><div style="height:210px"><canvas id="trendBlog"></canvas></div></div>
-                        ${renderTrendHistoryTable('blog')}
-                        <div class="small fw-bold text-muted mt-3 mb-1">방문자 리뷰 수</div>
-                        <div class="trend-pane" data-metric="visitor"><div style="height:210px"><canvas id="trendVisitor"></canvas></div></div>
-                        ${renderTrendHistoryTable('visitor')}
-                    </div>
+            <div class="card border-0 shadow-sm trend-metric-card">
+                <div class="card-header">
+                    <h6 class="mb-0 fw-bold"><i class="fas fa-trophy text-warning me-2"></i>플레이스 순위 변화</h6>
+                    <span class="badge bg-secondary bg-opacity-10 text-secondary trend-period-badge">${period}일간 · 위로 갈수록 높은 순위</span>
+                </div>
+                <div class="card-body pt-2">
+                    <div class="trend-pane" data-metric="rank"><div style="height:240px"><canvas id="trendRank"></canvas></div></div>
+                    ${renderTrendSummary('rank')}
+                    ${renderTrendHistoryTable('rank')}
+                </div>
+            </div>
+
+            <div class="card border-0 shadow-sm trend-metric-card">
+                <div class="card-header">
+                    <h6 class="mb-0 fw-bold"><i class="fas fa-blog text-info me-2"></i>블로그 리뷰 변화</h6>
+                    <span class="badge bg-secondary bg-opacity-10 text-secondary trend-period-badge">${period}일간</span>
+                </div>
+                <div class="card-body pt-2">
+                    <div class="trend-pane" data-metric="blog"><div style="height:200px"><canvas id="trendBlog"></canvas></div></div>
+                    ${renderTrendSummary('blog')}
+                    ${renderTrendHistoryTable('blog')}
+                </div>
+            </div>
+
+            <div class="card border-0 shadow-sm trend-metric-card">
+                <div class="card-header">
+                    <h6 class="mb-0 fw-bold"><i class="fas fa-users text-success me-2"></i>방문자 리뷰 변화</h6>
+                    <span class="badge bg-secondary bg-opacity-10 text-secondary trend-period-badge">${period}일간</span>
+                </div>
+                <div class="card-body pt-2">
+                    <div class="trend-pane" data-metric="visitor"><div style="height:200px"><canvas id="trendVisitor"></canvas></div></div>
+                    ${renderTrendSummary('visitor')}
+                    ${renderTrendHistoryTable('visitor')}
                 </div>
             </div>
         </div>`;
