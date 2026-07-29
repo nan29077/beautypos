@@ -2116,3 +2116,164 @@ body[data-page="admin-metrics"] .card[style*="linear-gradient"] { background: li
         font-size: .67rem !important;
     }
 }
+
+/* ══════════════════════════════════════════════════════════
+   CRM 미용실 관리 — 모바일 반응형 추가 최적화
+   (기존 스타일 변경 없음 — 추가만)
+   ══════════════════════════════════════════════════════════ */
+
+@media (max-width: 767.98px) {
+    /* 고객관리 테이블: 태그·포인트·예상재방문 컬럼 숨겨서 가로 스크롤 방지 */
+    #crmCustList table thead tr th:nth-child(3),
+    #crmCustList table tbody tr td:nth-child(3),
+    #crmCustList table thead tr th:nth-child(6),
+    #crmCustList table tbody tr td:nth-child(6),
+    #crmCustList table thead tr th:nth-child(7),
+    #crmCustList table tbody tr td:nth-child(7) {
+        display: none !important;
+    }
+
+    /* 고객관리 검색바 full-width (inline style 재정의) */
+    #crmCustSearch {
+        width: 100% !important;
+        min-width: 0 !important;
+    }
+    #crmCustGrade {
+        width: auto !important;
+        flex: 1 1 auto !important;
+    }
+    #crmCustTag {
+        width: auto !important;
+        flex: 1 1 auto !important;
+    }
+
+    /* 고객관리 검색 영역 flex 처리 */
+    .data-card .card-header .d-flex.gap-2.align-items-center.flex-wrap {
+        width: 100%;
+    }
+    .data-card .card-header .d-flex.gap-2.align-items-center.flex-wrap .input-group {
+        flex: 1 1 100% !important;
+        width: 100% !important;
+    }
+
+    /* 예약 관리 날짜 입력 축소 */
+    #crmTabBody input[type="date"] {
+        width: 130px !important;
+    }
+
+    /* 예약 캘린더 가로 스크롤 터치 최적화 */
+    #crmResvBody {
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch !important;
+    }
+    #crmResvBody .card-body {
+        -webkit-overflow-scrolling: touch !important;
+    }
+
+    /* 마케팅 탭 쿠폰 테이블: 만료일 컬럼 숨기기 */
+    #crmMkBody .table thead tr th:nth-child(5),
+    #crmMkBody .table tbody tr td:nth-child(5) {
+        display: none !important;
+    }
+
+    /* 분석 탭 KPI 카드 2열 고정 */
+    #crmAnBody .row > [class*="col-6"] {
+        flex: 0 0 50% !important;
+        max-width: 50% !important;
+    }
+
+    /* 분석 탭 테이블 내용 컬럼 숨기기 */
+    #crmAnBody .table thead tr th:nth-child(2),
+    #crmAnBody .table tbody tr td:nth-child(2) {
+        display: none !important;
+    }
+
+    /* CRM 메시지 발송 폼 full-width */
+    #crmDynModal .row > [class*="col-md"] {
+        flex: 0 0 100% !important;
+        max-width: 100% !important;
+    }
+
+    /* CRM 모달 touch 스크롤 */
+    #crmDynModal .modal-body {
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    /* 서비스 카드 액션 버튼 터치 최적화 */
+    .crm-service-actions {
+        flex-wrap: wrap !important;
+        gap: 6px !important;
+        margin-top: 8px !important;
+        width: 100%;
+    }
+    .crm-service-actions .btn {
+        min-height: 36px !important;
+        min-width: 36px !important;
+        padding: 6px 10px !important;
+        flex: 0 0 auto;
+    }
+
+    /* 재방문 대상 테이블 - 담당 컬럼 숨기기 */
+    #mkRevList .table thead tr th:nth-child(6),
+    #mkRevList .table tbody tr td:nth-child(6) {
+        display: none !important;
+    }
+
+    /* 예약 툴바 세로 쌓기 */
+    #crmTabBody > div > .d-flex.justify-content-between.align-items-center.flex-wrap.gap-2.mb-3 {
+        flex-direction: column !important;
+        align-items: stretch !important;
+        gap: .5rem !important;
+    }
+    #crmTabBody > div > .d-flex.justify-content-between.align-items-center.flex-wrap.gap-2.mb-3 > div {
+        width: 100% !important;
+        justify-content: flex-start !important;
+    }
+
+    /* CRM 고객 상세 모달 탭 */
+    #crmDynModal .nav-tabs {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    #crmDynModal .nav-tabs .nav-link {
+        white-space: nowrap;
+        font-size: .76rem !important;
+        padding: 6px 10px !important;
+    }
+}
+
+@media (max-width: 430px) {
+    /* 서비스 카드 액션 버튼 더 compact */
+    .crm-service-actions .btn {
+        font-size: .7rem !important;
+        padding: 5px 8px !important;
+    }
+
+    /* CRM 모달 전체 폭 */
+    #crmDynModal .modal-dialog {
+        margin: .25rem !important;
+        max-width: calc(100vw - .5rem) !important;
+    }
+
+    /* 분석 KPI 카드 compact */
+    #crmAnBody .card-body.py-3 {
+        padding: .5rem !important;
+    }
+    #crmAnBody .fs-4 {
+        font-size: 1rem !important;
+    }
+
+    /* 마케팅 탭 pill 버튼 */
+    #mkPills .nav-link,
+    #msgPills .nav-link {
+        font-size: .72rem !important;
+        padding: 5px 9px !important;
+    }
+
+    /* 고객 상세 통계 카드 */
+    #crmDynModal .col-3 .fw-bold {
+        font-size: .82rem !important;
+    }
+}

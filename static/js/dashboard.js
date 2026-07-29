@@ -4308,9 +4308,12 @@ async function loadCRM(c, t){
     const tabs=[
         {id:'dashboard',icon:'fa-gauge-high',label:'대시보드'},
         {id:'customers',icon:'fa-users',label:'고객관리'},
+        {id:'reservations',icon:'fa-calendar-check',label:'예약'},
         {id:'staff',icon:'fa-user-group',label:'직원관리'},
         {id:'services',icon:'fa-scissors',label:'시술관리'},
         {id:'messages',icon:'fa-comment-dots',label:'메시지'},
+        {id:'analytics',icon:'fa-chart-bar',label:'분석'},
+        {id:'marketing',icon:'fa-bullhorn',label:'마케팅'},
     ];
     if(!tabs.find(x=>x.id===crmTab)) crmTab='dashboard';
     const scopeToggle = crmMe.is_designer ? `
@@ -4351,6 +4354,9 @@ function crmSwitchTab(tab){
     else if(tab==='staff') crmRenderStaff(body);
     else if(tab==='messages') crmRenderMessages(body);
     else if(tab==='services') crmRenderServices(body);
+    else if(tab==='reservations') crmRenderReservations(body);
+    else if(tab==='analytics') crmRenderAnalytics(body);
+    else if(tab==='marketing') crmRenderMarketing(body);
 }
 
 // ─── Dashboard ─────────────────────────────────────────────
