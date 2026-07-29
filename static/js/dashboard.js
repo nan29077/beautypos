@@ -2972,6 +2972,7 @@ async function loadAnalysisOverview(period) {
     </div>`;
 
     box.innerHTML = shell('<div class="text-center py-3"><div class="spinner-border spinner-border-sm text-primary"></div></div>');
+    let pendingCompCards = '';
 
     try {
         const d = await apiGet(`/api/owner/ad/analysis/overview?period=${p}`);
@@ -2999,7 +3000,8 @@ async function loadAnalysisOverview(period) {
         if (comps.length === 0) {
             html += `<p class="text-muted small mb-0 text-center py-3">등록된 경쟁업체가 없습니다. 상단 <strong>관리</strong>에서 추가하세요.</p>`;
         } else {
-            html += '<div class="overview-comp-list">' + comps.map(c => {
+            // 카드 마크업은 문자열로 만들고, 실제 DOM 삽입은 아래에서 fragment 로 한 번에 처리한다.
+            const cardHtml = comps.map(c => {
                 if (!c.has_data) {
                     return `<div class="border rounded-3 p-2 mb-2">
                         <div class="fw-bold small mb-1"><i class="fas fa-user-group text-danger me-1"></i>${escapeHtml(c.name)}</div>
@@ -3021,9 +3023,23 @@ async function loadAnalysisOverview(period) {
                     </div>
                     <div class="text-muted" style="font-size:.78rem">${escapeHtml(c.insight)}</div>
                 </div>`;
-            }).join('') + '</div>';
+            }).join('');
+            html += '<div class="overview-comp-list" id="overviewCompList"></div>';
+            pendingCompCards = cardHtml;
         }
         box.innerHTML = shell(html);
+
+        // 경쟁업체 카드는 fragment 로 한 번에 붙여 리플로우 횟수를 줄인다.
+        if (pendingCompCards) {
+            const host = document.getElementById('overviewCompList');
+            if (host) {
+                const tpl = document.createElement('template');
+                tpl.innerHTML = pendingCompCards;
+                const fragment = document.createDocumentFragment();
+                while (tpl.content.firstChild) fragment.appendChild(tpl.content.firstChild);
+                host.appendChild(fragment);
+            }
+        }
     } catch (e) {
         box.innerHTML = shell(`<div class="alert alert-warning py-2 mb-0 small"><i class="fas fa-exclamation-triangle me-1"></i>${escapeHtml(e.message)}</div>`);
     }
@@ -3031,11 +3047,57 @@ async function loadAnalysisOverview(period) {
 
 // ─── 네이버 플레이스 자동 수집 ───────────────────────────────
 
-let analysisTrendCharts = [];
+let analysisTrendCharts = {};   // metric -> Chart 인스턴스 (지연 생성)
+let analysisTrendData = null;   // { labels, series }
+
+const TREND_CANVAS_ID = { blog: 'trendBlog', visitor: 'trendVisitor', rank: 'trendRank' };
+const TREND_PALETTE = ['#6366f1', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#06b6d4', '#ec4899'];
 
 function destroyAnalysisTrendCharts() {
-    analysisTrendCharts.forEach(ch => { try { ch.destroy(); } catch (e) {} });
-    analysisTrendCharts = [];
+    // 인스턴스를 명시적으로 정리해 캔버스/이벤트 핸들러 누수를 막는다.
+    Object.values(analysisTrendCharts).forEach(ch => { try { ch.destroy(); } catch (e) {} });
+    analysisTrendCharts = {};
+}
+
+// 보이는 탭의 차트만 그린다. 이미 만들어져 있으면 재사용한다.
+function renderTrendChart(metric) {
+    if (!analysisTrendData || analysisTrendCharts[metric]) return;
+    const canvas = document.getElementById(TREND_CANVAS_ID[metric]);
+    if (!canvas || typeof Chart === 'undefined') return;
+
+    const { labels, series } = analysisTrendData;
+    const datasets = series.map((s, i) => ({
+        label: s.label + (s.kind === 'my' ? ' (우리)' : ''),
+        data: s[metric],
+        borderColor: TREND_PALETTE[i % TREND_PALETTE.length],
+        backgroundColor: TREND_PALETTE[i % TREND_PALETTE.length] + '22',
+        borderWidth: s.kind === 'my' ? 3 : 2,
+        borderDash: s.kind === 'my' ? [] : [5, 4],
+        tension: .3,
+        spanGaps: true,
+        pointRadius: 2,
+    }));
+    // 애니메이션을 끄면 렌더 직후 1초간 이어지던 캔버스 재도색이 사라진다.
+    const options = {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        animations: { colors: false, x: false, y: false },
+        transitions: { active: { animation: { duration: 0 } }, resize: { animation: { duration: 0 } } },
+        hover: { animationDuration: 0 },
+        plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } },
+        scales: { x: { ticks: { font: { size: 9 }, maxTicksLimit: 8 } }, y: { ticks: { font: { size: 9 } } } },
+    };
+    if (metric === 'rank') {
+        options.scales = {
+            ...options.scales,
+            y: {
+                ...options.scales.y, reverse: true,
+                ticks: { ...options.scales.y.ticks, precision: 0, callback: v => v >= RANK_OUT_OF_RANGE ? '200+' : v + '위' },
+            },
+        };
+    }
+    analysisTrendCharts[metric] = new Chart(canvas, { type: 'line', data: { labels, datasets }, options });
 }
 
 // 트렌드 지표 탭 전환 (한 번에 차트 1개만 표시해 스크롤 길이를 억제)
@@ -3048,8 +3110,11 @@ function switchTrendMetric(metric) {
         btn.classList.toggle('btn-primary', active);
         btn.classList.toggle('btn-outline-primary', !active);
     });
-    // 숨겨진 상태에서 그려진 차트는 크기가 어긋날 수 있어 다시 맞춘다.
-    analysisTrendCharts.forEach(ch => { try { ch.resize(); } catch (e) {} });
+    // 패널을 보이게 한 직후 동기 생성한다. (rAF 로 미루면 탭이 백그라운드일 때
+    // 콜백이 지연돼 차트가 그려지지 않을 수 있다.)
+    renderTrendChart(metric);
+    const chart = analysisTrendCharts[metric];
+    if (chart) { try { chart.resize(); } catch (e) {} }
 }
 
 // 광고 분석 하단 탭 전환
@@ -3077,9 +3142,24 @@ function renderCollectStatus(status) {
     </div>`;
 }
 
+// 한 프레임 양보 — 긴 작업 사이에 브라우저가 화면을 그릴 틈을 준다.
+// 백그라운드 탭에서는 rAF 가 멈추므로 타이머로도 반드시 진행되게 한다.
+function nextFrame() {
+    return new Promise(resolve => {
+        let settled = false;
+        const finish = () => { if (!settled) { settled = true; resolve(); } };
+        try { requestAnimationFrame(finish); } catch (e) { /* rAF 미지원 시 타이머로 진행 */ }
+        setTimeout(finish, 32);
+    });
+}
+
+let analysisFetchInFlight = false;
+
 async function fetchAnalysisNow() {
     const btn = document.getElementById('fetchNowBtn');
     if (!btn) return;
+    if (analysisFetchInFlight) return;  // 연타로 요청이 중첩되지 않게 한다
+    analysisFetchInFlight = true;
     const original = btn.innerHTML;
     btn.disabled = true;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>수집중...';
@@ -3092,13 +3172,20 @@ async function fetchAnalysisNow() {
         const failed = (res.results || []).filter(r => !r.ok);
         let msg = `수집 완료 — ${res.collected}건 저장 (${res.elapsed_seconds}초)`;
         if (failed.length) msg += `\n실패 ${failed.length}건: ` + failed.map(f => `${f.label}(${f.error || '알 수 없음'})`).join(', ');
-        alert(msg);
+
+        // 갱신 사이사이에 한 프레임씩 양보해 화면이 멈춘 것처럼 보이지 않게 한다.
         await loadAnalysisOverview();
+        await nextFrame();
         await reloadAnalysis();
+        await nextFrame();
         await loadAnalysisTrend();
+        await nextFrame();
+        // alert 는 메인 스레드를 막으므로 화면 갱신이 모두 그려진 뒤에 띄운다.
+        alert(msg);
     } catch (e) {
         if (box) box.innerHTML = `<div class="alert alert-danger py-2 mb-0 small"><i class="fas fa-exclamation-circle me-1"></i>${escapeHtml(e.message)}</div>`;
     } finally {
+        analysisFetchInFlight = false;
         btn.disabled = false;
         btn.innerHTML = original;
     }
@@ -3120,6 +3207,7 @@ async function loadAnalysisTrend(days) {
                 <small>상단 <strong>지금 수집</strong> 버튼을 눌러 네이버 지표를 수집하세요</small>
             </div></div>`;
             destroyAnalysisTrendCharts();
+            analysisTrendData = null;
             return;
         }
 
@@ -3149,37 +3237,8 @@ async function loadAnalysisTrend(days) {
         </div>`;
 
         destroyAnalysisTrendCharts();
-        // 숨겨진 컨테이너에서 생성하면 크기가 0이 되므로 잠시 모두 보이게 한 뒤 생성한다.
-        document.querySelectorAll('#analysisTrend .trend-pane').forEach(p => { p.style.display = ''; });
-        const palette = ['#6366f1', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#06b6d4', '#ec4899'];
-        const buildSets = key => series.map((s, i) => ({
-            label: s.label + (s.kind === 'my' ? ' (우리)' : ''),
-            data: s[key],
-            borderColor: palette[i % palette.length],
-            backgroundColor: palette[i % palette.length] + '22',
-            borderWidth: s.kind === 'my' ? 3 : 2,
-            borderDash: s.kind === 'my' ? [] : [5, 4],
-            tension: .3,
-            spanGaps: true,
-            pointRadius: 2,
-        }));
-        const baseOpts = {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } },
-            scales: { x: { ticks: { font: { size: 9 }, maxTicksLimit: 8 } }, y: { ticks: { font: { size: 9 } } } },
-        };
-
-        const bc = document.getElementById('trendBlog');
-        if (bc) analysisTrendCharts.push(new Chart(bc, { type: 'line', data: { labels, datasets: buildSets('blog') }, options: baseOpts }));
-        const vc = document.getElementById('trendVisitor');
-        if (vc) analysisTrendCharts.push(new Chart(vc, { type: 'line', data: { labels, datasets: buildSets('visitor') }, options: baseOpts }));
-        const rc = document.getElementById('trendRank');
-        if (rc) analysisTrendCharts.push(new Chart(rc, {
-            type: 'line',
-            data: { labels, datasets: buildSets('rank') },
-            options: { ...baseOpts, scales: { ...baseOpts.scales, y: { ...baseOpts.scales.y, reverse: true, ticks: { ...baseOpts.scales.y.ticks, precision: 0, callback: v => v >= RANK_OUT_OF_RANGE ? '200+' : v + '위' } } } },
-        }));
+        // 데이터만 보관하고 차트는 보이는 탭 1개만 그린다(나머지는 탭 클릭 시 생성).
+        analysisTrendData = { labels, series };
         switchTrendMetric('blog');
     } catch (e) {
         box.innerHTML = `<div class="alert alert-warning py-2 mb-0 small"><i class="fas fa-exclamation-triangle me-1"></i>트렌드 로딩 실패: ${escapeHtml(e.message)}</div>`;
