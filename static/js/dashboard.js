@@ -2917,6 +2917,9 @@ async function loadOwnerAnalysis(c, t) {
         </div>
     </div>
 
+    <!-- 한눈에 보기 (일별/주별 요약) — 상세 지표보다 먼저 보여준다 -->
+    <div id="analysisOverview" class="mb-3"></div>
+
     <!-- 비교 요약 대시보드 -->
     <div id="analysisSummary"><div class="text-center py-5"><div class="spinner-border text-primary"></div><p class="text-muted mt-2">분석 데이터를 불러오는 중...</p></div></div>
 
@@ -2926,8 +2929,104 @@ async function loadOwnerAnalysis(c, t) {
     <!-- 상세 데이터 영역 -->
     <div id="analysisDetail" class="mt-3"></div>`;
 
+    loadAnalysisOverview();
     reloadAnalysis();
     loadAnalysisTrend();
+}
+
+// ─── 한눈에 보기 (일별/주별 요약) ────────────────────────────
+
+let analysisOverviewPeriod = 'day';
+
+// 증감 표시용 칩. reverse=true 면 값이 클수록 좋음(순위는 이미 부호를 맞춰 전달)
+function changeChip(value, suffix) {
+    if (value === null || value === undefined) return '<span class="text-muted small">비교 데이터 없음</span>';
+    if (value === 0) return '<span class="text-muted small">변동 없음</span>';
+    const up = value > 0;
+    return `<span class="small fw-bold ${up ? 'text-success' : 'text-danger'}">
+        <i class="fas fa-caret-${up ? 'up' : 'down'}"></i> ${Math.abs(value)}${suffix || ''}</span>`;
+}
+
+function gapText(gap, unit) {
+    if (gap === null || gap === undefined) return '<span class="text-muted">-</span>';
+    if (gap === 0) return '<span class="text-muted">동률</span>';
+    const more = gap > 0;
+    return `<span class="fw-bold ${more ? 'text-success' : 'text-danger'}">${Math.abs(gap)}${unit} ${more ? '많음' : '적음'}</span>`;
+}
+
+async function loadAnalysisOverview(period) {
+    const box = document.getElementById('analysisOverview');
+    if (!box) return;
+    if (period) analysisOverviewPeriod = period;
+    const p = analysisOverviewPeriod;
+
+    const shell = inner => `<div class="card border-0 shadow-sm">
+        <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h6 class="mb-0 fw-bold"><i class="fas fa-bolt text-warning me-2"></i>한눈에 보기</h6>
+            <div class="btn-group btn-group-sm">
+                <button type="button" class="btn ${p === 'day' ? 'btn-primary' : 'btn-outline-primary'}" onclick="loadAnalysisOverview('day')">일별</button>
+                <button type="button" class="btn ${p === 'week' ? 'btn-primary' : 'btn-outline-primary'}" onclick="loadAnalysisOverview('week')">주별</button>
+            </div>
+        </div>
+        <div class="card-body pt-2">${inner}</div>
+    </div>`;
+
+    box.innerHTML = shell('<div class="text-center py-3"><div class="spinner-border spinner-border-sm text-primary"></div></div>');
+
+    try {
+        const d = await apiGet(`/api/owner/ad/analysis/overview?period=${p}`);
+        const label = d.period_label;
+        let html = `<div class="alert alert-primary bg-primary bg-opacity-10 border-0 py-2 px-3 mb-3">
+            <i class="fas fa-lightbulb text-warning me-2"></i><span class="small fw-bold">${escapeHtml(d.headline)}</span>
+        </div>`;
+
+        if (d.my_place) {
+            const m = d.my_place;
+            html += `<div class="border rounded-3 p-2 mb-2 bg-light">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <span class="fw-bold"><i class="fas fa-store text-primary me-1"></i>${escapeHtml(m.name)}
+                        <small class="text-muted fw-normal ms-1">${m.date}${m.baseline_date ? ` · ${label} ${m.baseline_date} 기준` : ''}</small></span>
+                    <span class="d-flex gap-3 flex-wrap small">
+                        <span>블로그 <strong>${m.blog ?? '-'}</strong> ${changeChip(m.blog_change)}</span>
+                        <span>방문자 <strong>${m.visitor ?? '-'}</strong> ${changeChip(m.visitor_change)}</span>
+                        <span>순위 <strong>${formatRank(m.rank)}</strong> ${changeChip(m.rank_change)}</span>
+                    </span>
+                </div>
+            </div>`;
+        }
+
+        const comps = d.competitors || [];
+        if (comps.length === 0) {
+            html += `<p class="text-muted small mb-0 text-center py-3">등록된 경쟁업체가 없습니다. 상단 <strong>관리</strong>에서 추가하세요.</p>`;
+        } else {
+            html += '<div class="overview-comp-list">' + comps.map(c => {
+                if (!c.has_data) {
+                    return `<div class="border rounded-3 p-2 mb-2">
+                        <div class="fw-bold small mb-1"><i class="fas fa-user-group text-danger me-1"></i>${escapeHtml(c.name)}</div>
+                        <div class="text-muted small">${escapeHtml(c.insight)}</div>
+                    </div>`;
+                }
+                const badge = c.verdict === 'ahead'
+                    ? '<span class="badge bg-success">우세</span>'
+                    : (c.verdict === 'behind' ? '<span class="badge bg-danger">열세</span>' : '<span class="badge bg-secondary">대등</span>');
+                return `<div class="border rounded-3 p-2 mb-2">
+                    <div class="d-flex justify-content-between align-items-center mb-1 flex-wrap gap-1">
+                        <span class="fw-bold small"><i class="fas fa-user-group text-danger me-1"></i>vs ${escapeHtml(c.name)}</span>
+                        ${badge}
+                    </div>
+                    <div class="row g-2 small mb-1">
+                        <div class="col-sm-4"><span class="text-muted">블로그리뷰</span> ${gapText(c.blog_gap, '건')}</div>
+                        <div class="col-sm-4"><span class="text-muted">방문자리뷰</span> ${gapText(c.visitor_gap, '건')}</div>
+                        <div class="col-sm-4"><span class="text-muted">상대 순위</span> <strong>${formatRank(c.rank)}</strong> ${changeChip(c.comp_rank_change)}</div>
+                    </div>
+                    <div class="text-muted" style="font-size:.78rem">${escapeHtml(c.insight)}</div>
+                </div>`;
+            }).join('') + '</div>';
+        }
+        box.innerHTML = shell(html);
+    } catch (e) {
+        box.innerHTML = shell(`<div class="alert alert-warning py-2 mb-0 small"><i class="fas fa-exclamation-triangle me-1"></i>${escapeHtml(e.message)}</div>`);
+    }
 }
 
 // ─── 네이버 플레이스 자동 수집 ───────────────────────────────
@@ -2994,6 +3093,7 @@ async function fetchAnalysisNow() {
         let msg = `수집 완료 — ${res.collected}건 저장 (${res.elapsed_seconds}초)`;
         if (failed.length) msg += `\n실패 ${failed.length}건: ` + failed.map(f => `${f.label}(${f.error || '알 수 없음'})`).join(', ');
         alert(msg);
+        await loadAnalysisOverview();
         await reloadAnalysis();
         await loadAnalysisTrend();
     } catch (e) {

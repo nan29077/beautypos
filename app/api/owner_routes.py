@@ -653,6 +653,223 @@ def ad_analysis_history(
     }
 
 
+# ─── 한눈에 보기 (일별/주별 요약) ─────────────────────────────
+
+RANK_OUT_OF_RANGE = naver_place.RANK_OUT_OF_RANGE
+
+
+def _rank_text(rank) -> str:
+    """순위 표기. 200위 밖 센티넬(201)은 문구로 바꾼다."""
+    if rank is None:
+        return "미확인"
+    return "200위 밖" if rank >= RANK_OUT_OF_RANGE else f"{rank}위"
+
+
+def _has_final_consonant(word: str) -> bool:
+    """한글 마지막 글자에 받침이 있는지 확인한다 (조사 선택용)."""
+    if not word:
+        return False
+    last = word.strip()[-1]
+    if not ("가" <= last <= "힣"):
+        # 숫자로 끝나면 읽는 소리 기준으로 판단 (0,1,3,6,7,8 은 받침 있음)
+        return last in "0136780"
+    return (ord(last) - 0xAC00) % 28 != 0
+
+
+def _with_particle(word: str, consonant_form: str, vowel_form: str) -> str:
+    """받침 유무에 따라 조사를 붙인다. 예: 와/과, 로/으로."""
+    return word + (consonant_form if _has_final_consonant(word) else vowel_form)
+
+
+def _latest_metric(db: Session, merchant_id: int, place_url: str, on_or_before=None):
+    """지정일 이전(포함) 중 가장 최근 지표 1건을 가져온다. 데이터가 듬성해도 동작한다."""
+    q = db.query(AdMetric).filter(
+        AdMetric.merchant_id == merchant_id,
+        AdMetric.place_url == place_url,
+    )
+    if on_or_before is not None:
+        q = q.filter(AdMetric.date <= on_or_before)
+    return q.order_by(AdMetric.date.desc()).first()
+
+
+def _metric_snapshot(db: Session, merchant_id: int, place_url: str, period: str) -> dict:
+    """현재 지표와 비교 기준(어제 / 지난주) 지표를 함께 계산한다."""
+    current = _latest_metric(db, merchant_id, place_url)
+    if current is None:
+        return {"has_data": False}
+
+    if period == "week":
+        baseline = _latest_metric(db, merchant_id, place_url, current.date - timedelta(days=7))
+    else:
+        baseline = _latest_metric(db, merchant_id, place_url, current.date - timedelta(days=1))
+
+    def _diff(now_value, before_value, reverse=False):
+        if now_value is None or before_value is None:
+            return None
+        # 순위는 숫자가 작아질수록 상승이므로 부호를 뒤집어 양수를 '상승'으로 맞춘다.
+        return (before_value - now_value) if reverse else (now_value - before_value)
+
+    return {
+        "has_data": True,
+        "date": str(current.date),
+        "blog": current.blog_review_count,
+        "visitor": current.visitor_review_count,
+        "rank": current.place_rank,
+        "baseline_date": str(baseline.date) if baseline else None,
+        "baseline_blog": baseline.blog_review_count if baseline else None,
+        "baseline_visitor": baseline.visitor_review_count if baseline else None,
+        "baseline_rank": baseline.place_rank if baseline else None,
+        "blog_change": _diff(current.blog_review_count, baseline.blog_review_count if baseline else None),
+        "visitor_change": _diff(current.visitor_review_count, baseline.visitor_review_count if baseline else None),
+        "rank_change": _diff(current.place_rank, baseline.place_rank if baseline else None, reverse=True),
+    }
+
+
+def _competitor_insight(name: str, blog_gap, visitor_gap, mine: dict, period_label: str) -> str:
+    """요청 예시와 같은 형태의 안내 문구를 만든다.
+
+    두 지표의 우열 방향이 다르면 '~도' 가 아니라 '~지만 / ~는' 으로 이어 붙인다.
+    """
+    def _amount(gap):
+        return f"{abs(gap)}건 " + ("많" if gap > 0 else "적")
+
+    if blog_gap == 0 and visitor_gap == 0:
+        sentence = f"블로그·방문자 리뷰 모두 {_with_particle(name, '과', '와')} 같습니다."
+    elif blog_gap == 0:
+        sentence = (f"블로그 리뷰는 {_with_particle(name, '과', '와')} 같고, "
+                    f"방문자 리뷰는 {_amount(visitor_gap)}습니다.")
+    elif visitor_gap == 0:
+        sentence = (f"블로그 리뷰가 {name}보다 {_amount(blog_gap)}고, "
+                    f"방문자 리뷰는 같습니다.")
+    elif (blog_gap > 0) == (visitor_gap > 0):
+        # 두 지표가 같은 방향 → '도' 로 연결
+        sentence = (f"블로그 리뷰가 {name}보다 {_amount(blog_gap)}고, "
+                    f"방문자 리뷰도 {_amount(visitor_gap)}습니다.")
+    else:
+        # 방향이 엇갈림 → '지만 / 는' 으로 연결
+        sentence = (f"블로그 리뷰는 {name}보다 {_amount(blog_gap)}지만, "
+                    f"방문자 리뷰는 {_amount(visitor_gap)}습니다.")
+
+    # 순위 변화 문장
+    rank_now, rank_before = mine.get("rank"), mine.get("baseline_rank")
+    if rank_now is None:
+        rank_sentence = ""
+    elif rank_before is None:
+        rank_sentence = f" 플레이스 순위는 {_rank_text(rank_now)}이며, {period_label} 데이터가 없어 변화는 비교할 수 없습니다."
+    elif rank_before == rank_now:
+        rank_sentence = f" 플레이스 순위는 {_with_particle(period_label, '과', '와')} 동일한 {_rank_text(rank_now)}입니다."
+    else:
+        moved = "상승" if rank_now < rank_before else "하락"
+        rank_sentence = (
+            f" 플레이스 순위는 {period_label} {_rank_text(rank_before)}에서 "
+            f"오늘 {_with_particle(_rank_text(rank_now), '으로', '로')} {moved}했습니다."
+        )
+    return (sentence + rank_sentence).strip()
+
+
+@router.get("/ad/analysis/overview")
+def ad_analysis_overview(
+    period: str = Query("day", pattern="^(day|week)$"),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_owner),
+):
+    """한눈에 보기 — 우리 매장과 각 경쟁업체의 일별/주별 비교 요약."""
+    merchant = _get_owner_merchant(user, db)
+    period_label = "지난주" if period == "week" else "어제"
+
+    profiles = db.query(AdPlaceProfile).filter(
+        AdPlaceProfile.merchant_id == merchant.id,
+    ).all()
+    competitors = db.query(AdCompetitor).filter(
+        AdCompetitor.merchant_id == merchant.id,
+    ).all()
+
+    # 우리 매장이 여러 곳이면 순위가 가장 높은 곳을 대표로 삼는다.
+    my_candidates = []
+    for profile in profiles:
+        if not profile.place_url:
+            continue
+        snapshot = _metric_snapshot(db, merchant.id, profile.place_url, period)
+        if snapshot["has_data"]:
+            my_candidates.append({
+                "name": profile.nickname or profile.place_url,
+                "place_url": profile.place_url,
+                **snapshot,
+            })
+
+    mine = min(
+        my_candidates,
+        key=lambda c: c["rank"] if c["rank"] is not None else 10 ** 6,
+    ) if my_candidates else None
+
+    comp_items = []
+    for competitor in competitors:
+        snapshot = _metric_snapshot(db, merchant.id, competitor.competitor_place_url, period)
+        name = competitor.memo or competitor.competitor_place_url
+        if not snapshot["has_data"] or mine is None:
+            comp_items.append({
+                "id": competitor.id, "name": name,
+                "place_url": competitor.competitor_place_url,
+                "has_data": False,
+                "insight": "아직 수집된 데이터가 없습니다. 상단 ‘지금 수집’을 눌러주세요.",
+            })
+            continue
+
+        blog_gap = (mine["blog"] or 0) - (snapshot["blog"] or 0)
+        visitor_gap = (mine["visitor"] or 0) - (snapshot["visitor"] or 0)
+        rank_gap = (
+            snapshot["rank"] - mine["rank"]
+            if (mine["rank"] is not None and snapshot["rank"] is not None) else None
+        )
+        wins = sum([blog_gap > 0, visitor_gap > 0, bool(rank_gap and rank_gap > 0)])
+        losses = sum([blog_gap < 0, visitor_gap < 0, bool(rank_gap and rank_gap < 0)])
+
+        comp_items.append({
+            "id": competitor.id, "name": name,
+            "place_url": competitor.competitor_place_url,
+            "has_data": True,
+            "blog": snapshot["blog"], "visitor": snapshot["visitor"], "rank": snapshot["rank"],
+            "blog_gap": blog_gap, "visitor_gap": visitor_gap, "rank_gap": rank_gap,
+            "comp_blog_change": snapshot["blog_change"],
+            "comp_visitor_change": snapshot["visitor_change"],
+            "comp_rank_change": snapshot["rank_change"],
+            "verdict": "ahead" if wins > losses else ("behind" if losses > wins else "even"),
+            "wins": wins, "losses": losses,
+            "insight": _competitor_insight(name, blog_gap, visitor_gap, mine, period_label),
+        })
+
+    # 종합 한 줄 요약
+    ready = [c for c in comp_items if c["has_data"]]
+    if mine is None:
+        headline = "우리 매장 플레이스를 등록하고 지표를 수집하면 비교 요약을 제공합니다."
+    elif not ready:
+        headline = "경쟁업체를 등록하고 ‘지금 수집’을 실행하면 비교 요약을 제공합니다."
+    else:
+        ahead = sum(1 for c in ready if c["verdict"] == "ahead")
+        behind = sum(1 for c in ready if c["verdict"] == "behind")
+        rank_move = mine.get("rank_change")
+        if mine.get("baseline_date") is None:
+            move_text = f"플레이스 순위는 {_rank_text(mine.get('rank'))}이며 {period_label} 비교 데이터가 아직 없습니다"
+        elif rank_move is None or rank_move == 0:
+            move_text = f"플레이스 순위는 {_with_particle(_rank_text(mine.get('rank')), '으로', '로')} 큰 변동이 없습니다"
+        else:
+            move_text = (
+                f"플레이스 순위는 {period_label} 대비 {abs(rank_move)}단계 "
+                f"{'상승해 ' if rank_move > 0 else '하락해 '}{_rank_text(mine.get('rank'))}입니다"
+            )
+        headline = f"경쟁업체 {len(ready)}곳 중 {ahead}곳에 앞서고 {behind}곳에 뒤집니다. {move_text}."
+
+    return {
+        "period": period,
+        "period_label": period_label,
+        "my_place": mine,
+        "competitors": comp_items,
+        "headline": headline,
+        "has_data": bool(mine and ready),
+        "collection_status": _collection_status(db, merchant.id),
+    }
+
+
 # ─── Ad Analysis Comparison Summary ──────────────────────────
 
 @router.get("/ad/analysis/summary")
