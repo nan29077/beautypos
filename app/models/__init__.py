@@ -4,7 +4,7 @@ from app.models.staff import Staff
 from app.models.terminal import TerminalDevice
 from app.models.pg import PGProvider, MerchantPGConfig
 from app.models.transaction import Transaction
-from app.models.settlement import Settlement, FeePolicy, MerchantSalesAssignment, PayoutRequest
+from app.models.settlement import Settlement, FeePolicy, SalesCommissionPolicy, MerchantSalesAssignment, PayoutRequest
 from app.models.ad import (
     AdPlaceProfile, AdCompetitor, AdMetric, PlaceMetricSnapshot,
     AdOrder, AdOrderBlogDetail, AdOrderBlogImage,
@@ -24,7 +24,7 @@ __all__ = [
     "User", "Merchant", "Staff", "TerminalDevice",
     "PGProvider", "MerchantPGConfig",
     "Transaction",
-    "Settlement", "FeePolicy", "MerchantSalesAssignment", "PayoutRequest",
+    "Settlement", "FeePolicy", "SalesCommissionPolicy", "MerchantSalesAssignment", "PayoutRequest",
     "AdPlaceProfile", "AdCompetitor", "AdMetric", "PlaceMetricSnapshot",
     "AdOrder", "AdOrderBlogDetail", "AdOrderBlogImage",
     "AdOrderPlaceTrafficDetail",

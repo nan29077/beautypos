@@ -13,6 +13,12 @@ class RegisterRequest(BaseModel):
     email: str
     password: str = Field(min_length=6)
     name: str
+    phone: Optional[str] = None
+    role: str = "OWNER"                    # OWNER / SALES 가능 (ADMIN 불가)
+    sales_referral_code: Optional[str] = None  # OWNER 가입 시 SALES 추천 코드
+    shop_name: Optional[str] = None        # OWNER 가입 시 가맹점명
+    business_number: Optional[str] = None  # OWNER 가입 시 사업자번호
+    address: Optional[str] = None          # OWNER 가입 시 주소
 
 
 class LoginRequest(BaseModel):
@@ -161,13 +167,28 @@ class AdCompetitorCreate(BaseModel):
 # ─── Fee Policy ──────────────────────────────────────────────
 
 class FeePolicyUpdate(BaseModel):
-    pg_fee_rate: float = 0.035  # 3.5% (VAT 별도)
+    pg_fee_rate: float = 0.035  # 3.5% (VAT 별도, 하위 호환)
+
+
+class GlobalFeeSettingsUpdate(BaseModel):
+    merchant_fee_rate: float  # 미용실 부과 총 수수료율
+    pg_fee_rate: float        # PG사 실비용
+    sales_commission_rate: float  # 전역 기본 영업 커미션율
+
+
+class MerchantFeeOverrideUpdate(BaseModel):
+    merchant_fee_rate: Optional[float] = None  # None 이면 전역값 사용
+    pg_fee_rate: Optional[float] = None        # None 이면 전역값 사용
+
+
+class SalesCommissionOverrideUpdate(BaseModel):
+    commission_rate: Optional[float] = None  # None 이면 전역값 사용
 
 
 class SalesAssignmentCreate(BaseModel):
     merchant_id: int
     sales_manager_user_id: int
-    commission_rate: float = 0.01  # 3.5% 내에서 영업관리자 수익률
+    commission_rate: float = 0.01
     memo: Optional[str] = None
 
 

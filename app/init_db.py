@@ -59,6 +59,12 @@ def _ensure_columns():
         ("crm_reservations", "reminder_sent_at", "DATETIME", "NULL"),
         ("ad_place_profiles", "analysis_keyword", "VARCHAR(200)", "NULL"),
         ("ad_metrics", "search_keyword", "VARCHAR(200)", "NULL"),
+        # 커미션 구조 개편 (2026-07)
+        ("fee_policies", "merchant_fee_rate", "NUMERIC(5,4)", "0.05"),
+        ("settlements", "merchant_fee_amount", "NUMERIC(14,2)", "0"),
+        ("settlements", "company_profit_amount", "NUMERIC(14,2)", "0"),
+        ("settlements", "sales_manager_user_id", "INTEGER", "NULL"),
+        ("users", "referral_code", "VARCHAR(50)", "NULL"),
     ]
     with engine.connect() as conn:
         for table, column, ddl_type, default in pending:
@@ -82,6 +88,54 @@ def _ensure_columns():
                     print(f"   ➕ Added column {table}.{column}")
             except Exception as e:
                 print(f"   ⚠️ Could not ensure {table}.{column}: {e}")
+
+    # SQLite 전용: fee_policies.merchant_id 를 nullable 로 재구성 (전역 기본값 지원)
+    _rebuild_fee_policies_for_nullable_merchant(engine)
+
+
+def _rebuild_fee_policies_for_nullable_merchant(engine_):
+    """fee_policies.merchant_id 를 nullable 로 변경.
+
+    SQLite: 테이블 재생성으로 처리.
+    MariaDB/MySQL: ALTER TABLE MODIFY COLUMN 으로 처리.
+    """
+    with engine_.begin() as conn:
+        try:
+            if engine_.dialect.name == "sqlite":
+                pragma = list(conn.execute(text("PRAGMA table_info(fee_policies)")))
+                if not pragma:
+                    return
+                merchant_id_col = next((r for r in pragma if r[1] == "merchant_id"), None)
+                if merchant_id_col is None or merchant_id_col[3] == 0:
+                    return  # 이미 nullable
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS _fee_policies_new (
+                        id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                        merchant_id INTEGER REFERENCES merchants(id),
+                        merchant_fee_rate NUMERIC(5,4) DEFAULT 0.05,
+                        pg_fee_rate NUMERIC(5,4) DEFAULT 0.03,
+                        vat_inclusive_rate NUMERIC(5,4),
+                        updated_at DATETIME
+                    )
+                """))
+                conn.execute(text(
+                    "INSERT OR IGNORE INTO _fee_policies_new "
+                    "(id, merchant_id, merchant_fee_rate, pg_fee_rate, vat_inclusive_rate, updated_at) "
+                    "SELECT id, merchant_id, "
+                    "COALESCE(merchant_fee_rate, 0.05), pg_fee_rate, vat_inclusive_rate, updated_at "
+                    "FROM fee_policies"
+                ))
+                conn.execute(text("DROP TABLE fee_policies"))
+                conn.execute(text("ALTER TABLE _fee_policies_new RENAME TO fee_policies"))
+                print("   ♻️  Rebuilt fee_policies with nullable merchant_id (SQLite)")
+            elif engine_.dialect.name in ("mysql", "mariadb"):
+                # MODIFY COLUMN is idempotent — safe to run even if already nullable
+                conn.execute(text(
+                    "ALTER TABLE fee_policies MODIFY COLUMN merchant_id INT NULL"
+                ))
+                print("   ♻️  Ensured fee_policies.merchant_id is nullable (MariaDB)")
+        except Exception as e:
+            print(f"   ⚠️ Could not make fee_policies.merchant_id nullable: {e}")
 
 
 def _remove_retired_features():

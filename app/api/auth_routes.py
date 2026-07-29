@@ -1,11 +1,14 @@
 """
 Authentication routes: register, login, OAuth stubs, test-login, /me
 """
+import secrets
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.user import User, UserRole
+from app.models.merchant import Merchant
+from app.models.settlement import MerchantSalesAssignment
 from app.auth.jwt_handler import (
     hash_password, verify_password,
     create_access_token, create_refresh_token,
@@ -17,6 +20,8 @@ from app.config import get_settings
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 settings = get_settings()
+
+_ALLOWED_REGISTER_ROLES = {"owner", "sales"}
 
 
 def _user_dict(u: User) -> dict:
@@ -40,17 +45,63 @@ def _issue_tokens(user: User) -> dict:
 
 @router.post("/register")
 def register(req: RegisterRequest, db: Session = Depends(get_db)):
+    role_str = req.role.lower()
+    if role_str not in _ALLOWED_REGISTER_ROLES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"가입 가능한 역할: {sorted(_ALLOWED_REGISTER_ROLES)} (admin 가입 불가)",
+        )
+
     existing = db.query(User).filter(User.email == req.email).first()
     if existing:
-        raise HTTPException(status_code=400, detail="Email already registered")
+        raise HTTPException(status_code=400, detail="이미 사용 중인 이메일입니다")
+
+    role = UserRole(role_str)
+
+    # SALES 가입: 고유 추천 코드 자동 생성
+    referral_code = None
+    if role == UserRole.SALES:
+        referral_code = f"SALES-{secrets.token_hex(4).upper()}"
+        while db.query(User).filter(User.referral_code == referral_code).first():
+            referral_code = f"SALES-{secrets.token_hex(4).upper()}"
 
     user = User(
         email=req.email,
         password_hash=hash_password(req.password),
         name=req.name,
-        role=UserRole.OWNER,
+        phone=req.phone,
+        role=role,
+        referral_code=referral_code,
     )
     db.add(user)
+    db.flush()  # user.id 확보
+
+    # OWNER 가입: shop_name 있으면 Merchant 자동 생성
+    if role == UserRole.OWNER and req.shop_name:
+        merchant = Merchant(
+            name=req.shop_name,
+            owner_user_id=user.id,
+            business_no=req.business_number,
+            address=req.address,
+            phone=req.phone,
+        )
+        db.add(merchant)
+        db.flush()  # merchant.id 확보
+
+        # 추천 코드로 영업관리자 자동 연결
+        if req.sales_referral_code:
+            sales_user = db.query(User).filter(
+                User.referral_code == req.sales_referral_code,
+                User.role == UserRole.SALES,
+                User.is_active == True,  # noqa: E712
+            ).first()
+            if sales_user:
+                assignment = MerchantSalesAssignment(
+                    merchant_id=merchant.id,
+                    sales_manager_user_id=sales_user.id,
+                )
+                db.add(assignment)
+
     db.commit()
     db.refresh(user)
     return _issue_tokens(user)

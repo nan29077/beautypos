@@ -17,7 +17,7 @@ from app.models.pg import PGProvider, MerchantPGConfig, PGConfigStatus
 from app.models.terminal import TerminalDevice
 from app.models.transaction import Transaction
 from app.models.settlement import (
-    FeePolicy, MerchantSalesAssignment, Settlement, PayoutRequest, PayoutStatus,
+    FeePolicy, SalesCommissionPolicy, MerchantSalesAssignment, Settlement, PayoutRequest, PayoutStatus,
 )
 from app.models.ad import (
     AdOrder, AdOrderStatus, AdMetric, AdOrderBlogDetail, AdOrderBlogImage,
@@ -33,11 +33,15 @@ from app.models.system_config import (
 from app.services import ai_service
 from app.services.encryption import encrypt_value, decrypt_value, mask_value
 from app.services.pg_service import get_pg_provider
-from app.services.settlement_service import compute_distribution
+from app.services.settlement_service import (
+    compute_distribution, get_effective_fee_rates, compute_fee_distribution,
+    DEFAULT_MERCHANT_FEE_RATE, DEFAULT_PG_FEE_RATE, DEFAULT_SALES_COMMISSION_RATE,
+)
 from app.schemas.schemas import (
     MerchantCreate, MerchantUpdate, PGConfigCreate,
     AdMetricCreate, AdOrderStatusUpdate,
-    FeePolicyUpdate, SalesAssignmentCreate, SalesAssignmentUpdate,
+    FeePolicyUpdate, GlobalFeeSettingsUpdate, MerchantFeeOverrideUpdate, SalesCommissionOverrideUpdate,
+    SalesAssignmentCreate, SalesAssignmentUpdate,
     CommissionVisibilityUpdate, StaffShareRateUpdate, AISettingsUpdate,
 )
 
@@ -524,15 +528,13 @@ def list_ad_metrics(
 @router.get("/merchants/{mid}/fee-policy")
 def get_fee_policy(mid: int, db: Session = Depends(get_db), _=Depends(require_admin)):
     fp = db.query(FeePolicy).filter(FeePolicy.merchant_id == mid).first()
-    pg_fee_rate = float(fp.pg_fee_rate) if fp else 0.035  # 적용율 = VAT 포함
-    vat_inclusive_rate = pg_fee_rate                       # 호환 필드 (동일값)
-    pg_fee_rate_excl_vat = round(pg_fee_rate / 1.1, 4)     # VAT 별도 환산 (표시용)
-
-    # 영업관리자 배정 정보 조회
     assign = db.query(MerchantSalesAssignment).filter(
         MerchantSalesAssignment.merchant_id == mid,
-        MerchantSalesAssignment.is_active == True,
+        MerchantSalesAssignment.is_active == True,  # noqa: E712
     ).first()
+    sales_manager_user_id = assign.sales_manager_user_id if assign else None
+    mfr, pgr, comm_rate = get_effective_fee_rates(db, mid, sales_manager_user_id)
+
     sales_info = None
     if assign:
         sales_user = db.query(User).filter(User.id == assign.sales_manager_user_id).first()
@@ -540,65 +542,68 @@ def get_fee_policy(mid: int, db: Session = Depends(get_db), _=Depends(require_ad
             "assignment_id": assign.id,
             "sales_manager_id": assign.sales_manager_user_id,
             "sales_manager_name": sales_user.name if sales_user else None,
-            "commission_rate": float(assign.commission_rate),
-            "commission_rate_pct": round(float(assign.commission_rate) * 100, 2),
+            "commission_rate": comm_rate,
+            "commission_rate_pct": round(comm_rate * 100, 2),
             "memo": assign.memo,
         }
 
-    # 정산 시뮬레이션 (10,000원 기준)
     sample = 10000
-    pg_fee_amount = round(sample * pg_fee_rate)
-    commission_amount = round(sample * float(assign.commission_rate)) if assign else 0
-    platform_amount = pg_fee_amount - commission_amount  # ADPAY 플랫폼 몫
-    net_amount = sample - pg_fee_amount                  # 원장+디자이너 분배가능액
+    sim_merchant_fee = round(sample * mfr)
+    sim_pg_cost = round(sample * pgr)
+    sim_platform = sim_merchant_fee - sim_pg_cost
+    sim_commission = round(sample * comm_rate)
+    sim_company = sim_platform - sim_commission
+    sim_net = sample - sim_merchant_fee
 
     return {
         "merchant_id": mid,
-        "pg_fee_rate": pg_fee_rate,
-        "pg_fee_rate_excl_vat": pg_fee_rate_excl_vat,
-        "vat_inclusive_rate": vat_inclusive_rate,
+        "merchant_fee_rate": mfr,
+        "pg_fee_rate": pgr,
         "has_fee_policy": fp is not None,
-        "description": f"PG수수료 {pg_fee_rate*100:.2f}% (VAT 포함) · VAT 별도 {pg_fee_rate_excl_vat*100:.2f}%",
-        "example": f"10,000원 결제 시 분배가능액 {int(net_amount)}원",
-        # 영업관리자 연동 정보
         "has_sales_manager": assign is not None,
         "sales_info": sales_info,
-        # 정산 시뮬레이션
+        # 하위 호환 필드
+        "vat_inclusive_rate": pgr,
+        "pg_fee_rate_excl_vat": round(pgr / 1.1, 4),
+        "description": f"미용실수수료 {mfr*100:.2f}% / PG비용 {pgr*100:.2f}% / 영업커미션 {comm_rate*100:.2f}%",
         "simulation": {
             "sample_amount": sample,
-            "pg_fee_amount": pg_fee_amount,
-            "commission_amount": commission_amount,
-            "platform_amount": platform_amount,
-            "net_amount": int(net_amount),
-            "owner_net": int(net_amount),
-            "breakdown": f"결제 {sample:,}원 → PG수수료 {pg_fee_amount:,}원"
-                        + (f" (영업 {commission_amount:,}원 + ADPAY {platform_amount:,}원)" if assign else f" (ADPAY {platform_amount:,}원, 영업 미배정)")
-                        + f" → 분배가능액 {int(net_amount):,}원",
+            "merchant_fee_amount": sim_merchant_fee,
+            "pg_cost": sim_pg_cost,
+            "platform_income": sim_platform,
+            "commission_amount": sim_commission,
+            "company_profit": sim_company,
+            "net_amount": int(sim_net),
+            # 하위 호환
+            "pg_fee_amount": sim_pg_cost,
+            "breakdown": (
+                f"결제 {sample:,}원 → 미용실수수료 {sim_merchant_fee:,}원"
+                f" (PG {sim_pg_cost:,}원 + 플랫폼 {sim_platform:,}원"
+                + (f" = 영업 {sim_commission:,}원 + 회사 {sim_company:,}원" if assign else "")
+                + f") → 미용실수령액 {int(sim_net):,}원"
+            ),
         },
     }
 
 
 @router.post("/merchants/{mid}/fee-policy")
 def set_fee_policy(mid: int, req: FeePolicyUpdate, db: Session = Depends(get_db), _=Depends(require_admin)):
-    # 입력값은 VAT 포함 PG 수수료율. pg_fee_rate 가 곧 적용율이며, vat_inclusive_rate 는 호환을 위해 동일 값으로 저장.
-    rate = float(req.pg_fee_rate)
+    """하위 호환 엔드포인트 — pg_fee_rate 만 저장. 신규는 PUT /merchants/{mid}/fee-override 사용 권장."""
+    pgr = float(req.pg_fee_rate)
     fp = db.query(FeePolicy).filter(FeePolicy.merchant_id == mid).first()
     if fp:
-        fp.pg_fee_rate = rate
-        fp.vat_inclusive_rate = rate
+        fp.pg_fee_rate = pgr
+        fp.vat_inclusive_rate = pgr
     else:
-        fp = FeePolicy(
-            merchant_id=mid,
-            pg_fee_rate=rate,
-            vat_inclusive_rate=rate,
-        )
+        mfr_global, _, _ = get_effective_fee_rates(db, None)
+        fp = FeePolicy(merchant_id=mid, pg_fee_rate=pgr, merchant_fee_rate=mfr_global, vat_inclusive_rate=pgr)
         db.add(fp)
     db.commit()
     return {
         "ok": True,
-        "pg_fee_rate": rate,
-        "vat_inclusive_rate": rate,
-        "example": f"10,000원 결제 시 PG수수료 {int(10000 * rate):,}원 / 분배가능액 {int(10000 * (1 - rate)):,}원"
+        "pg_fee_rate": pgr,
+        "vat_inclusive_rate": pgr,
+        "example": f"10,000원 결제 시 PG수수료 {int(10000 * pgr):,}원 / 미용실수령액 {int(10000 * (1 - pgr)):,}원",
     }
 
 
@@ -611,49 +616,57 @@ def fee_policy_overview(db: Session = Depends(get_db), _=Depends(require_admin))
     results = []
     for m in merchants:
         fp = db.query(FeePolicy).filter(FeePolicy.merchant_id == m.id).first()
-        pg_fee_rate = float(fp.pg_fee_rate) if fp else 0.035  # 적용율 = VAT 포함
-        vat_inclusive_rate = pg_fee_rate                       # 호환 필드
-        pg_fee_rate_excl_vat = round(pg_fee_rate / 1.1, 4)     # VAT 별도 환산
-
         assign = db.query(MerchantSalesAssignment).filter(
             MerchantSalesAssignment.merchant_id == m.id,
-            MerchantSalesAssignment.is_active == True,
+            MerchantSalesAssignment.is_active == True,  # noqa: E712
         ).first()
+        sales_manager_user_id = assign.sales_manager_user_id if assign else None
+
+        mfr, pgr, comm_rate = get_effective_fee_rates(db, m.id, sales_manager_user_id)
+        platform_rate = mfr - pgr
+        company_rate = platform_rate - comm_rate
 
         sales_name = None
-        commission_rate = 0
         if assign:
             su = db.query(User).filter(User.id == assign.sales_manager_user_id).first()
             sales_name = su.name if su else None
-            commission_rate = float(assign.commission_rate)
 
         sample = 10000
-        pg_fee_amt = round(sample * pg_fee_rate)
-        commission_amt = round(sample * commission_rate) if assign else 0
-        platform_amt = pg_fee_amt - commission_amt
-        net_amt = sample - pg_fee_amt
+        sim_merchant_fee = round(sample * mfr)
+        sim_pg_cost = round(sample * pgr)
+        sim_platform = round(sample * platform_rate)
+        sim_commission = round(sample * comm_rate)
+        sim_company = round(sample * company_rate)
+        sim_net = sample - sim_merchant_fee
 
         results.append({
             "merchant_id": m.id,
             "merchant_name": m.name,
             "category": m.display_category if hasattr(m, 'display_category') else None,
-            "pg_fee_rate": pg_fee_rate,
-            "pg_fee_rate_pct": round(pg_fee_rate * 100, 2),
-            "pg_fee_rate_excl_vat": pg_fee_rate_excl_vat,
-            "pg_fee_rate_excl_vat_pct": round(pg_fee_rate_excl_vat * 100, 2),
-            "vat_inclusive_rate": vat_inclusive_rate,
-            "vat_inclusive_rate_pct": round(vat_inclusive_rate * 100, 2),
             "has_fee_policy": fp is not None,
             "has_sales_manager": assign is not None,
             "sales_manager_name": sales_name,
-            "commission_rate": commission_rate,
-            "commission_rate_pct": round(commission_rate * 100, 2),
+            "merchant_fee_rate": mfr,
+            "merchant_fee_rate_pct": round(mfr * 100, 2),
+            "pg_fee_rate": pgr,
+            "pg_fee_rate_pct": round(pgr * 100, 2),
+            "platform_rate": round(platform_rate, 4),
+            "commission_rate": comm_rate,
+            "commission_rate_pct": round(comm_rate * 100, 2),
+            "company_profit_rate": round(company_rate, 4),
             "assignment_id": assign.id if assign else None,
+            # 하위 호환 필드
+            "pg_fee_rate_excl_vat": round(pgr / 1.1, 4),
+            "pg_fee_rate_excl_vat_pct": round(pgr / 1.1 * 100, 2),
+            "vat_inclusive_rate": pgr,
+            "vat_inclusive_rate_pct": round(pgr * 100, 2),
             # 시뮬레이션 (10,000원 기준)
-            "sim_pg_fee": pg_fee_amt,
-            "sim_commission": commission_amt,
-            "sim_platform": platform_amt,
-            "sim_net": int(net_amt),
+            "sim_merchant_fee": sim_merchant_fee,
+            "sim_pg_fee": sim_pg_cost,
+            "sim_platform": sim_platform,
+            "sim_commission": sim_commission,
+            "sim_company": sim_company,
+            "sim_net": int(sim_net),
         })
     return results
 
@@ -681,12 +694,6 @@ def list_sales_assignments(db: Session = Depends(get_db), _=Depends(require_admi
 
 @router.post("/sales-assignments")
 def create_sales_assignment(req: SalesAssignmentCreate, db: Session = Depends(get_db), _=Depends(require_admin)):
-    # 영업관리자 수익률 검증: 3.5% (VAT 별도) 이내여야 함
-    if req.commission_rate < 0 or req.commission_rate > 0.035:
-        raise HTTPException(
-            status_code=400,
-            detail=f"영업관리자 수익율은 0% ~ 3.5% (VAT 별도) 범위 내에서 설정해야 합니다. 입력값: {req.commission_rate*100:.2f}%"
-        )
     # 영업관리자 역할 확인
     sales_user = db.query(User).filter(User.id == req.sales_manager_user_id).first()
     if not sales_user or sales_user.role.value != 'sales':
@@ -695,13 +702,24 @@ def create_sales_assignment(req: SalesAssignmentCreate, db: Session = Depends(ge
     merchant = db.query(Merchant).filter(Merchant.id == req.merchant_id).first()
     if not merchant:
         raise HTTPException(status_code=404, detail="가맹점을 찾을 수 없습니다.")
-    # 중복 확인
-    existing = db.query(MerchantSalesAssignment).filter(
+    # 한 가맹점에 활성 배정 1개만 허용
+    active_existing = db.query(MerchantSalesAssignment).filter(
         MerchantSalesAssignment.merchant_id == req.merchant_id,
-        MerchantSalesAssignment.sales_manager_user_id == req.sales_manager_user_id,
+        MerchantSalesAssignment.is_active == True,  # noqa: E712
     ).first()
-    if existing:
-        raise HTTPException(status_code=400, detail="이미 해당 가맹점에 연결된 영업관리자입니다.")
+    if active_existing:
+        raise HTTPException(
+            status_code=400,
+            detail="이미 해당 가맹점에 활성 영업관리자 배정이 존재합니다. 기존 배정을 해제 후 시도해주세요.",
+        )
+    # 커미션율 검증 (유효 수수료율 기준)
+    mfr, pgr, _ = get_effective_fee_rates(db, req.merchant_id)
+    platform_rate = mfr - pgr
+    if req.commission_rate < 0 or req.commission_rate > platform_rate + 1e-9:
+        raise HTTPException(
+            status_code=400,
+            detail=f"영업 커미션율은 0% ~ 플랫폼 수익률({platform_rate*100:.2f}%) 이하여야 합니다. 입력값: {req.commission_rate*100:.2f}%",
+        )
     a = MerchantSalesAssignment(
         merchant_id=req.merchant_id,
         sales_manager_user_id=req.sales_manager_user_id,
@@ -921,16 +939,15 @@ def calculate_settlement(
     period_end: str = Query(...),
     db: Session = Depends(get_db), _=Depends(require_admin),
 ):
-    """Calculate and create a settlement for a merchant and period.
+    """가맹점 정산 계산 및 Settlement 생성.
 
-    수수료 체계:
-    - PG 수수료: 가맹점별 pg_fee_rate (기본 3.5%, 5% 등 가맹점별 설정 가능)
-    - 영업 수수료: PG 수수료 내에서 배정된 비율 (예: 1%)
-    - ADPAY 플랫폼 몫 = PG 수수료 - 영업 수수료
-    - 분배가능액(net) = 결제액 - PG 수수료
-    - 예시: 10,000원 결제, PG 5%, 영업 1%
-        → PG수수료 500원 (영업 100원 + ADPAY 400원)
-        → 분배가능액 9,500원 (원장 ↔ 디자이너 share_rate로 분배)
+    수수료 체계 (새 구조):
+    - 미용실 수수료(merchant_fee) = 결제액 × merchant_fee_rate (미용실이 내는 총 수수료)
+    - PG 실비용(pg_cost) = 결제액 × pg_fee_rate (PG사에 지불)
+    - 플랫폼 수익 = merchant_fee - pg_cost
+    - 영업 커미션 = 결제액 × sales_commission_rate
+    - 회사 순수익 = 플랫폼 수익 - 영업 커미션
+    - 미용실 실수령액(net) = 결제액 - merchant_fee
     """
     from datetime import datetime as dt
     merchant = db.query(Merchant).filter(Merchant.id == merchant_id).first()
@@ -939,7 +956,6 @@ def calculate_settlement(
 
     start = dt.fromisoformat(period_start)
     end = dt.fromisoformat(period_end)
-    # 종료일을 날짜만 받으면 00:00 이 되어 마지막 하루가 통째로 빠진다. 그날 끝까지 포함시킨다.
     if end.hour == 0 and end.minute == 0 and end.second == 0:
         end = end + timedelta(days=1) - timedelta(microseconds=1)
 
@@ -951,35 +967,47 @@ def calculate_settlement(
 
     gross = sum(float(t.amount) for t in txns)
 
-    fp = db.query(FeePolicy).filter(FeePolicy.merchant_id == merchant_id).first()
-    fee_rate = float(fp.pg_fee_rate) if fp else 0.035  # 기본 3.5%
-    pg_fee = round(gross * fee_rate, 2)
-
-    # 해제된 배정으로 커미션이 잡히지 않도록 활성 배정만 사용한다 (settlement_service 와 동일 기준).
     assign = db.query(MerchantSalesAssignment).filter(
         MerchantSalesAssignment.merchant_id == merchant_id,
         MerchantSalesAssignment.is_active == True,  # noqa: E712
     ).first()
-    commission = round(gross * float(assign.commission_rate), 2) if assign else 0
-    platform_amount = round(pg_fee - commission, 2)  # ADPAY 플랫폼 몫
+    sales_manager_user_id = assign.sales_manager_user_id if assign else None
 
-    net = round(gross - pg_fee, 2)
+    merchant_fee_rate, pg_fee_rate, commission_rate = get_effective_fee_rates(
+        db, merchant_id, sales_manager_user_id
+    )
+
+    dist = compute_fee_distribution(gross, merchant_fee_rate, pg_fee_rate, commission_rate)
 
     settlement = Settlement(
         merchant_id=merchant_id,
-        period_start=start, period_end=end,
-        gross_amount=gross, pg_fee_amount=pg_fee,
-        net_amount=net, commission_amount=commission,
+        sales_manager_user_id=sales_manager_user_id,
+        period_start=start,
+        period_end=end,
+        gross_amount=round(gross, 2),
+        merchant_fee_amount=dist["merchant_fee"],
+        pg_fee_amount=dist["pg_cost"],
+        net_amount=dist["net_payout"],
+        commission_amount=dist["sales_commission"],
+        company_profit_amount=dist["company_profit"],
     )
     db.add(settlement)
     db.commit()
     db.refresh(settlement)
     return {
-        "id": settlement.id, "gross_amount": gross,
+        "id": settlement.id,
         "merchant_name": merchant.name,
-        "pg_fee_amount": pg_fee, "commission_amount": commission,
-        "platform_amount": platform_amount,
-        "net_amount": net, "transactions_count": len(txns),
+        "gross_amount": gross,
+        "merchant_fee_amount": dist["merchant_fee"],
+        "pg_fee_amount": dist["pg_cost"],
+        "platform_income": dist["platform_income"],
+        "commission_amount": dist["sales_commission"],
+        "company_profit_amount": dist["company_profit"],
+        "net_amount": dist["net_payout"],
+        "transactions_count": len(txns),
+        "merchant_fee_rate": merchant_fee_rate,
+        "pg_fee_rate": pg_fee_rate,
+        "sales_commission_rate": commission_rate,
     }
 
 
@@ -1317,6 +1345,213 @@ def update_ad_feature_flags(
         result["ad_place_traffic_enabled"] = ad_place_traffic_enabled
     db.commit()
     return {"ok": True, **result}
+
+
+# ═══════════════════════════════════════════════════════════
+# 전역/가맹점별/영업관리자별 수수료 설정
+# ═══════════════════════════════════════════════════════════
+
+def _validate_commission_rate(commission_rate: float, merchant_fee_rate: float, pg_fee_rate: float):
+    """영업 커미션율 검증: (merchant_fee_rate - pg_fee_rate) 초과 시 400."""
+    platform_rate = merchant_fee_rate - pg_fee_rate
+    if commission_rate < 0 or commission_rate > platform_rate + 1e-9:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"영업 커미션율({commission_rate*100:.2f}%)이 플랫폼 수익률"
+                f"({platform_rate*100:.2f}%)을 초과합니다 "
+                f"(미용실 수수료 {merchant_fee_rate*100:.2f}% − PG 비용 {pg_fee_rate*100:.2f}%)"
+            ),
+        )
+
+
+@router.get("/fee-settings")
+def get_fee_settings(db: Session = Depends(get_db), _=Depends(require_admin)):
+    """전역 기본 수수료 설정 조회 (merchant_id=NULL 레코드)."""
+    fp = db.query(FeePolicy).filter(FeePolicy.merchant_id.is_(None)).first()
+    scp = db.query(SalesCommissionPolicy).filter(
+        SalesCommissionPolicy.sales_manager_user_id.is_(None)
+    ).first()
+
+    mfr = float(fp.merchant_fee_rate) if fp else DEFAULT_MERCHANT_FEE_RATE
+    pgr = float(fp.pg_fee_rate) if fp else DEFAULT_PG_FEE_RATE
+    scr = float(scp.commission_rate) if scp else DEFAULT_SALES_COMMISSION_RATE
+    platform_rate = mfr - pgr
+    company_rate = platform_rate - scr
+
+    sample = 10000
+    return {
+        "merchant_fee_rate": mfr,
+        "pg_fee_rate": pgr,
+        "sales_commission_rate": scr,
+        "platform_rate": round(platform_rate, 4),
+        "company_profit_rate": round(company_rate, 4),
+        "has_global_fee_policy": fp is not None,
+        "has_global_commission_policy": scp is not None,
+        "simulation": {
+            "sample_amount": sample,
+            "merchant_fee": round(sample * mfr),
+            "pg_cost": round(sample * pgr),
+            "platform_income": round(sample * platform_rate),
+            "sales_commission": round(sample * scr),
+            "company_profit": round(sample * company_rate),
+            "net_payout": round(sample * (1 - mfr)),
+        },
+    }
+
+
+@router.put("/fee-settings")
+def update_fee_settings(req: GlobalFeeSettingsUpdate, db: Session = Depends(get_db), _=Depends(require_admin)):
+    """전역 기본 수수료 설정 저장/갱신."""
+    _validate_commission_rate(req.sales_commission_rate, req.merchant_fee_rate, req.pg_fee_rate)
+
+    # FeePolicy 전역 레코드 (merchant_id=NULL)
+    fp = db.query(FeePolicy).filter(FeePolicy.merchant_id.is_(None)).first()
+    if fp:
+        fp.merchant_fee_rate = req.merchant_fee_rate
+        fp.pg_fee_rate = req.pg_fee_rate
+    else:
+        fp = FeePolicy(
+            merchant_id=None,
+            merchant_fee_rate=req.merchant_fee_rate,
+            pg_fee_rate=req.pg_fee_rate,
+        )
+        db.add(fp)
+
+    # SalesCommissionPolicy 전역 레코드 (sales_manager_user_id=NULL)
+    scp = db.query(SalesCommissionPolicy).filter(
+        SalesCommissionPolicy.sales_manager_user_id.is_(None)
+    ).first()
+    if scp:
+        scp.commission_rate = req.sales_commission_rate
+    else:
+        scp = SalesCommissionPolicy(
+            sales_manager_user_id=None,
+            commission_rate=req.sales_commission_rate,
+        )
+        db.add(scp)
+
+    db.commit()
+    return {"ok": True, "merchant_fee_rate": req.merchant_fee_rate,
+            "pg_fee_rate": req.pg_fee_rate, "sales_commission_rate": req.sales_commission_rate}
+
+
+@router.get("/merchants/{mid}/fee-override")
+def get_merchant_fee_override(mid: int, db: Session = Depends(get_db), _=Depends(require_admin)):
+    """가맹점 개별 수수료 오버라이드 조회."""
+    merchant = db.query(Merchant).filter(Merchant.id == mid).first()
+    if not merchant:
+        raise HTTPException(status_code=404, detail="가맹점을 찾을 수 없습니다")
+    fp = db.query(FeePolicy).filter(FeePolicy.merchant_id == mid).first()
+    mfr, pgr, _ = get_effective_fee_rates(db, mid)
+    return {
+        "merchant_id": mid,
+        "merchant_name": merchant.name,
+        "has_override": fp is not None,
+        "merchant_fee_rate": float(fp.merchant_fee_rate) if fp else None,
+        "pg_fee_rate": float(fp.pg_fee_rate) if fp else None,
+        "effective_merchant_fee_rate": mfr,
+        "effective_pg_fee_rate": pgr,
+    }
+
+
+@router.put("/merchants/{mid}/fee-override")
+def update_merchant_fee_override(
+    mid: int, req: MerchantFeeOverrideUpdate,
+    db: Session = Depends(get_db), _=Depends(require_admin),
+):
+    """가맹점 개별 수수료 오버라이드 설정 (None 값이면 해당 필드 전역값 사용)."""
+    merchant = db.query(Merchant).filter(Merchant.id == mid).first()
+    if not merchant:
+        raise HTTPException(status_code=404, detail="가맹점을 찾을 수 없습니다")
+
+    fp = db.query(FeePolicy).filter(FeePolicy.merchant_id == mid).first()
+
+    # 오버라이드 값이 없으면 기존 레코드 삭제 (전역값 사용)
+    if req.merchant_fee_rate is None and req.pg_fee_rate is None:
+        if fp:
+            db.delete(fp)
+            db.commit()
+        return {"ok": True, "action": "reset_to_global"}
+
+    if fp:
+        if req.merchant_fee_rate is not None:
+            fp.merchant_fee_rate = req.merchant_fee_rate
+        if req.pg_fee_rate is not None:
+            fp.pg_fee_rate = req.pg_fee_rate
+    else:
+        # 새 레코드 생성 (미지정 필드는 전역값에서 채움)
+        mfr_default, pgr_default, _ = get_effective_fee_rates(db, None)
+        fp = FeePolicy(
+            merchant_id=mid,
+            merchant_fee_rate=req.merchant_fee_rate if req.merchant_fee_rate is not None else mfr_default,
+            pg_fee_rate=req.pg_fee_rate if req.pg_fee_rate is not None else pgr_default,
+        )
+        db.add(fp)
+
+    db.commit()
+    return {"ok": True, "merchant_fee_rate": float(fp.merchant_fee_rate), "pg_fee_rate": float(fp.pg_fee_rate)}
+
+
+@router.get("/sales/{uid}/commission-override")
+def get_sales_commission_override(uid: int, db: Session = Depends(get_db), _=Depends(require_admin)):
+    """영업관리자 개별 커미션율 조회."""
+    sales_user = db.query(User).filter(User.id == uid).first()
+    if not sales_user or sales_user.role.value != 'sales':
+        raise HTTPException(status_code=404, detail="영업관리자를 찾을 수 없습니다")
+    scp = db.query(SalesCommissionPolicy).filter(
+        SalesCommissionPolicy.sales_manager_user_id == uid
+    ).first()
+    global_scp = db.query(SalesCommissionPolicy).filter(
+        SalesCommissionPolicy.sales_manager_user_id.is_(None)
+    ).first()
+    return {
+        "sales_manager_user_id": uid,
+        "sales_manager_name": sales_user.name,
+        "has_override": scp is not None,
+        "commission_rate": float(scp.commission_rate) if scp else None,
+        "effective_commission_rate": (
+            float(scp.commission_rate) if scp
+            else (float(global_scp.commission_rate) if global_scp else DEFAULT_SALES_COMMISSION_RATE)
+        ),
+    }
+
+
+@router.put("/sales/{uid}/commission-override")
+def update_sales_commission_override(
+    uid: int, req: SalesCommissionOverrideUpdate,
+    db: Session = Depends(get_db), _=Depends(require_admin),
+):
+    """영업관리자 개별 커미션율 설정 (commission_rate=None이면 전역값 사용으로 초기화)."""
+    sales_user = db.query(User).filter(User.id == uid).first()
+    if not sales_user or sales_user.role.value != 'sales':
+        raise HTTPException(status_code=404, detail="영업관리자를 찾을 수 없습니다")
+
+    scp = db.query(SalesCommissionPolicy).filter(
+        SalesCommissionPolicy.sales_manager_user_id == uid
+    ).first()
+
+    if req.commission_rate is None:
+        if scp:
+            db.delete(scp)
+            db.commit()
+        return {"ok": True, "action": "reset_to_global"}
+
+    # 전역 수수료 설정으로 플랫폼 수익률 계산해서 검증
+    mfr, pgr, _ = get_effective_fee_rates(db, None)
+    _validate_commission_rate(req.commission_rate, mfr, pgr)
+
+    if scp:
+        scp.commission_rate = req.commission_rate
+    else:
+        scp = SalesCommissionPolicy(
+            sales_manager_user_id=uid,
+            commission_rate=req.commission_rate,
+        )
+        db.add(scp)
+
+    db.commit()
+    return {"ok": True, "commission_rate": float(scp.commission_rate)}
 
 
 # ═══════════════════════════════════════════════════════════

@@ -345,7 +345,8 @@ function buildSidebar() {
         <div class="nav-section"><i class="fas fa-won-sign me-1" style="font-size:.6rem"></i>결제 · 정산</div>
         <a class="nav-link" href="#" data-page="admin-transactions"><i class="fas fa-receipt"></i>전체 결제 내역</a>
         <a class="nav-link" href="#" data-page="admin-settlements"><i class="fas fa-calculator"></i>정산 관리</a>
-        <a class="nav-link" href="#" data-page="admin-fee-policies"><i class="fas fa-percentage"></i>수수료 정책</a>
+        <a class="nav-link" href="#" data-page="admin-fee-settings"><i class="fas fa-sliders-h"></i>수수료 기본 설정</a>
+        <a class="nav-link" href="#" data-page="admin-fee-policies"><i class="fas fa-percentage"></i>가맹점별 수수료</a>
         <a class="nav-link" href="#" data-page="admin-commission-visibility"><i class="fas fa-eye"></i>수수료 표시 설정</a>
         <a class="nav-link" href="#" data-page="admin-payouts"><i class="fas fa-money-bill-wave"></i>출금요청 관리</a>
         <div class="nav-section"><i class="fas fa-bullhorn me-1" style="font-size:.6rem"></i>광고 · 마케팅</div>
@@ -455,6 +456,7 @@ async function loadPage(page) {
             case 'admin-terminals': await loadAdminTerminals(c, t); break;
             case 'admin-transactions': await loadAdminTransactions(c, t); break;
             case 'admin-settlements': await loadAdminSettlements(c, t); break;
+            case 'admin-fee-settings': await loadAdminFeeSettings(c, t); break;
             case 'admin-fee-policies': await loadAdminFeePolicies(c, t); break;
             case 'admin-commission-visibility': await loadAdminCommissionVisibility(c, t); break;
             case 'admin-payouts': await loadAdminPayouts(c, t); break;
@@ -1439,6 +1441,323 @@ async function calcSettlement() {
         navigate('admin-settlements');
     } catch (e) { document.getElementById('settleResult').innerHTML = `<div class="alert alert-danger">${escapeHtml(e.message)}</div>`; }
 }
+
+// ─── 수수료 기본 설정 (전역/가맹점별/영업관리자별) ──────────
+
+async function loadAdminFeeSettings(c, t) {
+    t.textContent = '수수료 기본 설정';
+
+    const [settings, merchants, salesManagers] = await Promise.all([
+        apiGet('/api/admin/fee-settings'),
+        apiGet('/api/admin/merchants'),
+        apiGet('/api/admin/sales-managers'),
+    ]);
+
+    const pRate = ((settings.merchant_fee_rate - settings.pg_fee_rate) * 100).toFixed(2);
+    const cRate = (settings.company_profit_rate * 100).toFixed(2);
+    const sim = settings.simulation;
+
+    c.innerHTML = `
+    <!-- 수수료 체계 안내 -->
+    <div class="alert alert-info mb-3">
+        <i class="fas fa-info-circle me-2"></i><strong>새 수수료 구조:</strong>
+        미용실 부과 수수료 − PG 비용 = 플랫폼 수익 / 플랫폼 수익 − 영업 커미션 = 회사 순수익
+    </div>
+
+    <!-- 전역 기본 수수료 설정 -->
+    <div class="card data-card mb-3">
+        <div class="card-header"><h5 class="mb-0"><i class="fas fa-globe me-2"></i>전역 기본 수수료 설정</h5></div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">미용실 부과 수수료율 <span class="text-danger">*</span></label>
+                    <div class="input-group">
+                        <input type="number" class="form-control" id="gs_merchant_fee"
+                            value="${(settings.merchant_fee_rate*100).toFixed(2)}" step="0.1" min="0" max="30">
+                        <span class="input-group-text">%</span>
+                    </div>
+                    <small class="text-muted">미용실이 내는 총 수수료</small>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">PG사 수수료율 <span class="text-danger">*</span></label>
+                    <div class="input-group">
+                        <input type="number" class="form-control" id="gs_pg_fee"
+                            value="${(settings.pg_fee_rate*100).toFixed(2)}" step="0.1" min="0" max="30">
+                        <span class="input-group-text">%</span>
+                    </div>
+                    <small class="text-muted">PG사에 내는 실비용</small>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">영업 커미션율 <span class="text-danger">*</span></label>
+                    <div class="input-group">
+                        <input type="number" class="form-control" id="gs_sales_comm"
+                            value="${(settings.sales_commission_rate*100).toFixed(2)}" step="0.1" min="0" max="30"
+                            oninput="updateFeePreview()">
+                        <span class="input-group-text">%</span>
+                    </div>
+                    <small class="text-muted">플랫폼 수익 중 영업관리자 몫</small>
+                </div>
+            </div>
+            <!-- 자동계산 미리보기 -->
+            <div class="row g-2 mt-2 align-items-center">
+                <div class="col-auto">
+                    <span class="badge bg-secondary fs-6" id="gs_platform_rate">${pRate}%</span>
+                    <small class="text-muted ms-1">플랫폼 수익률</small>
+                </div>
+                <div class="col-auto">
+                    <i class="fas fa-arrow-right text-muted"></i>
+                </div>
+                <div class="col-auto">
+                    <span class="badge bg-success fs-6" id="gs_company_rate">${cRate}%</span>
+                    <small class="text-muted ms-1">회사 순수익률 (자동계산)</small>
+                </div>
+            </div>
+            <!-- 시뮬레이션 -->
+            <div class="mt-3 p-3 bg-light rounded">
+                <div class="fw-bold mb-2">💡 10,000원 결제 시뮬레이션</div>
+                <div class="row g-2 text-center" id="gs_simulation">
+                    ${_feeSimRow(sim)}
+                </div>
+            </div>
+            <div class="mt-3">
+                <button class="btn btn-primary" onclick="saveGlobalFeeSettings()">
+                    <i class="fas fa-save me-1"></i>전역 설정 저장
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 가맹점별 수수료 오버라이드 -->
+    <div class="card data-card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="fas fa-store me-2"></i>가맹점별 수수료 오버라이드</h5>
+            <small class="text-muted">설정 없으면 전역값 사용</small>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-sm align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>가맹점</th>
+                            <th>미용실 수수료율</th>
+                            <th>PG 비용율</th>
+                            <th>오버라이드 여부</th>
+                            <th>작업</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${merchants.map(m => `<tr>
+                            <td><span class="fw-bold">${escapeHtml(m.name)}</span></td>
+                            <td>
+                                <div class="input-group input-group-sm" style="width:120px">
+                                    <input type="number" class="form-control" id="mfr_${m.id}"
+                                        placeholder="전역 ${(settings.merchant_fee_rate*100).toFixed(1)}%"
+                                        step="0.1" min="0" max="30">
+                                    <span class="input-group-text">%</span>
+                                </div>
+                            </td>
+                            <td>
+                                <div class="input-group input-group-sm" style="width:120px">
+                                    <input type="number" class="form-control" id="pgr_${m.id}"
+                                        placeholder="전역 ${(settings.pg_fee_rate*100).toFixed(1)}%"
+                                        step="0.1" min="0" max="30">
+                                    <span class="input-group-text">%</span>
+                                </div>
+                            </td>
+                            <td><span class="badge bg-secondary" id="ovr_badge_${m.id}">확인 중...</span></td>
+                            <td>
+                                <button class="btn btn-sm btn-primary me-1" onclick="saveMerchantFeeOverride(${m.id})">
+                                    <i class="fas fa-save"></i> 저장
+                                </button>
+                                <button class="btn btn-sm btn-outline-secondary" onclick="resetMerchantFeeOverride(${m.id})">
+                                    초기화
+                                </button>
+                            </td>
+                        </tr>`).join('')}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- 영업관리자별 커미션 오버라이드 -->
+    <div class="card data-card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="fas fa-user-tie me-2"></i>영업관리자별 커미션 오버라이드</h5>
+            <small class="text-muted">설정 없으면 전역값 사용</small>
+        </div>
+        <div class="card-body">
+            ${salesManagers.length === 0
+                ? '<p class="text-muted">등록된 영업관리자가 없습니다.</p>'
+                : `<div class="table-responsive"><table class="table table-sm align-middle">
+                    <thead class="table-light">
+                        <tr><th>담당자</th><th>커미션율 오버라이드</th><th>오버라이드 여부</th><th>작업</th></tr>
+                    </thead>
+                    <tbody>
+                        ${salesManagers.map(u => `<tr>
+                            <td><span class="fw-bold">${escapeHtml(u.name)}</span><br><small class="text-muted">${escapeHtml(u.email)}</small></td>
+                            <td>
+                                <div class="input-group input-group-sm" style="width:130px">
+                                    <input type="number" class="form-control" id="scr_${u.id}"
+                                        placeholder="전역 ${(settings.sales_commission_rate*100).toFixed(1)}%"
+                                        step="0.1" min="0" max="30">
+                                    <span class="input-group-text">%</span>
+                                </div>
+                            </td>
+                            <td><span class="badge bg-secondary" id="scr_badge_${u.id}">확인 중...</span></td>
+                            <td>
+                                <button class="btn btn-sm btn-primary me-1" onclick="saveSalesCommissionOverride(${u.id})">
+                                    <i class="fas fa-save"></i> 저장
+                                </button>
+                                <button class="btn btn-sm btn-outline-secondary" onclick="resetSalesCommissionOverride(${u.id})">
+                                    초기화
+                                </button>
+                            </td>
+                        </tr>`).join('')}
+                    </tbody>
+                </table></div>`}
+        </div>
+    </div>`;
+
+    // 오버라이드 현황 비동기 로드
+    merchants.forEach(m => _loadMerchantFeeOverride(m.id));
+    salesManagers.forEach(u => _loadSalesCommissionOverride(u.id));
+}
+
+function _feeSimRow(sim) {
+    const items = [
+        { label: '결제액', val: sim.sample_amount, cls: 'text-dark' },
+        { label: '미용실 수수료', val: `-${sim.merchant_fee}`, cls: 'text-danger' },
+        { label: 'PG 비용', val: `-${sim.pg_cost}`, cls: 'text-warning' },
+        { label: '플랫폼 수익', val: sim.platform_income, cls: 'text-primary' },
+        { label: '영업 커미션', val: `-${sim.sales_commission}`, cls: 'text-secondary' },
+        { label: '회사 순수익', val: sim.company_profit, cls: 'text-success fw-bold' },
+        { label: '미용실 수령', val: sim.net_payout, cls: 'text-info fw-bold' },
+    ];
+    return items.map(i => `
+        <div class="col">
+            <div class="p-2 bg-white rounded border">
+                <div class="${i.cls}">${typeof i.val === 'number' ? i.val.toLocaleString() : i.val}원</div>
+                <small class="text-muted">${i.label}</small>
+            </div>
+        </div>`).join('');
+}
+
+function updateFeePreview() {
+    const mfr = parseFloat(document.getElementById('gs_merchant_fee')?.value || 0) / 100;
+    const pgr = parseFloat(document.getElementById('gs_pg_fee')?.value || 0) / 100;
+    const scr = parseFloat(document.getElementById('gs_sales_comm')?.value || 0) / 100;
+    const platform = mfr - pgr;
+    const company = platform - scr;
+    const pEl = document.getElementById('gs_platform_rate');
+    const cEl = document.getElementById('gs_company_rate');
+    if (pEl) pEl.textContent = (platform * 100).toFixed(2) + '%';
+    if (cEl) {
+        cEl.textContent = (company * 100).toFixed(2) + '%';
+        cEl.className = company < 0 ? 'badge bg-danger fs-6' : 'badge bg-success fs-6';
+    }
+}
+
+async function saveGlobalFeeSettings() {
+    const mfr = parseFloat(document.getElementById('gs_merchant_fee').value) / 100;
+    const pgr = parseFloat(document.getElementById('gs_pg_fee').value) / 100;
+    const scr = parseFloat(document.getElementById('gs_sales_comm').value) / 100;
+    if (isNaN(mfr) || isNaN(pgr) || isNaN(scr)) { alert('모든 수수료율을 입력해주세요.'); return; }
+    const platform = mfr - pgr;
+    if (scr > platform + 0.00001) {
+        alert(`영업 커미션율(${(scr*100).toFixed(2)}%)이 플랫폼 수익률(${(platform*100).toFixed(2)}%)을 초과합니다.`);
+        return;
+    }
+    try {
+        await apiPut('/api/admin/fee-settings', {
+            merchant_fee_rate: mfr, pg_fee_rate: pgr, sales_commission_rate: scr,
+        });
+        alert('전역 수수료 설정이 저장되었습니다.');
+        navigate('admin-fee-settings');
+    } catch(e) { alert('저장 실패: ' + e.message); }
+}
+
+async function _loadMerchantFeeOverride(mid) {
+    try {
+        const data = await apiGet(`/api/admin/merchants/${mid}/fee-override`);
+        const badge = document.getElementById(`ovr_badge_${mid}`);
+        if (!badge) return;
+        if (data.has_override) {
+            badge.className = 'badge bg-warning text-dark';
+            badge.textContent = '개별 설정';
+            const mfrEl = document.getElementById(`mfr_${mid}`);
+            const pgrEl = document.getElementById(`pgr_${mid}`);
+            if (mfrEl && data.merchant_fee_rate != null) mfrEl.value = (data.merchant_fee_rate * 100).toFixed(2);
+            if (pgrEl && data.pg_fee_rate != null) pgrEl.value = (data.pg_fee_rate * 100).toFixed(2);
+        } else {
+            badge.className = 'badge bg-secondary';
+            badge.textContent = '전역 사용';
+        }
+    } catch(_) {}
+}
+
+async function saveMerchantFeeOverride(mid) {
+    const mfrVal = document.getElementById(`mfr_${mid}`).value;
+    const pgrVal = document.getElementById(`pgr_${mid}`).value;
+    const body = {};
+    if (mfrVal) body.merchant_fee_rate = parseFloat(mfrVal) / 100;
+    if (pgrVal) body.pg_fee_rate = parseFloat(pgrVal) / 100;
+    if (!Object.keys(body).length) { alert('변경할 수수료율을 입력해주세요.'); return; }
+    try {
+        await apiPut(`/api/admin/merchants/${mid}/fee-override`, body);
+        alert('가맹점 수수료 오버라이드가 저장되었습니다.');
+        _loadMerchantFeeOverride(mid);
+    } catch(e) { alert('저장 실패: ' + e.message); }
+}
+
+async function resetMerchantFeeOverride(mid) {
+    if (!confirm('이 가맹점의 수수료 오버라이드를 삭제하고 전역값을 사용하시겠습니까?')) return;
+    try {
+        await apiPut(`/api/admin/merchants/${mid}/fee-override`, {});
+        document.getElementById(`mfr_${mid}`).value = '';
+        document.getElementById(`pgr_${mid}`).value = '';
+        _loadMerchantFeeOverride(mid);
+    } catch(e) { alert('초기화 실패: ' + e.message); }
+}
+
+async function _loadSalesCommissionOverride(uid) {
+    try {
+        const data = await apiGet(`/api/admin/sales/${uid}/commission-override`);
+        const badge = document.getElementById(`scr_badge_${uid}`);
+        if (!badge) return;
+        if (data.has_override) {
+            badge.className = 'badge bg-warning text-dark';
+            badge.textContent = '개별 설정';
+            const scrEl = document.getElementById(`scr_${uid}`);
+            if (scrEl && data.commission_rate != null) scrEl.value = (data.commission_rate * 100).toFixed(2);
+        } else {
+            badge.className = 'badge bg-secondary';
+            badge.textContent = '전역 사용';
+        }
+    } catch(_) {}
+}
+
+async function saveSalesCommissionOverride(uid) {
+    const val = document.getElementById(`scr_${uid}`).value;
+    if (!val) { alert('커미션율을 입력해주세요.'); return; }
+    const rate = parseFloat(val) / 100;
+    try {
+        await apiPut(`/api/admin/sales/${uid}/commission-override`, { commission_rate: rate });
+        alert('영업관리자 커미션 오버라이드가 저장되었습니다.');
+        _loadSalesCommissionOverride(uid);
+    } catch(e) { alert('저장 실패: ' + e.message); }
+}
+
+async function resetSalesCommissionOverride(uid) {
+    if (!confirm('이 영업관리자의 커미션 오버라이드를 삭제하고 전역값을 사용하시겠습니까?')) return;
+    try {
+        await apiPut(`/api/admin/sales/${uid}/commission-override`, { commission_rate: null });
+        document.getElementById(`scr_${uid}`).value = '';
+        _loadSalesCommissionOverride(uid);
+    } catch(e) { alert('초기화 실패: ' + e.message); }
+}
+
+// ─────────────────────────────────────────────────────────────
 
 async function loadAdminFeePolicies(c, t) {
     t.textContent = '수수료 정책';

@@ -24,6 +24,7 @@ class User(Base):
     oauth_provider = Column(String(50), nullable=True)  # kakao / naver / google
     oauth_sub = Column(String(255), nullable=True)       # provider's user id
     phone = Column(String(30), nullable=True)
+    referral_code = Column(String(50), nullable=True, unique=True, index=True)  # SALES 전용 추천 코드
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
