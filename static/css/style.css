@@ -233,20 +233,13 @@ body {
     overflow: visible;
 }
 .sidebar .brand:hover { color: #fff; background: rgba(255,255,255,.035); }
-.beauty-brand-mark {
-    width: 43px;
-    height: 43px;
-    border-radius: 15px;
-    display: inline-flex;
+.beauty-brand-logo {
+    height: 38px;
+    width: auto;
     flex: 0 0 auto;
-    align-items: center;
-    justify-content: center;
-    background: linear-gradient(145deg, #fff4f7, #eab3c2);
-    color: #8f4960;
-    box-shadow: 0 9px 22px rgba(17,10,13,.2);
-    transform: rotate(-3deg);
+    object-fit: contain;
+    display: block;
 }
-.beauty-brand-mark i { color: inherit !important; font-size: 1rem; transform: rotate(3deg); }
 .beauty-brand-copy { min-width: 0; display: flex; flex-direction: column; line-height: 1.05; }
 .beauty-brand-copy strong { font-size: 1.22rem; font-weight: 900; letter-spacing: -.055em; }
 .beauty-brand-copy small {
@@ -1493,10 +1486,8 @@ body {
         radial-gradient(circle at 91% 4%, rgba(14,165,233,.10), transparent 24rem),
         #f3f6fa;
 }
-.beauty-brand-mark {
-    background: linear-gradient(145deg,#eaf7ff,#8fd8f8);
-    color: #0f5f98;
-    box-shadow: 0 9px 22px rgba(5,29,51,.24);
+.beauty-brand-logo {
+    filter: drop-shadow(0 4px 8px rgba(5,29,51,.18));
 }
 .sidebar .user-info .user-role { background: rgba(14,165,233,.16) !important; color: #9bdcff !important; }
 .sidebar .nav-link.active {

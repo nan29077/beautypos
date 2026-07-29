@@ -56,11 +56,7 @@
         .site-nav.scrolled{padding:10px 0;border-bottom:1px solid rgba(234,221,225,.9);background:rgba(255,250,248,.92);box-shadow:0 8px 28px rgba(72,43,53,.05);backdrop-filter:blur(18px)}
         .nav-inner{width:min(1180px,calc(100% - 40px));margin:auto;display:flex;align-items:center;justify-content:space-between}
         .brand{display:inline-flex;align-items:center;gap:11px;color:var(--ink)}
-        .brand-mark{width:43px;height:43px;border-radius:15px;display:inline-flex;align-items:center;justify-content:center;color:#fff;background:linear-gradient(145deg,#8f4860,#c6788e);box-shadow:0 10px 26px rgba(144,72,96,.22);transform:rotate(-3deg)}
-        .brand-mark i{transform:rotate(3deg)}
-        .brand-copy{display:flex;flex-direction:column;line-height:1}
-        .brand-copy strong{font-size:1.23rem;font-weight:900;letter-spacing:-.055em}
-        .brand-copy small{margin-top:5px;color:#a07d88;font-size:.52rem;font-weight:800;letter-spacing:.14em}
+        .brand-logo{height:40px;width:auto;object-fit:contain;display:block}
         .nav-links{display:flex;align-items:center;gap:29px}
         .nav-links>a:not(.nav-cta){color:#60545a;font-size:.88rem;font-weight:700}
         .nav-links>a:hover{color:var(--rose)}
@@ -247,7 +243,6 @@
         .section{background:rgba(247,251,254,.68);backdrop-filter:blur(1px)}
         .all-in-one{background:rgba(255,255,255,.72)}
         .site-nav.scrolled{border-bottom-color:rgba(219,232,242,.92);background:rgba(247,251,254,.93);box-shadow:0 8px 28px rgba(15,76,129,.06)}
-        .brand-mark{background:linear-gradient(145deg,#1b3a5c,#0ea5e9);box-shadow:0 10px 26px rgba(15,108,189,.24)}
         .brand-copy small{color:#718ba1}
         .nav-links>a:not(.nav-cta){color:#52677a}
         .nav-cta{background:#10243e}
@@ -411,9 +406,7 @@
             .footer-bottom{align-items:flex-start;flex-direction:column}
         }
         @media(max-width:420px){
-            .site-nav .brand-mark{width:38px;height:38px;border-radius:12px}
-            .site-nav .brand-copy strong{font-size:1.08rem}
-            .site-nav .brand-copy small{font-size:.46rem}
+            .site-nav .brand-logo{height:32px}
             .hero.hero-slider,.hero-track,.hero-slide,.hero-slide-inner{
                 min-height:550px;
                 min-height:clamp(520px,80svh,580px);
@@ -445,13 +438,7 @@
         }
         .site-nav .brand{color:#fff}
         .site-nav .brand:hover{color:#fff}
-        .site-nav .brand-mark{
-            border:1px solid rgba(255,255,255,.18);
-            background:linear-gradient(145deg,#0ea5e9,#24599b);
-            box-shadow:0 8px 24px rgba(14,165,233,.25);
-        }
-        .site-nav .brand-copy strong{text-shadow:0 2px 12px rgba(0,0,0,.25)}
-        .site-nav .brand-copy small{color:#9bb3c8}
+        .site-nav .brand-logo{filter:brightness(0) invert(1) drop-shadow(0 2px 8px rgba(0,0,0,.25))}
         .site-nav .nav-links>a:not(.nav-cta){position:relative;color:#e5eef7;text-shadow:0 1px 10px rgba(0,0,0,.28)}
         .site-nav .nav-links>a:not(.nav-cta)::after{
             content:"";
@@ -495,8 +482,7 @@
     <nav class="site-nav" id="siteNav" aria-label="주요 메뉴">
         <div class="nav-inner">
             <a class="brand" href="/static/landing/index.html" aria-label="뷰티포스 홈">
-                <span class="brand-mark"><i class="fas fa-scissors"></i></span>
-                <span class="brand-copy"><strong>뷰티포스</strong><small>BEAUTY BUSINESS OS</small></span>
+                <img src="/static/img/logo-beautypos.png" alt="뷰티포스" class="brand-logo">
             </a>
             <button class="nav-toggle" id="navToggle" aria-label="메뉴 열기" aria-expanded="false"><i class="fas fa-bars"></i></button>
             <div class="nav-links" id="navLinks">
@@ -683,8 +669,7 @@
         <div class="footer-shell">
             <div class="footer-brand-block">
                 <a class="brand" href="/static/landing/index.html" aria-label="뷰티포스 홈">
-                    <span class="brand-mark"><i class="fas fa-scissors"></i></span>
-                    <span class="brand-copy"><strong>뷰티포스</strong><small>BEAUTY BUSINESS OS</small></span>
+                    <img src="/static/img/logo-beautypos.png" alt="뷰티포스" class="brand-logo" style="filter:brightness(0) invert(1);">
                 </a>
                 <p>결제부터 고객·직원·정산, 광고 집행과 경쟁업체 분석까지 연결하는 뷰티 업종 전용 올인원 포스입니다.</p>
             </div>
