@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="theme-color" content="#0f4c81">
     <meta name="mobile-web-app-capable" content="yes">
-    <title>ADPAY - 대시보드</title>
+    <title>뷰티포스 - 매장 관리</title>
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
     <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
     <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
@@ -18,10 +18,13 @@
 <body>
     <!-- Sidebar -->
     <div class="sidebar" id="sidebar">
-        <div class="brand">
-            <i class="fas fa-credit-card"></i>
-            <span id="sidebarBrand">ADPAY</span>
-        </div>
+        <a class="brand" href="/static/landing/index.html" aria-label="뷰티포스 홈으로 이동">
+            <span class="beauty-brand-mark" aria-hidden="true"><i class="fas fa-scissors"></i></span>
+            <span class="beauty-brand-copy">
+                <strong id="sidebarBrand">뷰티포스</strong>
+                <small>BEAUTY BUSINESS OS</small>
+            </span>
+        </a>
         <div class="user-info">
             <div class="user-name" id="sidebarUserName">-</div>
             <span class="user-role" id="sidebarRole">-</span>
@@ -52,7 +55,7 @@
             <button class="btn btn-sm btn-outline-secondary" onclick="toggleSidebar()" aria-label="메뉴 열기">
                 <i class="fas fa-bars"></i>
             </button>
-            <span class="brand-mobile" id="mobileBrand">ADPAY</span>
+            <a class="brand-mobile" id="mobileBrand" href="/static/landing/index.html">뷰티포스</a>
         </div>
 
         <!-- Dynamic Page Content -->

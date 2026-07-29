@@ -1,18 +1,13 @@
 <svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#0ea5e9"/>
-      <stop offset="1" stop-color="#1b3a5c"/>
+    <linearGradient id="beauty" x1="8" y1="6" x2="58" y2="60" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0EA5E9"/>
+      <stop offset="1" stop-color="#1B3A5C"/>
     </linearGradient>
   </defs>
-  <!-- rounded square backdrop -->
-  <rect x="0" y="0" width="64" height="64" rx="15" fill="url(#bg)"/>
-  <!-- payment card -->
-  <rect x="13" y="20" width="38" height="26" rx="4.5" fill="#ffffff"/>
-  <rect x="13" y="25.5" width="38" height="4.5" fill="#1b3a5c"/>
-  <!-- chip -->
-  <rect x="17.5" y="34" width="8" height="6" rx="1.4" fill="#f59e0b"/>
-  <!-- contactless waves -->
-  <path d="M40 33.5a6 6 0 0 1 0 7" stroke="#0ea5e9" stroke-width="2.2" stroke-linecap="round"/>
-  <path d="M43.5 31a10 10 0 0 1 0 12.5" stroke="#1b3a5c" stroke-width="2.2" stroke-linecap="round"/>
+  <rect width="64" height="64" rx="17" fill="url(#beauty)"/>
+  <circle cx="21" cy="42" r="7" stroke="white" stroke-width="4"/>
+  <circle cx="43" cy="42" r="7" stroke="white" stroke-width="4"/>
+  <path d="M25.8 37L47 16M38.2 37L17 16" stroke="white" stroke-width="4" stroke-linecap="round"/>
+  <path d="M47 16L50.5 12.5M17 16L13.5 12.5" stroke="#F7DCE4" stroke-width="4" stroke-linecap="round"/>
 </svg>
