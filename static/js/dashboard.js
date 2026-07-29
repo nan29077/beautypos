@@ -1947,9 +1947,9 @@ async function showAdOrderDetail(orderId) {
                     <div class="col-md-6"><label class="small text-muted">캠페인명</label><div class="fw-bold">${d.campaign_name || '-'}</div></div>
                     <div class="col-md-6"><label class="small text-muted">주소</label><div>${d.address || '-'}</div></div>
                     <div class="col-md-6"><label class="small text-muted">연락처</label><div>${d.contact || '-'}</div></div>
-                    <div class="col-md-6"><label class="small text-muted">링크</label><div style="font-size:.82rem">${d.links || '-'}</div></div>
-                    <div class="col-md-6"><label class="small text-muted">주요 키워드</label><div>${d.main_keywords || '-'}</div></div>
-                    <div class="col-md-6"><label class="small text-muted">해시태그</label><div>${d.hashtags || '-'}</div></div>
+                    <div class="col-md-6"><label class="small text-muted">링크</label><div style="font-size:.82rem">${(d.links && d.links.length) ? d.links.join(', ') : '-'}</div></div>
+                    <div class="col-md-6"><label class="small text-muted">주요 키워드</label><div>${(d.main_keywords && d.main_keywords.length) ? d.main_keywords.join(', ') : '-'}</div></div>
+                    <div class="col-md-6"><label class="small text-muted">해시태그</label><div>${(d.hashtags && d.hashtags.length) ? d.hashtags.join(', ') : '-'}</div></div>
                     <div class="col-12"><label class="small text-muted">설명</label><div style="font-size:.85rem;white-space:pre-line">${d.description || '-'}</div></div>
                     ${d.images && d.images.length > 0 ? `<div class="col-12"><label class="small text-muted">첨부 이미지 (${d.images.length}건)</label><div class="d-flex gap-1 flex-wrap">${d.images.map(img => `<span class="badge bg-light text-dark border">${img.file_path}</span>`).join('')}</div></div>` : ''}
                 </div>
@@ -1961,7 +1961,7 @@ async function showAdOrderDetail(orderId) {
                 <h6 class="fw-bold mb-2"><i class="fas fa-map-marker-alt me-1 text-secondary"></i>플레이스 트래픽 상세</h6>
                 <div class="row g-2">
                     <div class="col-md-6"><label class="small text-muted">플레이스명/ID</label><div class="fw-bold">${d.place_name_or_id || '-'}</div></div>
-                    <div class="col-md-6"><label class="small text-muted">검색 키워드</label><div>${d.search_keywords || '-'}</div></div>
+                    <div class="col-md-6"><label class="small text-muted">검색 키워드</label><div>${(d.search_keywords && d.search_keywords.length) ? d.search_keywords.join(', ') : '-'}</div></div>
                 </div>
             </div>`;
         }
@@ -3070,13 +3070,14 @@ async function showDailyDetail(dateStr) {
 async function loadOwnerAnalysis(c, t) {
     t.textContent = '광고 분석';
     c.innerHTML = `
+    <div class="owner-analysis-page">
     <!-- 헤더 -->
-    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-        <div>
+    <div class="analysis-page-header d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <div class="analysis-page-title">
             <h5 class="fw-bold mb-0"><i class="fas fa-store text-primary me-2"></i>우리 매장 광고 현황</h5>
             <small class="text-muted">네이버 플레이스 순위와 리뷰가 어떻게 달라졌는지 확인하세요</small>
         </div>
-        <div class="d-flex gap-2 align-items-center">
+        <div class="analysis-page-actions d-flex gap-2 align-items-center">
             <button class="btn btn-sm btn-primary" onclick="fetchAnalysisNow()" id="fetchNowBtn">
                 <i class="fas fa-rotate me-1"></i>광고 분석하기
             </button>
@@ -3145,9 +3146,10 @@ async function loadOwnerAnalysis(c, t) {
     </div>
 
     <!-- 하단 액션 -->
-    <div class="text-center mt-3">
+    <div class="analysis-bottom-actions text-center mt-3">
         <button class="btn btn-outline-primary me-2" onclick="navigate('owner-adorder-new')"><i class="fas fa-bullhorn me-1"></i>광고 주문하기</button>
         <button class="btn btn-outline-secondary" onclick="navigate('owner-adorders')"><i class="fas fa-list me-1"></i>주문 내역 보기</button>
+    </div>
     </div>`;
 
     loadAnalysisOverview();

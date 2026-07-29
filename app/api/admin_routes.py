@@ -3,6 +3,7 @@ Admin API routes — accessible only by ADMIN role.
 Covers: merchants CRUD, PG config, transactions, payout requests,
         ad orders management, metrics, fee policies, sales assignments, landing stats.
 """
+import json
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -46,8 +47,8 @@ AD_ORDER_TRANSITIONS = {
     "requested": ["reviewing", "rejected"],
     "reviewing": ["running", "rejected"],
     "running": ["done", "rejected"],
-    "done": ["done"],
-    "rejected": ["reviewing", "rejected"],
+    "done": [],
+    "rejected": ["reviewing"],
 }
 
 
@@ -364,9 +365,9 @@ def list_ad_orders(db: Session = Depends(get_db), _=Depends(require_admin)):
                     "campaign_name": detail.campaign_name,
                     "address": detail.address,
                     "contact": detail.contact,
-                    "links": detail.links_json,
-                    "main_keywords": detail.main_keywords_json,
-                    "hashtags": detail.hashtags_json,
+                    "links": json.loads(detail.links_json) if detail.links_json else [],
+                    "main_keywords": json.loads(detail.main_keywords_json) if detail.main_keywords_json else [],
+                    "hashtags": json.loads(detail.hashtags_json) if detail.hashtags_json else [],
                     "description": detail.description,
                 }
         elif o.type.value == "place_traffic":
@@ -374,7 +375,7 @@ def list_ad_orders(db: Session = Depends(get_db), _=Depends(require_admin)):
             if detail:
                 item["place_traffic_detail"] = {
                     "place_name_or_id": detail.place_name_or_id,
-                    "search_keywords": detail.search_keywords_json,
+                    "search_keywords": json.loads(detail.search_keywords_json) if detail.search_keywords_json else [],
                 }
         results.append(item)
     return results
@@ -1213,9 +1214,9 @@ def get_ad_order_detail(oid: int, db: Session = Depends(get_db), _=Depends(requi
                 "campaign_name": detail.campaign_name,
                 "address": detail.address,
                 "contact": detail.contact,
-                "links": detail.links_json,
-                "main_keywords": detail.main_keywords_json,
-                "hashtags": detail.hashtags_json,
+                "links": json.loads(detail.links_json) if detail.links_json else [],
+                "main_keywords": json.loads(detail.main_keywords_json) if detail.main_keywords_json else [],
+                "hashtags": json.loads(detail.hashtags_json) if detail.hashtags_json else [],
                 "description": detail.description,
                 "images": [{"id": img.id, "file_path": img.file_path} for img in images],
             }
@@ -1224,7 +1225,7 @@ def get_ad_order_detail(oid: int, db: Session = Depends(get_db), _=Depends(requi
         if detail:
             item["place_traffic_detail"] = {
                 "place_name_or_id": detail.place_name_or_id,
-                "search_keywords": detail.search_keywords_json,
+                "search_keywords": json.loads(detail.search_keywords_json) if detail.search_keywords_json else [],
             }
 
     return item
