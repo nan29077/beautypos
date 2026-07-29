@@ -557,7 +557,38 @@ body[data-page="owner-analysis"] #analysisCompare .fw-bold {
 .empty-state h3 { color: #213750; font-size: 1.05rem; font-weight: 800; }
 .empty-state p { margin: 0 0 14px; font-size: .82rem; }
 .empty-state.compact { min-height: 150px; border: 0; }
-/* 광고 분석 탭 영역: 내용이 길어져도 페이지가 끝없이 늘어지지 않도록 높이를 제한한다 */
+/* ─── 광고 분석 탭 ──────────────────────────────────────── */
+.analysis-tab-wrap {
+    border-bottom: 2px solid #e5eaf0;
+}
+.analysis-tab-nav {
+    display: flex;
+    gap: 2px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: 0;
+}
+.analysis-tab-nav::-webkit-scrollbar { display: none; }
+
+.analysis-tab-btn {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    border-bottom: 3px solid transparent;
+    margin-bottom: -2px;
+    padding: 8px 16px;
+    font-size: .84rem;
+    font-weight: 600;
+    color: #7a8798;
+    cursor: pointer;
+    white-space: nowrap;
+    border-radius: 8px 8px 0 0;
+    transition: color .15s, background .15s;
+}
+.analysis-tab-btn:hover { color: #2563eb; background: #f0f7ff; }
+.analysis-tab-btn.active { color: #1d4ed8; border-bottom-color: #2563eb; }
+
 /* 자동 수집 안내 박스 */
 .analysis-notice {
     display: flex; align-items: flex-start; gap: 9px;
@@ -1383,22 +1414,30 @@ body[data-page="owner-analysis"] #analysisCompare .fw-bold {
         position: sticky;
         z-index: 20;
         top: calc(66px + env(safe-area-inset-top));
+        display: grid !important;
+        grid-template-columns: repeat(4, 1fr) !important;
+        gap: 4px !important;
         width: calc(100% + 24px) !important;
         max-width: none !important;
         margin: 0 -12px 14px !important;
-        padding: 8px 12px !important;
-        flex-wrap: nowrap !important;
-        overflow-x: auto;
+        padding: 6px 8px !important;
+        overflow-x: unset;
         border-radius: 0 !important;
         background: rgba(243,246,250,.97) !important;
         box-shadow: 0 5px 14px rgba(16,36,62,.05);
     }
     body.role-mobile-ui #crmTabBar .crm-tab {
-        min-height: 42px;
-        padding: 8px 12px !important;
-        flex: 0 0 auto;
-        font-size: .76rem !important;
-        white-space: nowrap;
+        min-height: 52px;
+        padding: 6px 4px !important;
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        justify-content: center !important;
+        gap: 3px !important;
+        font-size: .7rem !important;
+        white-space: normal;
+        text-align: center;
+        width: 100%;
     }
     body.role-mobile-ui .page-header { margin-bottom: 8px !important; }
     body.role-mobile-ui .page-header h2 { font-size: 1.12rem !important; }
@@ -1853,6 +1892,11 @@ body[data-page="admin-metrics"] .card[style*="linear-gradient"] { background: li
         display: inline-flex;
         align-items: center;
     }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-tab-btn {
+        padding: 7px 13px;
+        font-size: .8rem;
+    }
+
     body.role-mobile-ui[data-page="owner-analysis"] .analysis-notice {
         margin-bottom: 0 !important;
         padding: 11px 12px;
@@ -2335,36 +2379,16 @@ body[data-page="admin-metrics"] .card[style*="linear-gradient"] { background: li
     position: relative;
 }
 
-/* ── 3. 탭 Pill 스타일 + 스크롤바 숨김 + fade hint (모바일) */
+/* ── 3. 탭 그리드 레이아웃 (모바일) */
 @media (max-width: 767.98px) {
-    body.role-mobile-ui #crmTabBarWrap::after {
-        content: '';
-        position: absolute;
-        right: 0;
-        top: 0;
-        bottom: 0;
-        width: 36px;
-        background: linear-gradient(to left, rgba(243,246,250,.97), transparent);
-        pointer-events: none;
-        z-index: 2;
-    }
+    body.role-mobile-ui #crmTabBarWrap::after,
     body.role-mobile-ui #crmTabBarWrap::before {
-        content: '';
-        position: absolute;
-        left: 0;
-        top: 0;
-        bottom: 0;
-        width: 10px;
-        background: linear-gradient(to right, rgba(243,246,250,.97), transparent);
-        pointer-events: none;
-        z-index: 2;
+        display: none !important;
     }
     body.role-mobile-ui #crmTabBar::-webkit-scrollbar { display: none !important; }
     body.role-mobile-ui #crmTabBar {
-        -ms-overflow-style: none;
-        scrollbar-width: none;
-        overflow-x: auto !important;
-        flex-wrap: nowrap !important;
+        overflow-x: unset !important;
+        flex-wrap: wrap !important;
         width: 100% !important;
         max-width: 100% !important;
     }
@@ -2375,23 +2399,25 @@ body[data-page="admin-metrics"] .card[style*="linear-gradient"] { background: li
         color: #8a9ab0 !important;
         font-weight: 400 !important;
         box-shadow: none !important;
-        border-radius: 20px !important;
-        padding: 5px 10px !important;
+        border-radius: 10px !important;
+        padding: 7px 4px !important;
         font-size: .7rem !important;
         min-width: 0 !important;
-        display: inline-flex !important;
+        display: flex !important;
         flex-direction: column !important;
         align-items: center !important;
+        justify-content: center !important;
         gap: 3px !important;
         border: none !important;
-        flex-shrink: 0;
+        width: 100%;
+        text-align: center;
     }
     body.role-mobile-ui #crmTabBar .crm-tab i {
         margin: 0 !important;
-        font-size: .82rem !important;
+        font-size: .9rem !important;
     }
     body.role-mobile-ui #crmTabBar .crm-tab span {
-        font-size: .63rem !important;
+        font-size: .65rem !important;
         line-height: 1;
         white-space: nowrap;
     }
