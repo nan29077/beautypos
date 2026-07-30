@@ -168,6 +168,37 @@ def _remove_retired_features():
             ))
 
 
+def _ensure_shorts_ad_support():
+    """쇼츠 배포 주문에 필요한 스키마/기본 설정을 멱등하게 보강한다.
+
+    - MariaDB/MySQL: ad_orders.type 네이티브 ENUM 에 'SHORTS' 추가
+      (SQLite 는 VARCHAR 이라 보강할 것이 없다)
+    - 쇼츠 기능 스위치는 기본 ON 으로 넣어, 광고 주문이 켜진 환경에서 바로 노출된다.
+    """
+    try:
+        with engine.begin() as conn:
+            if engine.dialect.name in {"mysql", "mariadb"}:
+                conn.execute(text(
+                    "ALTER TABLE ad_orders MODIFY COLUMN type "
+                    "ENUM('BLOG','PLACE_TRAFFIC','SHORTS') NOT NULL"
+                ))
+            exists = conn.execute(text(
+                "SELECT 1 FROM system_configs WHERE config_key = :key"
+            ), {"key": "ad_shorts_enabled"}).first()
+            if not exists:
+                conn.execute(text(
+                    "INSERT INTO system_configs (config_key, is_enabled, description) "
+                    "VALUES (:key, :enabled, :description)"
+                ), {
+                    "key": "ad_shorts_enabled",
+                    "enabled": True,
+                    "description": "쇼츠(숏폼) 배포 광고 ON/OFF",
+                })
+                print("   ➕ Enabled ad_shorts_enabled feature flag")
+    except Exception as e:  # noqa: BLE001 — 보강 실패가 기동을 막으면 안 된다
+        print(f"   ⚠️ Could not ensure shorts ad support: {e}")
+
+
 def init_db():
     _make_console_lenient()
     if not wait_for_db():
@@ -177,6 +208,7 @@ def init_db():
     Base.metadata.create_all(bind=engine)
     _remove_retired_features()
     _ensure_columns()
+    _ensure_shorts_ad_support()
     print("✅ Tables created")
 
     # 플랜은 데모 데이터가 아니라 운영에도 필요한 기준 데이터이므로 DEV_MODE 와 무관하게 보강한다.

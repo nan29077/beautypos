@@ -27,8 +27,12 @@ from app.models.settlement import Settlement, PayoutRequest
 from app.models.ad import (
     AdOrder, AdOrderType, AdOrderStatus,
     AdOrderBlogDetail, AdOrderBlogImage,
-    AdOrderPlaceTrafficDetail,
+    AdOrderPlaceTrafficDetail, AdOrderShortsDetail,
     AdPlaceProfile, AdCompetitor, AdMetric, PlaceMetricSnapshot,
+    SHORTS_CAMPAIGN_TYPES, SHORTS_CAMPAIGN_TYPE_CODES, SHORTS_CAMPAIGN_TYPE_LABELS,
+    SHORTS_CAMPAIGN_TYPE_USES, SHORTS_DURATION_TIERS, SHORTS_DURATION_TIER_CODES,
+    SHORTS_PLATFORMS, SHORTS_PLATFORM_CODES, SHORTS_DISTRIBUTION_UNIT_PRICE,
+    SHORTS_MAX_COUNT, shorts_estimate,
 )
 from app.models.plan import AD_EXECUTION_TYPES
 from app.models.receipt_review import ReceiptReviewConfig, ReceiptReview
@@ -38,6 +42,7 @@ from app.models.system_config import (
     AD_ORDER_MGMT_ENABLED,
     AD_BLOG_ENABLED,
     AD_PLACE_TRAFFIC_ENABLED,
+    AD_SHORTS_ENABLED,
 )
 from app.auth.dependencies import get_current_user, require_roles
 from app.services.settlement_service import compute_distribution, get_available_payout
@@ -47,7 +52,7 @@ from app.services import ai_service
 from app.services import plan_service
 from app.schemas.schemas import (
     StaffCreate, StaffUpdate, DesignerCreate, DesignerUpdate,
-    AdBlogOrderCreate, AdPlaceTrafficOrderCreate,
+    AdBlogOrderCreate, AdPlaceTrafficOrderCreate, AdShortsOrderCreate,
     AdPlaceProfileCreate, AdCompetitorCreate,
     PayoutRequestCreate,
 )
@@ -1380,6 +1385,18 @@ def list_owner_ad_orders(db: Session = Depends(get_db), user: User = Depends(req
                 item["place_traffic_detail"] = {
                     "place_name_or_id": detail.place_name_or_id,
                 }
+        elif o.type == AdOrderType.SHORTS:
+            detail = db.query(AdOrderShortsDetail).filter(AdOrderShortsDetail.order_id == o.id).first()
+            if detail:
+                item["shorts_detail"] = {
+                    "campaign_name": detail.campaign_name,
+                    "campaign_type": detail.campaign_type,
+                    "campaign_type_label": SHORTS_CAMPAIGN_TYPE_LABELS.get(detail.campaign_type, detail.campaign_type),
+                    "distribution_count": detail.distribution_count,
+                    "video_production_count": detail.video_production_count,
+                    "platforms": json.loads(detail.platforms_json) if detail.platforms_json else [],
+                    "est_total_cost": str(detail.est_total_cost or 0),
+                }
         results.append(item)
     return results
 
@@ -1442,6 +1459,146 @@ def create_place_traffic_order(req: AdPlaceTrafficOrderCreate, db: Session = Dep
     return {"id": order.id, "status": order.status.value}
 
 
+# ─── 쇼츠(숏폼) 배포 주문 ─────────────────────────────────────
+
+@router.get("/ad/shorts-options")
+def get_shorts_order_options(db: Session = Depends(get_db), user: User = Depends(require_owner)):
+    """쇼츠 주문 폼이 사용하는 옵션 카탈로그와 단가를 반환한다.
+
+    단가/옵션은 서버가 유일한 출처이므로 화면은 이 응답만 보고 폼을 그린다.
+    """
+    return {
+        "campaign_types": [
+            {"code": code, "label": label, "description": desc,
+             "uses_distribution": uses_dist, "uses_production": uses_prod}
+            for code, label, desc, uses_dist, uses_prod in SHORTS_CAMPAIGN_TYPES
+        ],
+        "duration_tiers": [
+            {"code": code, "label": label, "unit_price": price}
+            for code, label, price in SHORTS_DURATION_TIERS
+        ],
+        "platforms": [{"code": code, "label": label} for code, label in SHORTS_PLATFORMS],
+        "distribution_unit_price": SHORTS_DISTRIBUTION_UNIT_PRICE,
+        "max_count": SHORTS_MAX_COUNT,
+    }
+
+
+@router.post("/ad/shorts-orders")
+def create_shorts_order(req: AdShortsOrderCreate, db: Session = Depends(get_db), user: User = Depends(require_owner)):
+    """쇼츠 제작·배포 주문 접수. 예상 비용은 서버 단가로 재계산해 저장한다."""
+    merchant = _get_owner_merchant(user, db)
+    _require_ad_order_feature(db, AD_SHORTS_ENABLED)
+    _require_plan_ad_quota(db, merchant.id, AdOrderType.SHORTS, "shorts")
+
+    if req.campaign_type not in SHORTS_CAMPAIGN_TYPE_CODES:
+        raise HTTPException(status_code=400, detail="캠페인 유형을 선택해주세요")
+    uses = SHORTS_CAMPAIGN_TYPE_USES[req.campaign_type]
+
+    # 배포 건수 · 플랫폼별 배분 검증
+    platform_counts: dict = {}
+    if uses["distribution"]:
+        if req.distribution_count < 1:
+            raise HTTPException(status_code=400, detail="배포 건수를 1건 이상 입력해주세요")
+        for code, count in (req.platform_counts or {}).items():
+            if code not in SHORTS_PLATFORM_CODES:
+                raise HTTPException(status_code=400, detail="지원하지 않는 배포 플랫폼입니다")
+            count = int(count or 0)
+            if count < 0:
+                raise HTTPException(status_code=400, detail="플랫폼별 배포 건수는 0건 이상이어야 합니다")
+            if count > 0:
+                platform_counts[code] = count
+        if not platform_counts:
+            raise HTTPException(status_code=400, detail="배포 플랫폼을 1개 이상 선택해주세요")
+        if sum(platform_counts.values()) != req.distribution_count:
+            raise HTTPException(status_code=400, detail="플랫폼별 배포 건수의 합이 전체 배포 건수와 일치해야 합니다")
+
+    # 제작 건수 · 영상 길이 등급 검증
+    duration_tier = req.video_duration_tier or None
+    if uses["production"]:
+        if req.video_production_count < 1:
+            raise HTTPException(status_code=400, detail="영상제작 건수를 1건 이상 입력해주세요")
+        if duration_tier not in SHORTS_DURATION_TIER_CODES:
+            raise HTTPException(status_code=400, detail="영상 길이를 선택해주세요")
+    else:
+        duration_tier = None
+
+    if req.campaign_type == "existing_video_distribution" and not (req.uploaded_video_url or "").strip():
+        raise HTTPException(status_code=400, detail="기존 영상 기반 배포는 영상 URL이 필요합니다")
+
+    if req.start_date and req.end_date and req.end_date < req.start_date:
+        raise HTTPException(status_code=400, detail="종료 희망일은 시작 희망일 이후여야 합니다")
+
+    est = shorts_estimate(
+        req.campaign_type, req.distribution_count, req.video_production_count, duration_tier
+    )
+
+    categories = {
+        code: (req.brief_categories or {}).get(code, "").strip()
+        for code in SHORTS_PLATFORM_CODES
+        if (req.brief_categories or {}).get(code, "").strip()
+    }
+
+    order = AdOrder(
+        merchant_id=merchant.id, type=AdOrderType.SHORTS,
+        status=AdOrderStatus.REQUESTED, created_by=user.id,
+    )
+    db.add(order)
+    db.flush()
+
+    detail = AdOrderShortsDetail(
+        order_id=order.id,
+        campaign_name=req.campaign_name.strip(),
+        brand_name=(req.brand_name or "").strip() or merchant.name,
+        industry=(req.industry or "").strip() or None,
+        website_url=(req.website_url or "").strip() or None,
+        description=req.description,
+        campaign_type=req.campaign_type,
+        distribution_count=est["distribution_count"],
+        video_production_count=est["production_count"],
+        video_duration_tier=duration_tier,
+        platforms_json=json.dumps(list(platform_counts.keys())),
+        platform_counts_json=json.dumps(platform_counts),
+        start_date=req.start_date,
+        end_date=req.end_date,
+        target_keywords_json=json.dumps([item.strip() for item in req.target_keywords if item.strip()]),
+        reference_links_json=json.dumps([item.strip() for item in req.reference_links if item.strip()]),
+        uploaded_video_url=(req.uploaded_video_url or "").strip() or None,
+        brief_product_name=(req.brief_product_name or "").strip() or None,
+        brief_product_detail=req.brief_product_detail,
+        brief_categories_json=json.dumps(categories),
+        brief_tone=(req.brief_tone or "").strip() or None,
+        brief_style=(req.brief_style or "").strip() or None,
+        brief_target_audience=req.brief_target_audience,
+        brief_key_messages=req.brief_key_messages,
+        brief_avoid=req.brief_avoid,
+        brief_hashtags_json=json.dumps([item.strip().lstrip("#") for item in req.brief_hashtags if item.strip()]),
+        creator_min_followers=(req.creator_min_followers or "").strip() or None,
+        creator_gender=(req.creator_gender or "").strip() or None,
+        creator_age_group=(req.creator_age_group or "").strip() or None,
+        creator_requirements=req.creator_requirements,
+        brand_forbidden_words=req.brand_forbidden_words,
+        brand_no_competitor=req.brand_no_competitor,
+        brand_no_adult=req.brand_no_adult,
+        brand_no_violence=req.brand_no_violence,
+        brand_no_political=req.brand_no_political,
+        track_utm=req.track_utm,
+        track_promo_code=req.track_promo_code,
+        kpi_goals_json=json.dumps([item.strip() for item in req.kpi_goals if item.strip()]),
+        est_distribution_cost=est["distribution_cost"],
+        est_production_cost=est["production_cost"],
+        est_total_cost=est["total_cost"],
+    )
+    db.add(detail)
+    db.commit()
+    db.refresh(order)
+    return {
+        "id": order.id,
+        "status": order.status.value,
+        "campaign_type_label": SHORTS_CAMPAIGN_TYPE_LABELS[req.campaign_type],
+        "estimate": est,
+    }
+
+
 # ─── Ad Executions (원장 조회 전용) ──────────────────────────
 
 @router.get("/ad/executions/summary")
@@ -1450,8 +1607,12 @@ def owner_ad_execution_summary(
     db: Session = Depends(get_db),
     user: User = Depends(require_owner),
 ):
-    """내 가맹점의 현재 플랜 + 광고 집행 현황 (어드민 집계를 본인 가맹점으로 제한)."""
-    merchant = _get_owner_merchant(user, db)
+    """내 가맹점의 현재 플랜 + 광고 집행 현황 (어드민 집계를 본인 가맹점으로 제한).
+
+    가맹점이 없는 계정에서도 404 대신 빈 응답을 반환한다.
+    """
+    merchant = db.query(Merchant).filter(Merchant.owner_user_id == user.id).first()
+
     if date:
         try:
             target = date_type.fromisoformat(date)
@@ -1461,6 +1622,16 @@ def owner_ad_execution_summary(
         target = today_kst()
 
     month_start, month_end = plan_service.month_bounds(target)
+
+    if not merchant:
+        return {
+            "date": str(target),
+            "month_start": str(month_start),
+            "month_end": str(month_end),
+            "ad_types": [],
+            "merchant": None,
+        }
+
     summary = plan_service.build_summary(db, target, [merchant])
     return {
         "date": str(target),

@@ -4,6 +4,7 @@ Covers: merchants CRUD, PG config, transactions, payout requests,
         ad orders management, metrics, fee policies, sales assignments, landing stats.
 """
 import json
+import secrets
 from datetime import datetime, timedelta, date as date_type
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -23,13 +24,16 @@ from app.models.settlement import (
 )
 from app.models.ad import (
     AdOrder, AdOrderStatus, AdMetric, AdOrderBlogDetail, AdOrderBlogImage,
-    AdOrderPlaceTrafficDetail, AdPlaceProfile, AdCompetitor,
+    AdOrderPlaceTrafficDetail, AdOrderShortsDetail, AdPlaceProfile, AdCompetitor,
+    SHORTS_CAMPAIGN_TYPE_LABELS, SHORTS_DURATION_TIERS,
 )
 from app.models.staff import Staff
 from app.models.affiliate_mall import AffiliateMall
 from app.auth.dependencies import require_admin
+from app.auth.jwt_handler import hash_password
 from app.models.system_config import (
     SystemConfig, AD_ORDER_MGMT_ENABLED, AD_BLOG_ENABLED, AD_PLACE_TRAFFIC_ENABLED,
+    AD_SHORTS_ENABLED,
     COMMISSION_VISIBLE_TO_SALES, COMMISSION_VISIBLE_TO_OWNER, COMMISSION_VISIBLE_TO_DESIGNER,
 )
 from app.services import ai_service
@@ -363,6 +367,60 @@ def reject_payout(pid: int, db: Session = Depends(get_db), admin: User = Depends
 
 # ─── Ad Orders Management ───────────────────────────────────
 
+_SHORTS_TIER_LABELS = {code: label for code, label, _ in SHORTS_DURATION_TIERS}
+
+
+def _shorts_detail_payload(detail: AdOrderShortsDetail) -> dict:
+    """쇼츠 주문 상세를 API 응답 형태로 직렬화한다."""
+    def _load(raw, fallback):
+        return json.loads(raw) if raw else fallback
+
+    return {
+        "campaign_name": detail.campaign_name,
+        "brand_name": detail.brand_name,
+        "industry": detail.industry,
+        "website_url": detail.website_url,
+        "description": detail.description,
+        "campaign_type": detail.campaign_type,
+        "campaign_type_label": SHORTS_CAMPAIGN_TYPE_LABELS.get(detail.campaign_type, detail.campaign_type),
+        "distribution_count": detail.distribution_count,
+        "video_production_count": detail.video_production_count,
+        "video_duration_tier": detail.video_duration_tier,
+        "video_duration_label": _SHORTS_TIER_LABELS.get(detail.video_duration_tier or "", "-"),
+        "platforms": _load(detail.platforms_json, []),
+        "platform_counts": _load(detail.platform_counts_json, {}),
+        "start_date": str(detail.start_date) if detail.start_date else None,
+        "end_date": str(detail.end_date) if detail.end_date else None,
+        "target_keywords": _load(detail.target_keywords_json, []),
+        "reference_links": _load(detail.reference_links_json, []),
+        "uploaded_video_url": detail.uploaded_video_url,
+        "brief_product_name": detail.brief_product_name,
+        "brief_product_detail": detail.brief_product_detail,
+        "brief_categories": _load(detail.brief_categories_json, {}),
+        "brief_tone": detail.brief_tone,
+        "brief_style": detail.brief_style,
+        "brief_target_audience": detail.brief_target_audience,
+        "brief_key_messages": detail.brief_key_messages,
+        "brief_avoid": detail.brief_avoid,
+        "brief_hashtags": _load(detail.brief_hashtags_json, []),
+        "creator_min_followers": detail.creator_min_followers,
+        "creator_gender": detail.creator_gender,
+        "creator_age_group": detail.creator_age_group,
+        "creator_requirements": detail.creator_requirements,
+        "brand_forbidden_words": detail.brand_forbidden_words,
+        "brand_no_competitor": detail.brand_no_competitor,
+        "brand_no_adult": detail.brand_no_adult,
+        "brand_no_violence": detail.brand_no_violence,
+        "brand_no_political": detail.brand_no_political,
+        "track_utm": detail.track_utm,
+        "track_promo_code": detail.track_promo_code,
+        "kpi_goals": _load(detail.kpi_goals_json, []),
+        "est_distribution_cost": str(detail.est_distribution_cost or 0),
+        "est_production_cost": str(detail.est_production_cost or 0),
+        "est_total_cost": str(detail.est_total_cost or 0),
+    }
+
+
 @router.get("/ad/orders")
 def list_ad_orders(db: Session = Depends(get_db), _=Depends(require_admin)):
     orders = db.query(AdOrder).order_by(AdOrder.created_at.desc()).all()
@@ -400,6 +458,10 @@ def list_ad_orders(db: Session = Depends(get_db), _=Depends(require_admin)):
                     "place_name_or_id": detail.place_name_or_id,
                     "search_keywords": json.loads(detail.search_keywords_json) if detail.search_keywords_json else [],
                 }
+        elif o.type.value == "shorts":
+            detail = db.query(AdOrderShortsDetail).filter(AdOrderShortsDetail.order_id == o.id).first()
+            if detail:
+                item["shorts_detail"] = _shorts_detail_payload(detail)
         results.append(item)
     return results
 
@@ -833,7 +895,7 @@ def delete_sales_assignment(aid: int, db: Session = Depends(get_db), _=Depends(r
 @router.get("/sales-managers")
 def list_sales_managers(db: Session = Depends(get_db), _=Depends(require_admin)):
     users = db.query(User).filter(User.role == UserRole.SALES, User.is_active == True).all()
-    return [{"id": u.id, "name": u.name, "email": u.email} for u in users]
+    return [{"id": u.id, "name": u.name, "email": u.email, "referral_code": u.referral_code} for u in users]
 
 
 # ─── Users Management ───────────────────────────────────────
@@ -870,8 +932,45 @@ def list_all_users(
             "created_at": str(u.created_at),
             "merchant_name": merchant.name if merchant else None,
             "assigned_merchant_count": assigned_count,
+            "referral_code": u.referral_code if u.role == UserRole.SALES else None,
         })
     return results
+
+
+@router.post("/users/create-sales")
+def create_sales_user(
+    name: str = Query(..., description="영업관리자 이름"),
+    email: str = Query(..., description="이메일"),
+    password: str = Query(..., description="초기 비밀번호"),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin),
+):
+    """최고관리자가 영업관리자 계정을 직접 생성한다. 고유 추천 코드가 자동 발급된다."""
+    if db.query(User).filter(User.email == email).first():
+        raise HTTPException(status_code=400, detail="이미 사용 중인 이메일입니다")
+
+    referral_code = f"SALES-{secrets.token_hex(4).upper()}"
+    while db.query(User).filter(User.referral_code == referral_code).first():
+        referral_code = f"SALES-{secrets.token_hex(4).upper()}"
+
+    user = User(
+        email=email,
+        password_hash=hash_password(password),
+        name=name,
+        role=UserRole.SALES,
+        referral_code=referral_code,
+        is_active=True,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return {
+        "id": user.id,
+        "name": user.name,
+        "email": user.email,
+        "role": "sales",
+        "referral_code": user.referral_code,
+    }
 
 
 @router.put("/users/{uid}/role")
@@ -1339,6 +1438,10 @@ def get_ad_order_detail(oid: int, db: Session = Depends(get_db), _=Depends(requi
                 "place_name_or_id": detail.place_name_or_id,
                 "search_keywords": json.loads(detail.search_keywords_json) if detail.search_keywords_json else [],
             }
+    elif order.type.value == "shorts":
+        detail = db.query(AdOrderShortsDetail).filter(AdOrderShortsDetail.order_id == order.id).first()
+        if detail:
+            item["shorts_detail"] = _shorts_detail_payload(detail)
 
     return item
 
@@ -1399,10 +1502,12 @@ def get_ad_feature_flags(db: Session = Depends(get_db), _=Depends(require_admin)
     master = _get_config(db, AD_ORDER_MGMT_ENABLED)
     blog = _get_config(db, AD_BLOG_ENABLED)
     place = _get_config(db, AD_PLACE_TRAFFIC_ENABLED)
+    shorts = _get_config(db, AD_SHORTS_ENABLED)
     return {
         "ad_order_mgmt_enabled": master.is_enabled,
         "ad_blog_enabled": blog.is_enabled,
         "ad_place_traffic_enabled": place.is_enabled,
+        "ad_shorts_enabled": shorts.is_enabled,
     }
 
 
@@ -1411,6 +1516,7 @@ def update_ad_feature_flags(
     ad_order_mgmt_enabled: Optional[bool] = Query(None),
     ad_blog_enabled: Optional[bool] = Query(None),
     ad_place_traffic_enabled: Optional[bool] = Query(None),
+    ad_shorts_enabled: Optional[bool] = Query(None),
     db: Session = Depends(get_db), _=Depends(require_admin),
 ):
     """광고 기능 스위치 ON/OFF 변경"""
@@ -1427,6 +1533,10 @@ def update_ad_feature_flags(
         cfg = _get_config(db, AD_PLACE_TRAFFIC_ENABLED)
         cfg.is_enabled = ad_place_traffic_enabled
         result["ad_place_traffic_enabled"] = ad_place_traffic_enabled
+    if ad_shorts_enabled is not None:
+        cfg = _get_config(db, AD_SHORTS_ENABLED)
+        cfg.is_enabled = ad_shorts_enabled
+        result["ad_shorts_enabled"] = ad_shorts_enabled
     db.commit()
     return {"ok": True, **result}
 

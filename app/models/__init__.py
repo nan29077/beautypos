@@ -8,11 +8,18 @@ from app.models.settlement import Settlement, FeePolicy, SalesCommissionPolicy, 
 from app.models.ad import (
     AdPlaceProfile, AdCompetitor, AdMetric, PlaceMetricSnapshot,
     AdOrder, AdOrderBlogDetail, AdOrderBlogImage,
-    AdOrderPlaceTrafficDetail,
+    AdOrderPlaceTrafficDetail, AdOrderShortsDetail,
+    SHORTS_CAMPAIGN_TYPES, SHORTS_CAMPAIGN_TYPE_CODES, SHORTS_CAMPAIGN_TYPE_LABELS,
+    SHORTS_CAMPAIGN_TYPE_USES, SHORTS_DURATION_TIERS, SHORTS_DURATION_TIER_CODES,
+    SHORTS_DURATION_TIER_PRICES, SHORTS_PLATFORMS, SHORTS_PLATFORM_CODES,
+    SHORTS_DISTRIBUTION_UNIT_PRICE, SHORTS_MAX_COUNT, shorts_estimate,
 )
 from app.models.receipt_review import ReceiptReviewConfig, ReceiptReview
 from app.models.affiliate_mall import AffiliateMall
-from app.models.system_config import SystemConfig, AD_ORDER_MGMT_ENABLED, AD_BLOG_ENABLED, AD_PLACE_TRAFFIC_ENABLED
+from app.models.system_config import (
+    SystemConfig, AD_ORDER_MGMT_ENABLED, AD_BLOG_ENABLED, AD_PLACE_TRAFFIC_ENABLED,
+    AD_SHORTS_ENABLED,
+)
 from app.models.crm import (
     CrmCustomer, CrmService, CrmServicePrice, CrmVisit, CrmReservation, CrmPointLog,
     CrmMessageTemplate, CrmMessageLog, CrmCoupon,
@@ -31,10 +38,15 @@ __all__ = [
     "Settlement", "FeePolicy", "SalesCommissionPolicy", "MerchantSalesAssignment", "PayoutRequest",
     "AdPlaceProfile", "AdCompetitor", "AdMetric", "PlaceMetricSnapshot",
     "AdOrder", "AdOrderBlogDetail", "AdOrderBlogImage",
-    "AdOrderPlaceTrafficDetail",
+    "AdOrderPlaceTrafficDetail", "AdOrderShortsDetail",
+    "SHORTS_CAMPAIGN_TYPES", "SHORTS_CAMPAIGN_TYPE_CODES", "SHORTS_CAMPAIGN_TYPE_LABELS",
+    "SHORTS_CAMPAIGN_TYPE_USES", "SHORTS_DURATION_TIERS", "SHORTS_DURATION_TIER_CODES",
+    "SHORTS_DURATION_TIER_PRICES", "SHORTS_PLATFORMS", "SHORTS_PLATFORM_CODES",
+    "SHORTS_DISTRIBUTION_UNIT_PRICE", "SHORTS_MAX_COUNT", "shorts_estimate",
     "ReceiptReviewConfig", "ReceiptReview",
     "AffiliateMall",
     "SystemConfig", "AD_ORDER_MGMT_ENABLED", "AD_BLOG_ENABLED", "AD_PLACE_TRAFFIC_ENABLED",
+    "AD_SHORTS_ENABLED",
     "CrmCustomer", "CrmService", "CrmServicePrice", "CrmVisit", "CrmReservation", "CrmPointLog",
     "CrmMessageTemplate", "CrmMessageLog", "CrmCoupon",
     "ReservationStatus", "RESERVATION_STATUS_KR",

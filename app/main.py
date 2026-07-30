@@ -23,6 +23,7 @@ from app.models.system_config import (
     AD_BLOG_ENABLED,
     AD_ORDER_MGMT_ENABLED,
     AD_PLACE_TRAFFIC_ENABLED,
+    AD_SHORTS_ENABLED,
     SystemConfig,
 )
 from app.services.static_version import AssetVersions, VersionedStaticFiles
@@ -163,10 +164,12 @@ def get_feature_flags(db: Session = Depends(get_db), user=Depends(get_current_us
     master_cfg = db.query(SystemConfig).filter(SystemConfig.config_key == AD_ORDER_MGMT_ENABLED).first()
     blog_cfg = db.query(SystemConfig).filter(SystemConfig.config_key == AD_BLOG_ENABLED).first()
     place_cfg = db.query(SystemConfig).filter(SystemConfig.config_key == AD_PLACE_TRAFFIC_ENABLED).first()
+    shorts_cfg = db.query(SystemConfig).filter(SystemConfig.config_key == AD_SHORTS_ENABLED).first()
     return {
         "ad_order_mgmt_enabled": master_cfg.is_enabled if master_cfg else False,
         "ad_blog_enabled": blog_cfg.is_enabled if blog_cfg else False,
         "ad_place_traffic_enabled": place_cfg.is_enabled if place_cfg else False,
+        "ad_shorts_enabled": shorts_cfg.is_enabled if shorts_cfg else False,
     }
 
 

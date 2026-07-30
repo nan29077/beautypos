@@ -24,6 +24,7 @@ class SystemConfig(Base):
 AD_ORDER_MGMT_ENABLED = "ad_order_mgmt_enabled"       # 광고 주문 관리 마스터 스위치 ON/OFF
 AD_BLOG_ENABLED = "ad_blog_enabled"                    # 블로그 배포 광고 ON/OFF
 AD_PLACE_TRAFFIC_ENABLED = "ad_place_traffic_enabled"  # 플레이스 유입 광고 ON/OFF
+AD_SHORTS_ENABLED = "ad_shorts_enabled"                # 쇼츠(숏폼) 배포 광고 ON/OFF
 
 # ─── 영업수수료 표시 여부 (역할별) ──────────────────────────
 # 최고관리자가 ON/OFF. 각 계정은 자기 하위 단계의 영업수수료를 ON일 때만 조회.

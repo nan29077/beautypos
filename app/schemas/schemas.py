@@ -2,7 +2,7 @@
 Pydantic schemas for request/response validation.
 """
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional, List
+from typing import Optional, List, Dict
 from datetime import datetime, date
 from enum import Enum
 
@@ -134,6 +134,60 @@ class AdBlogOrderCreate(BaseModel):
 class AdPlaceTrafficOrderCreate(BaseModel):
     place_name_or_id: str = Field(min_length=2, max_length=300)
     search_keywords: List[str] = Field(default_factory=list, min_length=1, max_length=3)
+
+
+class AdShortsOrderCreate(BaseModel):
+    """쇼츠(숏폼) 제작·배포 주문 요청.
+
+    예상 집행 비용은 클라이언트 값을 신뢰하지 않고 서버에서 다시 계산한다.
+    """
+    # 1) 브랜드 · 캠페인 기본 정보
+    campaign_name: str = Field(min_length=2, max_length=300)
+    brand_name: Optional[str] = Field(default=None, max_length=200)
+    industry: Optional[str] = Field(default=None, max_length=50)
+    website_url: Optional[str] = Field(default=None, max_length=500)
+    description: Optional[str] = None
+
+    # 2) 캠페인 설정
+    campaign_type: str = Field(min_length=2, max_length=40)
+    distribution_count: int = Field(default=0, ge=0, le=1000)
+    video_production_count: int = Field(default=0, ge=0, le=1000)
+    video_duration_tier: Optional[str] = Field(default=None, max_length=10)
+    platform_counts: Dict[str, int] = Field(default_factory=dict)
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    target_keywords: List[str] = Field(default_factory=list, max_length=10)
+    reference_links: List[str] = Field(default_factory=list, max_length=10)
+    uploaded_video_url: Optional[str] = None
+
+    # 3) 영상 제작 브리프
+    brief_product_name: Optional[str] = Field(default=None, max_length=300)
+    brief_product_detail: Optional[str] = None
+    brief_categories: Dict[str, str] = Field(default_factory=dict)
+    brief_tone: Optional[str] = Field(default=None, max_length=100)
+    brief_style: Optional[str] = Field(default=None, max_length=100)
+    brief_target_audience: Optional[str] = None
+    brief_key_messages: Optional[str] = None
+    brief_avoid: Optional[str] = None
+    brief_hashtags: List[str] = Field(default_factory=list, max_length=10)
+
+    # 4) 크리에이터 자격 요건
+    creator_min_followers: Optional[str] = Field(default=None, max_length=20)
+    creator_gender: Optional[str] = Field(default=None, max_length=20)
+    creator_age_group: Optional[str] = Field(default=None, max_length=20)
+    creator_requirements: Optional[str] = None
+
+    # 4) 브랜드 세이프티
+    brand_forbidden_words: Optional[str] = None
+    brand_no_competitor: bool = False
+    brand_no_adult: bool = False
+    brand_no_violence: bool = False
+    brand_no_political: bool = False
+
+    # 4) 성과 추적
+    track_utm: bool = False
+    track_promo_code: bool = False
+    kpi_goals: List[str] = Field(default_factory=list, max_length=10)
 
 
 class AdOrderStatusUpdate(BaseModel):

@@ -249,4 +249,6 @@ def sales_dashboard_stats(db: Session = Depends(get_db), user: User = Depends(re
         "show_commission": show_commission,
         "total_commission": round(total_commission, 2) if show_commission else None,
         "pending_payouts": pending_payouts,
+        # 추천 코드 & 링크 (영업관리자 전용)
+        "referral_code": user.referral_code,
     }

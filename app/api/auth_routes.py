@@ -22,7 +22,8 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 settings = get_settings()
 
-_ALLOWED_REGISTER_ROLES = {"owner", "sales"}
+# 자가 회원가입은 원장(OWNER)만 허용. 영업관리자는 최고관리자가 직접 생성한다.
+_ALLOWED_REGISTER_ROLES = {"owner"}
 
 
 def _user_dict(u: User) -> dict:
