@@ -244,8 +244,8 @@ class AISettingsUpdate(BaseModel):
 # ─── 플랜 관리 (Admin) ───────────────────────────────────────
 
 class PlanUpdate(BaseModel):
-    """플랜 수수료율/광고 목표 건수 수정. 전달된 필드만 반영한다."""
-    merchant_fee_rate: Optional[float] = Field(default=None, ge=0, le=100)  # 퍼센트 값 (5.5 = 5.5%)
+    """플랜 수수료율/광고 목표 건수 수정. 일별 값은 월 목표에서 자동 산정한다."""
+    merchant_fee_rate: Optional[float] = Field(default=None, ge=0, le=100)  # 부가세 별도 퍼센트 값
     blog_review_daily: Optional[int] = Field(default=None, ge=0)
     blog_review_monthly: Optional[int] = Field(default=None, ge=0)
     receipt_review_daily: Optional[int] = Field(default=None, ge=0)

@@ -6721,6 +6721,29 @@ const AD_TYPE_META = [
 ];
 const PLAN_ACCENTS = { basic: 'secondary', standard: 'primary', premium: 'warning' };
 
+function planNumber(value, fallback = 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function planFeeWithVat(plan) {
+    const exclusive = planNumber(plan?.merchant_fee_rate);
+    return planNumber(plan?.merchant_fee_rate_with_vat, exclusive * 1.1);
+}
+
+function planDailyAverage(plan, code) {
+    const supplied = Number(plan?.[`${code}_daily_average`]);
+    if (Number.isFinite(supplied)) return supplied;
+    const now = new Date();
+    const days = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    return planNumber(plan?.[`${code}_monthly`]) / days;
+}
+
+function planDailyDescription(plan, code) {
+    return plan?.[`${code}_daily_description`]
+        || planTargetPreview(plan?.[`${code}_monthly`]);
+}
+
 async function loadAdminPlans(c, t) {
     t.textContent = '플랜 관리';
 
@@ -6748,7 +6771,8 @@ async function loadAdminPlans(c, t) {
     c.innerHTML = `
     <div class="alert alert-info mb-3">
         <i class="fas fa-info-circle me-2"></i><strong>플랜 관리:</strong>
-        플랜별 수수료율과 5종 광고의 일별·월별 목표 건수를 설정합니다.
+        플랜별 부가세 별도 수수료율과 5종 광고의 월 목표 건수를 설정합니다.
+        일별 목표는 해당 월의 날짜 수에 맞춰 자동 배분됩니다.
         신규 가맹점은 <strong>베이직</strong> 플랜으로 자동 배정됩니다.
     </div>
 
@@ -6765,14 +6789,16 @@ async function loadAdminPlans(c, t) {
             <div class="table-responsive">
                 <table class="table table-hover align-middle">
                     <thead><tr>
-                        <th>가맹점</th><th>현재 플랜</th><th>수수료율</th><th>배정일</th><th style="min-width:220px">플랜 변경</th>
+                        <th>가맹점</th><th>현재 플랜</th><th>수수료율 (부가세 별도)</th><th>배정일</th><th style="min-width:220px">플랜 변경</th>
                     </tr></thead>
                     <tbody>
                         ${assigned.map(m => `
                         <tr>
                             <td class="fw-bold">${escapeHtml(m.name)}</td>
                             <td><span class="badge bg-${PLAN_ACCENTS[m.plan?.code] || 'light text-dark'}">${escapeHtml(m.plan?.name || '미배정')}</span></td>
-                            <td>${m.plan ? m.plan.merchant_fee_rate.toFixed(2) + '%' : '-'}</td>
+                            <td>${m.plan
+                                ? `${planNumber(m.plan.merchant_fee_rate).toFixed(2)}% <small class="text-muted">+ VAT → ${planFeeWithVat(m.plan).toFixed(2)}%</small>`
+                                : '-'}</td>
                             <td class="text-muted small">${m.assigned_at ? formatDate(m.assigned_at) : '-'}</td>
                             <td>
                                 <div class="input-group input-group-sm">
@@ -6803,27 +6829,34 @@ function _planCard(p) {
                 <small class="text-uppercase opacity-75">${escapeHtml(p.code)}</small>
             </div>
             <div class="card-body">
-                <label class="form-label fw-bold" for="plan_${p.id}_fee">가맹점 수수료율</label>
-                <div class="input-group mb-3">
+                <label class="form-label fw-bold" for="plan_${p.id}_fee">가맹점 수수료율 <small class="text-primary">(부가세 별도)</small></label>
+                <div class="input-group mb-1">
                     <input type="number" class="form-control" id="plan_${p.id}_fee"
-                        value="${p.merchant_fee_rate.toFixed(2)}" step="0.1" min="0" max="100">
+                        value="${planNumber(p.merchant_fee_rate).toFixed(2)}" step="0.1" min="0" max="100"
+                        oninput="updatePlanVatPreview(${p.id})">
                     <span class="input-group-text">%</span>
+                </div>
+                <div class="small text-muted mb-3" id="plan_${p.id}_fee_preview">
+                    실제 적용 <strong class="text-primary">${planFeeWithVat(p).toFixed(2)}%</strong>
+                    <span class="ms-1">(부가세 10% 포함)</span>
                 </div>
 
                 <div class="fw-bold mb-2 small text-muted">
-                    <i class="fas fa-bullseye me-1"></i>광고 목표 건수 (일별 / 월별)
+                    <i class="fas fa-bullseye me-1"></i>광고 월 목표 건수
                 </div>
                 ${AD_TYPE_META.map(([code, label, icon]) => `
-                <div class="row g-2 align-items-center mb-2">
+                <div class="row g-2 align-items-center mb-3">
                     <div class="col-5 small"><i class="${icon} me-1 text-muted"></i>${label}</div>
-                    <div class="col-3">
-                        <input type="number" class="form-control form-control-sm" id="plan_${p.id}_${code}_daily"
-                            value="${p[code + '_daily']}" min="0" aria-label="${label} 일별 목표">
-                    </div>
-                    <div class="col-1 text-center text-muted small">/</div>
-                    <div class="col-3">
+                    <div class="col-7">
                         <input type="number" class="form-control form-control-sm" id="plan_${p.id}_${code}_monthly"
-                            value="${p[code + '_monthly']}" min="0" aria-label="${label} 월별 목표">
+                            value="${planNumber(p[code + '_monthly'])}" min="0" aria-label="${label} 월별 목표"
+                            oninput="updatePlanTargetPreview(${p.id}, '${code}')">
+                    </div>
+                    <div class="col-12">
+                        <div class="small text-muted text-end" id="plan_${p.id}_${code}_preview">
+                            일별 자동 배분 · ${escapeHtml(planDailyDescription(p, code))}
+                            <span class="ms-1">(하루 평균 ${planDailyAverage(p, code).toFixed(2)}건)</span>
+                        </div>
                     </div>
                 </div>`).join('')}
 
@@ -6835,17 +6868,47 @@ function _planCard(p) {
     </div>`;
 }
 
+function updatePlanVatPreview(planId) {
+    const value = parseFloat(document.getElementById(`plan_${planId}_fee`)?.value);
+    const preview = document.getElementById(`plan_${planId}_fee_preview`);
+    if (!preview) return;
+    preview.innerHTML = Number.isFinite(value)
+        ? `실제 적용 <strong class="text-primary">${(value * 1.1).toFixed(2)}%</strong><span class="ms-1">(부가세 10% 포함)</span>`
+        : '수수료율을 입력해 주세요.';
+}
+
+function planTargetPreview(monthlyValue) {
+    const monthly = Math.max(0, parseInt(monthlyValue, 10) || 0);
+    const now = new Date();
+    const days = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    if (monthly === 0) return '월 목표 없음';
+    if (monthly < days) return `약 ${Math.max(1, Math.round(days / monthly))}일마다 1건`;
+    const low = Math.floor(monthly / days);
+    const high = Math.ceil(monthly / days);
+    return low === high ? `매일 ${low}건` : `일자별 ${low}~${high}건`;
+}
+
+function updatePlanTargetPreview(planId, code) {
+    const input = document.getElementById(`plan_${planId}_${code}_monthly`);
+    const preview = document.getElementById(`plan_${planId}_${code}_preview`);
+    if (!input || !preview) return;
+    const monthly = Math.max(0, parseInt(input.value, 10) || 0);
+    const now = new Date();
+    const days = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    preview.innerHTML = `일별 자동 배분 · ${planTargetPreview(monthly)}
+        <span class="ms-1">(하루 평균 ${(monthly / days).toFixed(2)}건)</span>`;
+}
+
 async function savePlan(planId) {
     const body = { merchant_fee_rate: parseFloat(document.getElementById(`plan_${planId}_fee`).value) };
     for (const [code] of AD_TYPE_META) {
-        body[`${code}_daily`] = parseInt(document.getElementById(`plan_${planId}_${code}_daily`).value, 10);
         body[`${code}_monthly`] = parseInt(document.getElementById(`plan_${planId}_${code}_monthly`).value, 10);
     }
     if (Object.values(body).some(v => isNaN(v))) { alert('모든 값을 입력해주세요.'); return; }
 
     try {
         const saved = await apiPut(`/api/admin/plans/${planId}`, body);
-        alert(`${saved.name} 플랜이 저장되었습니다.`);
+        alert(`${saved.name} 플랜이 저장되었습니다.\n수수료는 부가세 별도이며 광고 일별 목표는 월 목표에서 자동 배분됩니다.`);
         navigate('admin-plans');
     } catch (e) { alert('저장 실패: ' + e.message); }
 }
@@ -6951,7 +7014,8 @@ function renderAdExecutions() {
 
 function _execStatus(it) {
     if (it.monthly_remaining < 0) return '<span class="badge bg-danger">월 목표 초과</span>';
-    if (it.daily_remaining > 0) return `<span class="badge bg-warning text-dark">일 목표 ${it.daily_remaining}건 부족</span>`;
+    if (it.pace_remaining > 0) return `<span class="badge bg-warning text-dark">누적 목표 ${it.pace_remaining}건 부족</span>`;
+    if (it.daily_target === 0 && it.monthly_remaining > 0) return '<span class="badge bg-light text-secondary border">오늘 목표 없음</span>';
     return '<span class="badge bg-success">달성</span>';
 }
 
@@ -6970,7 +7034,7 @@ function _adExecTable(rows) {
             ${i === 0 ? `<td rowspan="${m.items.length}" class="fw-bold align-middle">${escapeHtml(m.merchant_name)}</td>
                          <td rowspan="${m.items.length}" class="align-middle"><span class="badge bg-${PLAN_ACCENTS[m.plan_code] || 'light text-dark'}">${escapeHtml(m.plan_name)}</span></td>` : ''}
             <td>${escapeHtml(it.ad_type_label)}</td>
-            <td class="text-end">${it.daily_target.toLocaleString()}</td>
+            <td class="text-end">${it.daily_target.toLocaleString()}<small class="d-block text-muted">${escapeHtml(it.daily_description)}</small></td>
             <td class="text-end fw-bold">${it.today_executed.toLocaleString()}</td>
             <td class="text-end">${it.monthly_target.toLocaleString()}</td>
             <td class="text-end">${it.month_total.toLocaleString()}</td>
@@ -6990,7 +7054,7 @@ function _adExecTable(rows) {
                 <table class="table table-hover align-middle mb-0 mobile-keep-table">
                     <thead><tr>
                         <th>가맹점</th><th>플랜</th><th>광고종류</th>
-                        <th class="text-end">일 목표</th><th class="text-end">오늘 집행</th>
+                        <th class="text-end">오늘 목표</th><th class="text-end">오늘 집행</th>
                         <th class="text-end">월 목표</th><th class="text-end">이번달 누적</th>
                         <th class="text-end">잔여</th><th>상태</th><th>집행 입력</th>
                     </tr></thead>
@@ -7017,7 +7081,7 @@ function _adExecCards(rows) {
                             ${_execStatus(it)}
                         </div>
                         <div class="d-flex flex-wrap gap-3 small text-muted mb-2">
-                            <span>일 목표 <strong class="text-dark">${it.daily_target.toLocaleString()}</strong></span>
+                            <span>오늘 목표 <strong class="text-dark">${it.daily_target.toLocaleString()}</strong> <small>(${escapeHtml(it.daily_description)})</small></span>
                             <span>오늘 <strong class="text-dark">${it.today_executed.toLocaleString()}</strong></span>
                             <span>월 목표 <strong class="text-dark">${it.monthly_target.toLocaleString()}</strong></span>
                             <span>월 누적 <strong class="text-dark">${it.month_total.toLocaleString()}</strong></span>

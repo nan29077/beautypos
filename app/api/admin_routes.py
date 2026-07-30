@@ -1911,16 +1911,35 @@ def update_plan(
     db: Session = Depends(get_db),
     _=Depends(require_admin),
 ):
-    """플랜 수수료율 / 광고 목표 건수 수정. 전달된 필드만 갱신한다."""
+    """플랜 수수료율 / 월 광고 목표 건수 수정.
+
+    수수료율은 부가세 별도 공급가로 저장한다. 일별 광고 목표는 월 목표를 실제
+    달력 일수에 맞춰 자동 분배하므로 직접 입력받지 않는다.
+    """
     plan = db.query(Plan).filter(Plan.id == plan_id).first()
     if not plan:
         raise HTTPException(status_code=404, detail="플랜을 찾을 수 없습니다")
 
     changes = req.model_dump(exclude_unset=True, exclude_none=True)
+    # 이전 클라이언트가 일별 값을 보내더라도 월 목표 자동 배분 원칙을 우선한다.
+    changes = {field: value for field, value in changes.items() if not field.endswith("_daily")}
     if not changes:
         raise HTTPException(status_code=400, detail="변경할 값이 없습니다")
     for field, value in changes.items():
         setattr(plan, field, value)
+        if field.endswith("_monthly"):
+            # DB의 기존 일별 컬럼은 호환용 평균값으로만 유지한다.
+            setattr(plan, field.removesuffix("_monthly") + "_daily", int(value) // 30)
+
+    if "merchant_fee_rate" in changes:
+        db.flush()
+        assigned_merchant_ids = {
+            row[0] for row in db.query(MerchantPlan.merchant_id).distinct().all()
+            if (current := plan_service.current_assignment(db, row[0])) and current.plan_id == plan.id
+        }
+        for merchant_id in assigned_merchant_ids:
+            effective_mfr, effective_pgr, _ = get_effective_fee_rates(db, merchant_id)
+            _validate_merchant_commission_fit(db, merchant_id, effective_mfr, effective_pgr)
 
     db.commit()
     db.refresh(plan)
@@ -1966,6 +1985,9 @@ def change_merchant_plan(
         raise HTTPException(status_code=404, detail="플랜을 찾을 수 없습니다")
 
     plan_service.assign_plan(db, merchant_id, plan.id, assigned_by=admin.id)
+    # 새 플랜 수수료가 현재 PG 비용·영업 커미션을 감당할 수 있는지 커밋 전에 검증한다.
+    effective_mfr, effective_pgr, _ = get_effective_fee_rates(db, merchant_id)
+    _validate_merchant_commission_fit(db, merchant_id, effective_mfr, effective_pgr)
     db.commit()
     return {
         "ok": True, "merchant_id": merchant.id, "merchant_name": merchant.name,

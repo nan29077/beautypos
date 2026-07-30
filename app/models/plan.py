@@ -37,10 +37,10 @@ class Plan(Base):
     code = Column(String(20), nullable=False, unique=True, index=True)  # basic / standard / premium
 
     # 가맹점 수수료율. FeePolicy 는 비율(0.055)로 저장하지만 플랜은 화면 입력값 그대로
-    # 퍼센트(5.50)로 저장한다. 정산 계산에는 관여하지 않는 플랜 카탈로그 값이다.
+    # 퍼센트(5.50)로 저장한다. 부가세 별도 공급가이며 정산 시 0.055 × 1.1로 적용된다.
     merchant_fee_rate = Column(Numeric(5, 2), nullable=False, default=0)
 
-    # 5종 광고 일별/월별 목표 건수
+    # 5종 광고 목표 건수. *_monthly 가 기준이며 *_daily 는 기존 DB 호환용 평균값이다.
     blog_review_daily = Column(Integer, nullable=False, default=0)
     blog_review_monthly = Column(Integer, nullable=False, default=0)
     receipt_review_daily = Column(Integer, nullable=False, default=0)

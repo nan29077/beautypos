@@ -15,7 +15,8 @@
            └─ 원장 몫    = net_payout × (1 - staff.share_rate)
 
 수수료율 우선순위:
-    merchant_fee_rate / pg_fee_rate: 가맹점 오버라이드 → 전역 기본값 → 하드코딩 기본값
+    merchant_fee_rate: 가맹점 오버라이드 → 배정 플랜 → 전역 기본값 → 하드코딩 기본값
+    pg_fee_rate:       가맹점 오버라이드 → 전역 기본값 → 하드코딩 기본값
     sales_commission_rate:
         활성 영업배정이 없는 가맹점 → 0% (플랫폼 수익 전액이 회사 순수익)
         배정이 있으면 영업관리자 오버라이드 → 전역 기본값 → 배정값 → 하드코딩 기본값
@@ -34,6 +35,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from app.models.settlement import FeePolicy, SalesCommissionPolicy, MerchantSalesAssignment
+from app.models.plan import MerchantPlan
 from app.models.staff import Staff
 
 # 하드코딩 기본값 (DB에 전역 설정이 없을 때 사용) — 모두 부가세 별도 기준
@@ -79,7 +81,7 @@ def get_effective_fee_rates(
 ) -> tuple[float, float, float]:
     """(merchant_fee_rate, pg_fee_rate, sales_commission_rate) 반환.
 
-    merchant_fee_rate: 가맹점 오버라이드 → 전역 기본값 → DEFAULT_MERCHANT_FEE_RATE
+    merchant_fee_rate: 가맹점 오버라이드 → 배정 플랜 → 전역 기본값 → DEFAULT_MERCHANT_FEE_RATE
     pg_fee_rate:       가맹점 오버라이드 → 전역 기본값 → DEFAULT_PG_FEE_RATE
     sales_commission_rate:
         활성 MerchantSalesAssignment 가 없는 가맹점 → NO_SALES_COMMISSION_RATE(0%).
@@ -103,7 +105,26 @@ def get_effective_fee_rates(
                 return float(getattr(fp, attr))
         return default
 
-    merchant_fee_rate = _fp_rate("merchant_fee_rate", DEFAULT_MERCHANT_FEE_RATE)
+    plan_assignment = (
+        db.query(MerchantPlan)
+        .filter(MerchantPlan.merchant_id == merchant_id)
+        .order_by(MerchantPlan.assigned_at.desc(), MerchantPlan.id.desc())
+        .first()
+    ) if merchant_id else None
+    plan_fee_rate = (
+        float(plan_assignment.plan.merchant_fee_rate) / 100
+        if plan_assignment and plan_assignment.plan and plan_assignment.plan.merchant_fee_rate is not None
+        else None
+    )
+
+    if fp_merchant and fp_merchant.merchant_fee_rate is not None:
+        merchant_fee_rate = float(fp_merchant.merchant_fee_rate)
+    elif plan_fee_rate is not None:
+        merchant_fee_rate = plan_fee_rate
+    elif fp_global and fp_global.merchant_fee_rate is not None:
+        merchant_fee_rate = float(fp_global.merchant_fee_rate)
+    else:
+        merchant_fee_rate = DEFAULT_MERCHANT_FEE_RATE
     pg_fee_rate = _fp_rate("pg_fee_rate", DEFAULT_PG_FEE_RATE)
 
     # 영업 커미션율 — 활성 영업배정이 없는 가맹점은 커미션 0%.
