@@ -5,10 +5,8 @@ from typing import Optional
 
 from fastapi import Depends, FastAPI, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
-from app.api.admin_routes import landing_stats
 from app.api.admin_routes import router as admin_router
 from app.api.auth_routes import router as auth_router
 from app.api.crm_routes import router as crm_router
@@ -27,16 +25,31 @@ from app.models.system_config import (
     AD_PLACE_TRAFFIC_ENABLED,
     SystemConfig,
 )
+from app.services.static_version import AssetVersions, VersionedStaticFiles
 
 settings = get_settings()
+
+# 정적 파일 캐시 버스팅용 해시 저장소. 아래 static 마운트에서 초기화하고
+# lifespan(startup) 에서 refresh() 로 해시를 계산한다.
+asset_versions: AssetVersions | None = None
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     from app.init_db import init_db
+    from app.services import rank_scheduler
 
     init_db()
-    yield
+    # 정적 파일 해시 계산 — HTML 의 CSS/JS 링크에 ?v=<해시> 를 붙이기 위한 것
+    if asset_versions is not None:
+        count = asset_versions.refresh()
+        print(f"   Static cache busting: {count} files hashed")
+    # 매일 오후 2시(KST) 플레이스 순위 자동 수집
+    rank_scheduler.start(_app)
+    try:
+        yield
+    finally:
+        await rank_scheduler.stop(_app)
 
 
 app = FastAPI(
@@ -61,8 +74,6 @@ app.include_router(owner_router)
 app.include_router(sales_router)
 app.include_router(designer_router)
 app.include_router(crm_router)
-
-app.get("/api/stats/landing", tags=["public"])(landing_stats)
 
 
 @app.get("/api/public/review/{token}")
@@ -123,7 +134,15 @@ def submit_receipt_review(
 
 static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
 if os.path.isdir(static_dir):
-    app.mount("/static", StaticFiles(directory=static_dir, html=True), name="static")
+    # HTML 안의 로컬 CSS/JS 링크에 ?v=<파일 해시> 를 자동으로 붙여 서빙한다.
+    # DEV_MODE 에서는 파일이 바뀌면 서버 재시작 없이 해시가 갱신된다.
+    asset_versions = AssetVersions(static_dir, dev_mode=settings.DEV_MODE)
+    asset_versions.refresh()
+    app.mount(
+        "/static",
+        VersionedStaticFiles(directory=static_dir, html=True, versions=asset_versions),
+        name="static",
+    )
 
 
 @app.get("/")

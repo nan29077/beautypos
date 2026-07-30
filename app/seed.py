@@ -23,6 +23,7 @@ from app.models.ad import (
 )
 from app.models.crm import (CrmCustomer, CrmService, CrmVisit, CrmReservation, CrmPointLog,
                             CrmMessageTemplate, CrmCoupon, ReservationStatus, MessageChannel)
+from app.models.plan import Plan, MerchantPlan
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 TEST_PASSWORD = "Test1234!"
@@ -352,3 +353,48 @@ def seed_crm_demo(db: Session):
 
     db.commit()
     print(f"   Created CRM demo: {len(customer_objs)} customers, {len(service_objs)} services, visits, reservations, templates, coupons")
+
+
+# ─── 플랜 시드 ──────────────────────────────────────────────
+
+# (code, name, 수수료율%, 블로그 일/월, 영수증 일/월, 트래픽 일/월, 저장 일/월, 쇼츠 일/월)
+DEFAULT_PLANS = [
+    ("basic",    "베이직",   5.5,  5, 100,  5, 100, 10,  300, 10,  300,  2,  50),
+    ("standard", "스탠다드", 5.0, 10, 200, 10, 200, 20,  600, 20,  600,  5, 100),
+    ("premium",  "프리미엄", 4.5, 20, 400, 20, 400, 40, 1200, 40, 1200, 10, 200),
+]
+
+
+def seed_plans(db: Session):
+    """플랜 3종을 멱등하게 시드하고, 플랜이 없는 기존 가맹점에 베이직을 배정한다.
+
+    이미 존재하는 플랜의 값은 덮어쓰지 않는다 (어드민이 수정한 값 보존).
+    """
+    created = 0
+    for (code, name, fee, br_d, br_m, rr_d, rr_m, pt_d, pt_m, ps_d, ps_m, sh_d, sh_m) in DEFAULT_PLANS:
+        if db.query(Plan).filter(Plan.code == code).first():
+            continue
+        db.add(Plan(
+            code=code, name=name, merchant_fee_rate=fee,
+            blog_review_daily=br_d, blog_review_monthly=br_m,
+            receipt_review_daily=rr_d, receipt_review_monthly=rr_m,
+            place_traffic_daily=pt_d, place_traffic_monthly=pt_m,
+            place_save_daily=ps_d, place_save_monthly=ps_m,
+            shorts_daily=sh_d, shorts_monthly=sh_m,
+        ))
+        created += 1
+    db.flush()
+
+    basic = db.query(Plan).filter(Plan.code == "basic").first()
+    assigned = 0
+    if basic:
+        assigned_ids = {row[0] for row in db.query(MerchantPlan.merchant_id).distinct()}
+        for merchant in db.query(Merchant).all():
+            if merchant.id in assigned_ids:
+                continue
+            db.add(MerchantPlan(merchant_id=merchant.id, plan_id=basic.id))
+            assigned += 1
+
+    db.commit()
+    if created or assigned:
+        print(f"   Created {created} plans, assigned 베이직 to {assigned} merchants")

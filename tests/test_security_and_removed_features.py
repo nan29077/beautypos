@@ -134,6 +134,17 @@ def test_owner_sales_ads_and_crm_flows(client):
         assert response.status_code == 200
 
     # Owner registers both sides; admin records same-keyword measurements.
+    # 시드 데모 데이터의 프로필/경쟁업체는 순위가 무작위라 비교 단언을 흔든다. 먼저 비운다.
+    seeded = client.get("/api/owner/ad/analysis?range=all", headers=owner).json()
+    for profile in seeded["profiles"]:
+        assert client.delete(
+            f"/api/owner/ad/place-profiles/{profile['id']}", headers=owner
+        ).status_code == 200
+    for rival in seeded["competitor_list"]:
+        assert client.delete(
+            f"/api/owner/ad/competitors/{rival['id']}", headers=owner
+        ).status_code == 200
+
     own_url = "https://m.place.naver.com/hairshop/beautypos-test"
     competitor_url = "https://m.place.naver.com/hairshop/beautypos-rival"
     assert client.post(

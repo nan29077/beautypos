@@ -5,23 +5,32 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="theme-color" content="#0f4c81">
     <meta name="mobile-web-app-capable" content="yes">
-    <title>ADPAY - 대시보드</title>
-    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <title>ADPAY - 매장 관리</title>
+    <link rel="icon" type="image/png" sizes="192x192" href="/static/favicon-192.png?v=2">
     <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
     <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
     <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
     <link rel="manifest" href="/static/manifest.webmanifest">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
-    <link href="/static/css/style.css" rel="stylesheet">
+    <link href="/static/css/style.css?v=6" rel="stylesheet">
 </head>
-<body>
+<body class="app-booting">
+    <div class="app-boot-loader" id="appBootLoader" role="status" aria-live="polite">
+        <div class="adpay-loading-logo">
+            <strong><span>AD</span>PAY</strong>
+            <small>결제와 마케팅을 하나로</small>
+        </div>
+        <span class="visually-hidden">관리자 화면을 불러오는 중입니다.</span>
+    </div>
     <!-- Sidebar -->
     <div class="sidebar" id="sidebar">
-        <div class="brand">
-            <i class="fas fa-credit-card"></i>
-            <span id="sidebarBrand">ADPAY</span>
-        </div>
+        <a class="brand" href="/static/landing/index.html" aria-label="ADPAY 홈으로 이동">
+            <span class="beauty-brand-copy">
+                <strong id="sidebarBrand"><span class="adpay-prefix">AD</span><span class="adpay-suffix">PAY</span></strong>
+                <small>결제와 마케팅을 하나로</small>
+            </span>
+        </a>
         <div class="user-info">
             <div class="user-name" id="sidebarUserName">-</div>
             <span class="user-role" id="sidebarRole">-</span>
@@ -39,7 +48,7 @@
         <!-- 원장/디자이너 전용 모바일 앱 헤더 -->
         <header class="role-mobile-header" id="roleMobileHeader">
             <div class="role-mobile-heading">
-                <span id="mobileRoleLabel">BEAUTYPOS</span>
+                <span id="mobileRoleLabel">ADPAY</span>
                 <strong id="mobilePageTitle">대시보드</strong>
             </div>
             <button type="button" class="mobile-header-action" onclick="navigate('home')" aria-label="대시보드로 이동">
@@ -52,12 +61,14 @@
             <button class="btn btn-sm btn-outline-secondary" onclick="toggleSidebar()" aria-label="메뉴 열기">
                 <i class="fas fa-bars"></i>
             </button>
-            <span class="brand-mobile" id="mobileBrand">ADPAY</span>
+            <a class="brand-mobile" id="mobileBrand" href="/static/landing/index.html"><span class="brand-mobile-copy"><strong><span class="adpay-prefix">AD</span>PAY</strong><small>결제와 마케팅을 하나로</small></span></a>
         </div>
 
         <!-- Dynamic Page Content -->
         <div class="page-content" id="pageContent">
-            <div class="text-center py-5"><div class="spinner-border text-primary"></div></div>
+            <div class="adpay-loading" role="status">
+                <div class="adpay-loading-logo"><strong><span>AD</span>PAY</strong><small>결제와 마케팅을 하나로</small></div>
+            </div>
         </div>
     </div>
 
@@ -83,6 +94,29 @@
     </section>
 
     <!-- Modals -->
+    <div class="modal fade analysis-settings-modal" id="analysisSettingsModal" tabindex="-1" aria-labelledby="analysisSettingsTitle" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="analysis-settings-sheet-handle" aria-hidden="true"></div>
+                <div class="modal-header">
+                    <div class="analysis-settings-title">
+                        <span><i class="fas fa-chart-line"></i></span>
+                        <div>
+                            <h5 class="modal-title" id="analysisSettingsTitle">광고 분석설정</h5>
+                            <small>우리 매장과 경쟁 매장을 관리합니다</small>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="설정창 닫기"></button>
+                </div>
+                <div class="modal-body" id="analysisSettingsBody"></div>
+                <div class="modal-footer">
+                    <small><i class="fas fa-shield-alt me-1"></i>등록한 정보는 광고 분석에만 사용됩니다.</small>
+                    <button type="button" class="btn btn-primary px-4" data-bs-dismiss="modal">설정 완료</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="modal fade" id="formModal" tabindex="-1">
         <div class="modal-dialog modal-lg">
             <div class="modal-content" style="border-radius:1rem; border:none;">
@@ -99,9 +133,25 @@
         </div>
     </div>
 
+    <!-- 광고 분석 결과 모달 -->
+    <div class="modal fade" id="analysisResultModal" tabindex="-1">
+        <div class="modal-dialog modal-sm">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-chart-line me-2"></i>분석 완료</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="analysisResultBody"></div>
+                <div class="modal-footer justify-content-center">
+                    <button type="button" class="btn btn-primary px-4" data-bs-dismiss="modal">확인</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="/static/js/api.js"></script>
-    <script src="/static/js/dashboard.js"></script>
+    <script src="/static/js/dashboard.js?v=7"></script>
 </body>
 </html>

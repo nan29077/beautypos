@@ -13,16 +13,104 @@
 * { font-family: 'Noto Sans KR', sans-serif; box-sizing: border-box; }
 body { background: #f0f2f5; margin: 0; min-height: 100vh; -webkit-font-smoothing: antialiased; }
 
+/* ─── Text-only ADPAY loading screen ─────────────────────── */
+.app-boot-loader { display: none; }
+body.app-booting { overflow: hidden; }
+body.app-booting > :not(.app-boot-loader):not(script) { visibility: hidden !important; }
+body.app-booting > .app-boot-loader {
+    position: fixed;
+    z-index: 99999;
+    inset: 0;
+    display: flex;
+    visibility: visible !important;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(circle at 50% 42%, rgba(32,174,239,.12), transparent 230px), #f7f9fc;
+}
+.adpay-loading {
+    min-height: 132px;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 26px 16px;
+}
+.page-content > .adpay-loading {
+    position: fixed;
+    z-index: 1020;
+    inset: 0;
+    min-height: 100vh;
+    min-height: 100dvh;
+    margin: 0;
+    padding: 0;
+    background: radial-gradient(circle at center, rgba(32,174,239,.075), transparent 190px), rgba(247,249,252,.96);
+}
+.adpay-loading-logo {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    transform-origin: center;
+    animation: adpay-heartbeat 1.35s ease-in-out infinite;
+    filter: drop-shadow(0 9px 18px rgba(15,76,129,.12));
+}
+.adpay-loading-logo strong {
+    color: #163454;
+    font-size: 1.18rem;
+    font-weight: 900;
+    letter-spacing: -.055em;
+}
+.adpay-loading-logo strong span { color: #20aeef; }
+.adpay-loading-logo small {
+    margin-top: 6px;
+    color: #74869a;
+    font-size: .52rem;
+    font-weight: 700;
+    letter-spacing: -.02em;
+}
+.adpay-loading-message {
+    margin: 14px 0 0;
+    color: #74869a;
+    font-size: .76rem;
+    text-align: center;
+}
+@keyframes adpay-heartbeat {
+    0%, 100% { transform: scale(.96); opacity: .78; }
+    18% { transform: scale(1.055); opacity: 1; }
+    34% { transform: scale(.985); opacity: .9; }
+    48% { transform: scale(1.025); opacity: 1; }
+    72% { transform: scale(.96); opacity: .78; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .adpay-loading-logo { animation: none; }
+}
+
 /* ─── Sidebar ─── */
 .sidebar {
     position: fixed; left: 0; top: 0; bottom: 0;
     width: var(--sidebar-width); background: var(--sidebar-bg);
-    color: #fff; z-index: 1050; overflow-y: auto;
+    color: #fff; z-index: 1050; overflow: hidden;
     transition: transform 0.3s ease;
     display: flex; flex-direction: column;
 }
-.sidebar::-webkit-scrollbar { width: 4px; }
-.sidebar::-webkit-scrollbar-thumb { background: rgba(255,255,255,.15); border-radius: 2px; }
+.sidebar nav {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(248,213,222,.38) transparent;
+}
+.sidebar nav::-webkit-scrollbar { width: 5px; }
+.sidebar nav::-webkit-scrollbar-track { background: transparent; }
+.sidebar nav::-webkit-scrollbar-thumb {
+    min-height: 42px;
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background: rgba(248,213,222,.42);
+    background-clip: content-box;
+}
+.sidebar nav::-webkit-scrollbar-thumb:hover {
+    background: rgba(255,235,241,.7);
+    background-clip: content-box;
+}
 .sidebar .brand {
     padding: 1.2rem 1.3rem; font-size: 1.3rem; font-weight: 900;
     border-bottom: 1px solid rgba(255,255,255,0.08);
@@ -146,7 +234,22 @@ body { background: #f0f2f5; margin: 0; min-height: 100vh; -webkit-font-smoothing
 .form-label { font-weight: 600; font-size: 0.85rem; color: #374151; }
 
 /* ─── Modals ─── */
-.modal-content { border-radius: 1rem; border: none; }
+.modal-content {
+    border-radius: 16px;
+    border: none;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(15,23,42,.2);
+}
+.modal-header {
+    background: linear-gradient(135deg, #1e3a5f 0%, #2d6096 100%);
+    border-bottom: none;
+    padding: 1rem 1.4rem;
+}
+.modal-header .modal-title { color: #fff; font-weight: 700; }
+.modal-header .btn-close { filter: invert(1) brightness(2); opacity: .8; }
+.modal-header .btn-close:hover { opacity: 1; }
+.modal-body { padding: 1.4rem; background: #fff; }
+.modal-footer { background: #f8fafc; border-top: 1px solid #e9edf3 !important; padding: .9rem 1.4rem; gap: .5rem; }
 
 /* ─── Alert clean style ─── */
 .alert { border-radius: 12px; border: none; font-size: .88rem; }
@@ -157,6 +260,9 @@ body { background: #f0f2f5; margin: 0; min-height: 100vh; -webkit-font-smoothing
     padding: .6rem 1rem; display: flex; align-items: center; gap: .8rem;
 }
 .mobile-header .brand-mobile { font-weight: 800; font-size: 1rem; color: var(--primary); }
+.brand-mobile-copy { display: flex; flex-direction: column; line-height: 1; }
+.brand-mobile-copy strong { font-weight: 900; }
+.brand-mobile-copy small { margin-top: 3px; color: #718096; font-size: .48rem; font-weight: 700; }
 
 /* ─── Clean workspace components ─────────────────────────── */
 .workspace-hero {
@@ -173,6 +279,419 @@ body { background: #f0f2f5; margin: 0; min-height: 100vh; -webkit-font-smoothing
         linear-gradient(135deg, #10243e 0%, #164e72 100%);
     color: #fff;
     box-shadow: 0 12px 28px rgba(16,36,62,.12);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   ADPAY 2026 — unified beauty admin visual system
+   ═══════════════════════════════════════════════════════════ */
+:root {
+    --primary: #9f596d;
+    --primary-light: #c87c91;
+    --accent: #d9869d;
+    --dark: #30282c;
+    --sidebar-width: 272px;
+    --sidebar-bg: linear-gradient(180deg, #352b30 0%, #4b343e 48%, #3a2c32 100%);
+    --beauty-ink: #2d2529;
+    --beauty-muted: #7e7076;
+    --beauty-line: #eadfe3;
+    --beauty-soft: #fbf6f7;
+    --beauty-rose: #a95770;
+    --beauty-gold: #b58a4c;
+    --beauty-shadow: 0 12px 34px rgba(72, 43, 53, .08);
+}
+
+body {
+    color: var(--beauty-ink);
+    background:
+        radial-gradient(circle at 91% 4%, rgba(217, 134, 157, .10), transparent 24rem),
+        #f8f5f6;
+}
+
+.main-content { background: transparent; }
+.page-content {
+    width: min(100%, 1560px);
+    margin: 0 auto;
+    padding: 30px 34px 48px;
+}
+
+.sidebar { border-right: 1px solid rgba(255,255,255,.06); box-shadow: 12px 0 32px rgba(45,31,37,.08); }
+.sidebar .brand {
+    min-height: 86px;
+    padding: 18px 20px;
+    gap: 12px;
+    color: #fff;
+    text-decoration: none;
+    overflow: visible;
+}
+.sidebar .brand:hover { color: #fff; background: rgba(255,255,255,.035); }
+.beauty-brand-mark {
+    width: 43px;
+    height: 43px;
+    border-radius: 15px;
+    display: inline-grid;
+    place-items: center;
+    flex: 0 0 43px;
+    overflow: hidden;
+    color: #8f4960;
+    box-shadow: 0 9px 22px rgba(17,10,13,.2);
+    transform: none;
+}
+
+/* ─── CRM 쉬운 매출 분석 그래프 ───────────────────────── */
+.crm-analytics-chart-card {
+    height: 100%;
+}
+
+.crm-analytics-chart-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.crm-analytics-chart-head small {
+    display: block;
+    color: var(--beauty-muted);
+    font-size: .72rem;
+    line-height: 1.45;
+}
+
+.crm-analytics-chart-head > span {
+    flex: 0 0 auto;
+    padding: 5px 9px;
+    border: 1px solid #cce5f3;
+    border-radius: 999px;
+    color: #0f5f98;
+    background: #eef8fd;
+    font-size: .68rem;
+    font-weight: 800;
+}
+
+.crm-analytics-chart {
+    position: relative;
+    width: 100%;
+    height: 260px;
+}
+
+.crm-analytics-chart-wide {
+    height: 280px;
+}
+
+.crm-analytics-chart-help {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    margin: 12px 0 0;
+    padding: 9px 11px;
+    border-radius: 10px;
+    color: #52677a;
+    background: #f4f8fb;
+    font-size: .72rem;
+    line-height: 1.55;
+}
+
+.crm-analytics-chart-help i {
+    margin-top: 3px;
+    color: #0ea5e9;
+}
+
+@media (max-width: 767.98px) {
+    .crm-analytics-chart-head {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .crm-analytics-chart {
+        height: 235px;
+    }
+
+    .crm-analytics-chart-wide {
+        height: 250px;
+    }
+}
+.beauty-brand-mark img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.beauty-brand-mark i { color: inherit !important; font-size: 1rem; transform: none; }
+.beauty-brand-copy { min-width: 0; display: flex; flex-direction: column; line-height: 1.05; }
+.beauty-brand-copy strong { font-size: 1.22rem; font-weight: 900; letter-spacing: -.055em; }
+.adpay-prefix { color: #21b4ef; }
+.adpay-suffix { color: inherit; }
+.beauty-brand-copy small {
+    margin-top: 6px;
+    color: rgba(255,255,255,.48);
+    font-size: .52rem;
+    font-weight: 700;
+    letter-spacing: .14em;
+}
+.sidebar .user-info {
+    margin: 0 14px 10px;
+    padding: 13px 14px;
+    border: 1px solid rgba(255,255,255,.08);
+    border-radius: 15px;
+    background: rgba(255,255,255,.045);
+}
+.sidebar .user-info .user-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar .user-info .user-role { background: rgba(255,241,245,.12) !important; color: #f5c9d5 !important; }
+.sidebar nav { padding: 2px 12px 14px; }
+.sidebar .nav-section {
+    padding: 18px 10px 7px;
+    color: rgba(255,255,255,.37);
+    font-size: .61rem;
+    letter-spacing: .12em;
+}
+.sidebar .nav-link {
+    min-height: 43px;
+    margin: 2px 0;
+    padding: 10px 12px;
+    border: 0;
+    border-radius: 12px;
+    color: rgba(255,255,255,.67);
+    font-size: .82rem;
+    font-weight: 500;
+}
+.sidebar .nav-link i {
+    width: 31px;
+    height: 31px;
+    border-radius: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255,255,255,.055);
+    color: rgba(255,255,255,.7);
+}
+.sidebar .nav-link:hover { border: 0; background: rgba(255,255,255,.07); }
+.sidebar .nav-link.active {
+    border: 0;
+    background: linear-gradient(135deg, rgba(244,190,205,.22), rgba(255,255,255,.08));
+    box-shadow: inset 0 0 0 1px rgba(248,209,220,.12);
+}
+.sidebar .nav-link.active i { background: #f5d5de; color: #88475b; }
+.sidebar .sidebar-footer { margin: 0 12px 10px; padding: 10px; border-top: 1px solid rgba(255,255,255,.08); }
+
+.card,
+.data-card,
+.kpi-card {
+    border: 1px solid var(--beauty-line) !important;
+    border-radius: 20px !important;
+    background: rgba(255,255,255,.96);
+    box-shadow: 0 3px 16px rgba(72,43,53,.045);
+}
+.card:hover, .data-card:hover { border-color: #e2ccd3 !important; }
+.kpi-card { overflow: hidden; }
+.kpi-card::before {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 4px;
+    background: linear-gradient(#bd7086, #e1a9b8);
+    opacity: .8;
+}
+.kpi-card:hover { transform: translateY(-3px); box-shadow: var(--beauty-shadow); }
+.kpi-card .card-body { padding: 20px; }
+.kpi-card .kpi-value { color: #34292e; letter-spacing: -.045em; }
+.kpi-card .kpi-label { color: var(--beauty-muted); }
+.kpi-card .kpi-icon { border-radius: 14px; background: #faeef2 !important; color: var(--beauty-rose) !important; }
+.data-card .card-header,
+.card > .card-header {
+    padding: 16px 19px;
+    border-bottom: 1px solid #f0e7ea;
+    border-radius: 20px 20px 0 0 !important;
+    background: rgba(255,255,255,.96);
+}
+.data-card .card-header h5, .data-card .card-header h6 { color: #3b2e34; }
+.card-body { padding: 19px; }
+
+.workspace-hero, .crm-welcome {
+    border: 0;
+    border-radius: 24px;
+    background:
+        radial-gradient(circle at 88% 8%, rgba(255,255,255,.18), transparent 28%),
+        linear-gradient(135deg, #4b343e 0%, #845064 55%, #b96e83 100%);
+    box-shadow: 0 18px 40px rgba(105,58,75,.18);
+}
+.workspace-eyebrow, .crm-welcome span { color: #f5c9d5; }
+.workspace-hero-icon, .crm-welcome-mark { border-radius: 18px; background: rgba(255,255,255,.13); border: 1px solid rgba(255,255,255,.16); }
+.process-steps { border-color: var(--beauty-line); border-radius: 18px; box-shadow: 0 3px 16px rgba(72,43,53,.04); }
+.process-steps > div.active { color: var(--beauty-rose); }
+.process-steps > div.active span { background: var(--beauty-rose); }
+.metric-summary > div { border: 1px solid #f0e5e8; border-radius: 16px; background: #fcf8f9; }
+.metric-summary strong { color: #4b343e; }
+
+.btn {
+    min-height: 40px;
+    padding: 8px 15px;
+    border-radius: 11px;
+    border-width: 1px;
+    font-weight: 700;
+    letter-spacing: -.015em;
+    box-shadow: none !important;
+}
+.btn:hover { transform: translateY(-1px); }
+.btn-primary {
+    border-color: #9f596d;
+    background: linear-gradient(135deg, #985268, #b96f84);
+}
+.btn-primary:hover, .btn-primary:focus { border-color: #88475b; background: linear-gradient(135deg, #88475b, #ab6077); }
+.btn-outline-primary { border-color: #d5a6b3; color: #945168; background: #fff; }
+.btn-outline-primary:hover { border-color: #a95770; color: #fff; background: #a95770; }
+.btn-secondary { border-color: #e5d9dd; color: #5f5258; background: #f3edef; }
+.btn-outline-secondary { border-color: #ded1d5; color: #6e6066; }
+.btn-danger { background: #bd5865; border-color: #bd5865; }
+
+.form-control, .form-select {
+    min-height: 43px;
+    border: 1px solid #e4d8dc;
+    border-radius: 11px;
+    background-color: #fffdfd;
+}
+.form-control:hover, .form-select:hover { border-color: #d7bdc5; }
+.form-control:focus, .form-select:focus {
+    border-color: #bd7086;
+    box-shadow: 0 0 0 4px rgba(185,111,132,.11);
+}
+.form-label { color: #4f4147; }
+.input-group > .form-control, .input-group > .form-select { min-height: 42px; }
+
+.table-responsive { border-radius: 15px; }
+.table { margin-bottom: 0; }
+.table thead th {
+    padding: 12px 14px;
+    border-bottom: 1px solid #e9dde1;
+    background: #fcf8f9;
+    color: #8b777e;
+    font-size: .71rem;
+    letter-spacing: .03em;
+}
+.table tbody td { padding: 13px 14px; border-color: #f1e8eb; color: #4c4146; }
+.table-hover tbody tr:hover { background: #fdf8fa; }
+.badge { border-radius: 999px; padding: 5px 10px; }
+.nav-tabs { gap: 7px; border: 0; }
+.nav-tabs .nav-link, .nav-pills .nav-link {
+    min-height: 40px;
+    border: 1px solid #eadfe3 !important;
+    border-radius: 11px !important;
+    color: #74656b;
+    background: #fff;
+    font-weight: 700;
+}
+.nav-tabs .nav-link.active, .nav-pills .nav-link.active {
+    border-color: #d6a8b5 !important;
+    color: #8e4c61;
+    background: #fbf0f3;
+}
+.alert { border: 1px solid transparent; border-radius: 15px; }
+.empty-state { border-color: #ddcdd2; border-radius: 20px; background: #fdfafb; }
+.empty-state > i { color: #c594a3; }
+.modal-content { border: 1px solid #eadfe3; box-shadow: 0 24px 80px rgba(43,28,34,.22); }
+.modal-header, .modal-footer { border-color: #f0e7ea !important; }
+
+/* Advertising & marketing pages: clearer hierarchy and campaign tone */
+body[data-page^="admin-ad"] .page-content,
+body[data-page="admin-metrics"] .page-content,
+body[data-page^="owner-ad"] .page-content,
+body[data-page="owner-analysis"] .page-content {
+    position: relative;
+}
+body[data-page^="admin-ad"] .page-content::before,
+body[data-page="admin-metrics"] .page-content::before,
+body[data-page^="owner-ad"] .page-content::before,
+body[data-page="owner-analysis"] .page-content::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    top: 4px;
+    right: 10px;
+    width: 260px;
+    height: 260px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(221,145,166,.14), transparent 67%);
+}
+body[data-page^="admin-ad"] .card,
+body[data-page="admin-metrics"] .card,
+body[data-page^="owner-ad"] .card,
+body[data-page="owner-analysis"] .card {
+    border-color: #ead9de !important;
+    box-shadow: 0 8px 26px rgba(99,53,69,.055);
+}
+body[data-page^="admin-ad"] .card[style*="linear-gradient"],
+body[data-page="admin-metrics"] .card[style*="linear-gradient"] {
+    border: 0 !important;
+    background: linear-gradient(135deg, #533743, #9c5a70) !important;
+}
+body[data-page="owner-analysis"] #analysisToday .card .fw-bold[style*="font-size"],
+body[data-page="owner-analysis"] #analysisCompare .fw-bold {
+    color: #513843;
+}
+.analysis-target-chip { border-radius: 13px; border-color: #e7d7dc; background: #fffafa; }
+.analysis-target-chip.competitor { border-color: #efd6dc; background: #fff7f9; color: #9a4c62; }
+.analysis-readiness { border-radius: 15px; border-color: #e7d7dc; background: #fcf8f9; }
+.analysis-readiness-icon { background: #faeaf0; color: #9f596d; }
+.analysis-progress strong { color: #9f596d; }
+.overview-comp-list, .analysis-pane, .analysis-scroll { scrollbar-color: #d9b9c2 transparent; }
+
+.crm-overview-card, .crm-service-card, .crm-staff-card {
+    border-color: #eadfe3;
+    border-radius: 17px;
+    background: #fffdfd;
+}
+.crm-overview-card:hover { border-color: #d5a6b3; }
+.crm-overview-icon, .crm-service-icon { background: #faedf1 !important; color: #9f596d !important; }
+
+@media (max-width: 991.98px) and (min-width: 768px) {
+    :root { --sidebar-width: 236px; }
+    .page-content { padding: 24px 22px 40px; }
+    .sidebar .brand { padding-left: 15px; }
+    .beauty-brand-copy small { display: none; }
+}
+
+@media (max-width: 767.98px) {
+    body { background: #f8f5f6; }
+    .page-content { padding: 13px !important; }
+    .mobile-header { min-height: 61px; padding: 9px 13px; }
+    .mobile-header .brand-mobile { color: #8f4960; text-decoration: none; font-weight: 900; }
+
+    body.role-mobile-ui {
+        --mobile-accent: #a4576e;
+        --mobile-accent-dark: #7f4054;
+        --mobile-bg: #f8f5f6;
+    }
+    body.role-mobile-ui .role-mobile-header {
+        border-color: #eadfe3;
+        background: rgba(255,252,253,.97);
+        box-shadow: 0 4px 18px rgba(78,45,57,.07);
+    }
+    body.role-mobile-ui .role-mobile-heading span { color: #a36a7b; }
+    body.role-mobile-ui .role-mobile-heading strong { color: #3c2e34; }
+    body.role-mobile-ui .mobile-header-action { background: #f8e9ee; color: #985168; }
+    body.role-mobile-ui .page-content { padding: calc(78px + env(safe-area-inset-top)) 11px 18px !important; }
+    body.role-mobile-ui .card,
+    body.role-mobile-ui .data-card,
+    body.role-mobile-ui .kpi-card { border-color: #eadfe3 !important; border-radius: 17px !important; }
+    body.role-mobile-ui .kpi-card::before { width: 3px; }
+    body.role-mobile-ui .role-mobile-bottom-nav {
+        border-color: #eadfe3;
+        background: rgba(255,252,253,.98);
+        box-shadow: 0 -7px 24px rgba(67,40,50,.09);
+    }
+    body.role-mobile-ui .role-mobile-bottom-nav button.active { background: #f9e9ee; color: #934d63; }
+    body.role-mobile-ui .role-mobile-sheet { background: #fffdfd; }
+    body.role-mobile-ui .role-mobile-menu-grid button { border-color: #eadfe3; background: #fffdfd; }
+    body.role-mobile-ui .role-mobile-menu-grid button.active { border-color: #d7a8b5; background: #fbecf1; color: #7f4054; }
+    body.role-mobile-ui .role-mobile-menu-icon { background: #f8e9ee; color: #985168; }
+    body.role-mobile-ui .mobile-card-table tr { border-color: #eadfe3; border-radius: 15px; box-shadow: 0 3px 12px rgba(72,43,53,.05); }
+    body.role-mobile-ui .mobile-card-table td { border-color: #f1e8eb; }
+    body.role-mobile-ui .workspace-hero { min-height: 128px; }
+    body[data-page="owner-analysis"] #analysisToday .row > div,
+    body[data-page="owner-analysis"] #analysisCompare .row > div { margin-bottom: 2px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
 }
 .workspace-hero h2 { margin: 3px 0 5px; font-size: 1.35rem; font-weight: 800; letter-spacing: -.04em; }
 .workspace-hero p { margin: 0; color: rgba(255,255,255,.72); font-size: .84rem; }
@@ -214,6 +733,338 @@ body { background: #f0f2f5; margin: 0; min-height: 100vh; -webkit-font-smoothing
 .empty-state h3 { color: #213750; font-size: 1.05rem; font-weight: 800; }
 .empty-state p { margin: 0 0 14px; font-size: .82rem; }
 .empty-state.compact { min-height: 150px; border: 0; }
+/* ─── 광고 분석 탭 ──────────────────────────────────────── */
+.analysis-tab-wrap {
+    border-bottom: 2px solid #e5eaf0;
+}
+.analysis-tab-nav {
+    display: flex;
+    justify-content: center;
+    gap: 2px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: 0;
+}
+.analysis-tab-nav::-webkit-scrollbar { display: none; }
+
+.analysis-tab-btn {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    border-bottom: 3px solid transparent;
+    margin-bottom: -2px;
+    padding: 8px 16px;
+    font-size: .84rem;
+    font-weight: 600;
+    color: #7a8798;
+    cursor: pointer;
+    white-space: nowrap;
+    border-radius: 8px 8px 0 0;
+    transition: color .15s, background .15s;
+}
+.analysis-tab-btn:hover { color: #2563eb; background: #f0f7ff; }
+.analysis-tab-btn.active { color: #1d4ed8; border-bottom-color: #2563eb; }
+.analysis-tab-guide {
+    margin-bottom: 12px;
+    padding: 12px 14px;
+    border: 1px solid #dce8f2;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    background: #f7fbff;
+    color: #164e72;
+}
+
+/* ─── 원장님 결제 내역 통합 탭 ───────────────────────── */
+.owner-payment-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 16px;
+    padding: 6px;
+    border: 1px solid var(--beauty-line);
+    border-radius: 18px;
+    background: var(--beauty-soft);
+    box-shadow: 0 6px 20px rgba(15, 76, 129, .07);
+}
+
+.owner-payment-tab {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 68px;
+    padding: 12px 16px;
+    border: 0;
+    border-radius: 13px;
+    color: var(--beauty-muted);
+    background: transparent;
+    text-align: left;
+    transition: background .18s ease, box-shadow .18s ease, color .18s ease, transform .18s ease;
+}
+
+.owner-payment-tab:hover {
+    color: var(--primary);
+    background: rgba(255, 255, 255, .72);
+}
+
+.owner-payment-tab.active {
+    color: #fff;
+    background: linear-gradient(135deg, var(--primary), #0e8fc9);
+    box-shadow: 0 7px 18px rgba(15, 76, 129, .22);
+}
+
+.owner-payment-tab-icon {
+    display: inline-grid;
+    flex: 0 0 38px;
+    width: 38px;
+    height: 38px;
+    place-items: center;
+    border-radius: 11px;
+    color: #0f6cbd;
+    background: #fff;
+}
+
+.owner-payment-tab.active .owner-payment-tab-icon {
+    color: #0f6cbd;
+}
+
+.owner-payment-tab strong,
+.owner-payment-tab small {
+    display: block;
+}
+
+.owner-payment-tab strong {
+    font-size: .92rem;
+    line-height: 1.3;
+}
+
+.owner-payment-tab small {
+    margin-top: 3px;
+    color: var(--beauty-muted);
+    font-size: .72rem;
+}
+
+.owner-payment-tab.active small {
+    color: rgba(255, 255, 255, .78);
+}
+
+.owner-payment-tab-panel > .data-card {
+    animation: ownerPaymentPaneIn .2s ease both;
+}
+
+@keyframes ownerPaymentPaneIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 767.98px) {
+    body.role-mobile-ui[data-page="owner-transactions"] .owner-payment-tabs,
+    body.role-mobile-ui[data-page="owner-daily-summary"] .owner-payment-tabs {
+        position: sticky;
+        top: calc(64px + env(safe-area-inset-top, 0px));
+        z-index: 20;
+        gap: 5px;
+        margin: -2px -4px 12px;
+        padding: 5px;
+        border-radius: 14px;
+        box-shadow: 0 5px 16px rgba(15, 76, 129, .12);
+    }
+
+    body.role-mobile-ui .owner-payment-tab {
+        justify-content: center;
+        gap: 7px;
+        min-height: 52px;
+        padding: 8px 7px;
+        text-align: center;
+    }
+
+    body.role-mobile-ui .owner-payment-tab-icon {
+        flex-basis: 28px;
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+        font-size: .75rem;
+    }
+
+    body.role-mobile-ui .owner-payment-tab strong {
+        font-size: .78rem;
+        white-space: nowrap;
+    }
+
+    body.role-mobile-ui .owner-payment-tab small {
+        display: none;
+    }
+
+    body.role-mobile-ui .owner-payment-list-card .card-header {
+        align-items: stretch !important;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    body.role-mobile-ui .owner-payment-list-card #ownerTxRange {
+        width: 100% !important;
+        min-height: 44px;
+    }
+}
+.analysis-tab-guide > i {
+    width: 34px;
+    height: 34px;
+    border-radius: 11px;
+    display: grid;
+    place-items: center;
+    flex: 0 0 auto;
+    background: #e5f3fc;
+}
+.analysis-tab-guide span { min-width: 0; display: flex; flex-direction: column; }
+.analysis-tab-guide strong { font-size: .8rem; }
+.analysis-tab-guide small { margin-top: 2px; color: #72869a; font-size: .7rem; line-height: 1.45; }
+.trend-card-help {
+    margin: 0 0 9px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: #f5f8fb;
+    color: #60758a;
+    font-size: .7rem;
+    line-height: 1.45;
+}
+.trend-card-help i { margin-right: 5px; color: #0f6cbd; }
+.trend-history-mobile { display: none; }
+
+/* 자동 수집 안내 박스 */
+.analysis-notice {
+    display: flex; align-items: flex-start; gap: 9px;
+    padding: 10px 13px; border-radius: 11px;
+    background: #eef5fd; border: 1px solid #d3e4f7; color: #1f4e79;
+    font-size: .83rem; line-height: 1.45;
+}
+.analysis-notice-icon { font-size: 1rem; line-height: 1.35; }
+.analysis-notice strong { color: #14406a; }
+.analysis-notice > span:not(.analysis-notice-icon) { display: flex; flex-direction: column; gap: 2px; }
+.analysis-notice small { color: #58748d; font-size: .72rem; line-height: 1.5; }
+.rank-update-copy-mobile { display: none !important; }
+
+.rank-refresh-guide {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin: 0 0 12px;
+    padding: 9px 11px;
+    border: 1px solid #cfe6f4;
+    border-radius: 11px;
+    color: #164e72;
+    background: #f0f8fd;
+    text-align: left;
+}
+.rank-refresh-guide > i {
+    display: grid;
+    width: 30px;
+    height: 30px;
+    flex: 0 0 30px;
+    place-items: center;
+    border-radius: 9px;
+    color: #0f6cbd;
+    background: #fff;
+}
+.rank-refresh-guide span,
+.rank-refresh-guide strong,
+.rank-refresh-guide small { display: block; }
+.rank-refresh-guide strong { font-size: .72rem; }
+.rank-refresh-guide small { margin-top: 2px; color: #668197; font-size: .66rem; line-height: 1.4; }
+.rank-refresh-guide small b { color: #0f6cbd; }
+.rank-refresh-guide.is-compact {
+    justify-content: center;
+    gap: 6px;
+    margin: 9px 0 0;
+    padding: 7px 8px;
+}
+.rank-refresh-guide.is-compact > i {
+    width: 25px;
+    height: 25px;
+    flex-basis: 25px;
+    font-size: .68rem;
+}
+.rank-refresh-guide.is-compact strong { font-size: .64rem; }
+.rank-refresh-guide.is-compact small { font-size: .59rem; }
+
+@media (max-width: 767.98px) {
+    body.role-mobile-ui[data-page="owner-analysis"] .rank-update-copy-desktop {
+        display: none !important;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .rank-update-copy-mobile {
+        display: block !important;
+        white-space: nowrap;
+        letter-spacing: -.04em;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-notice small {
+        font-size: .59rem;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .rank-refresh-guide small {
+        font-size: .58rem;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .rank-refresh-guide.is-compact small {
+        font-size: .56rem;
+    }
+}
+
+/* ─── 경쟁업체 비교표 (데스크톱) ─── */
+.cmp-table { border-color: #dde3ea; }
+.cmp-table thead th {
+    background: #f4f6f9; border-bottom: 2px solid #ccd4de;
+    font-size: .82rem; vertical-align: middle; padding: 9px 8px;
+}
+.cmp-table tbody tr + tr { border-top: 1px solid #e4e9ef; }
+.cmp-table tbody td { padding: 11px 8px; border-color: #e4e9ef; }
+.cmp-metric-col { min-width: 116px; background: #fafbfc; }
+/* 우리 매장 열 — 파란 계열로 확실히 구분 */
+.cmp-table thead th.cmp-col-mine { background: #dbeafe; color: #14406a; border-bottom-color: #93b8e3; }
+.cmp-table tbody td.cmp-col-mine { background: #f2f8ff; }
+.cmp-col-mine { min-width: 100px; }
+/* 경쟁업체 열 — 흰/회색 교차 */
+.cmp-col-rival { min-width: 100px; }
+.cmp-table .cmp-col-alt { background: #f7f8fa; }
+.cmp-table thead th.cmp-col-alt { background: #eceff3; }
+/* 우세/열세 — 좌측 컬러 바 + 옅은 배경 */
+.cmp-table td.cmp-cell { border-left-width: 4px; border-left-style: solid; border-left-color: transparent; }
+.cmp-table td.cmp-ahead { border-left-color: #1a9d5c; background: #eaf7f0; }
+.cmp-table td.cmp-behind { border-left-color: #d9534f; background: #fdeeed; }
+.cmp-col-sub { font-weight: 400; color: #7a8798; font-size: .71rem; margin-top: 1px; }
+
+/* ─── 경쟁업체 비교 카드 (모바일) ─── */
+.cmp-mobile { display: none; }
+.cmp-card {
+    border: 2px solid #dfe4ea; border-radius: 13px;
+    padding: 12px 13px; margin-bottom: 12px; background: #fff;
+}
+.cmp-card-mine { border-color: #4a90d9; background: #f5faff; }
+.cmp-card-ahead { border-color: #1a9d5c; }
+.cmp-card-behind { border-color: #d9534f; }
+.cmp-card-head {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 8px; margin-bottom: 10px;
+}
+.cmp-card-name { font-weight: 700; font-size: .98rem; display: flex; flex-direction: column; min-width: 0; }
+.cmp-card-name small { font-weight: 400; color: #7a8798; font-size: .72rem; }
+.cmp-card-item { padding: 9px 0; border-top: 1px solid #eef1f5; }
+.cmp-card-item:first-child { border-top: 0; padding-top: 2px; }
+.cmp-card-metric { font-size: .88rem; font-weight: 700; color: #4a5666; }
+.cmp-card-value { font-size: 1.72rem; font-weight: 800; line-height: 1.2; }
+.cmp-card-change { font-size: .78rem; color: #7a8798; }
+
+@media (max-width: 576px) {
+    .cmp-desktop { display: none; }
+    .cmp-mobile { display: block; }
+}
+
+/* max() 로 최소 높이를 보장해 뷰포트가 작아도 영역이 접히지 않게 한다 */
+.overview-comp-list { max-height: max(260px, 40vh); overflow-y: auto; }
+.analysis-pane { max-height: max(340px, 60vh); overflow-y: auto; }
+.analysis-scroll { max-height: max(260px, 44vh); overflow-y: auto; }
+.analysis-pane::-webkit-scrollbar, .analysis-scroll::-webkit-scrollbar { width: 8px; }
+.analysis-pane::-webkit-scrollbar-thumb, .analysis-scroll::-webkit-scrollbar-thumb {
+    background: #d4dbe4; border-radius: 8px;
+}
 .analysis-target-chip {
     margin-bottom: 7px; padding: 9px 10px; border: 1px solid #cfe2f3; border-radius: 12px;
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
@@ -229,6 +1080,324 @@ body { background: #f0f2f5; margin: 0; min-height: 100vh; -webkit-font-smoothing
 .analysis-target-chip button {
     width: 32px; height: 32px; padding: 0; border: 0; border-radius: 9px;
     flex: 0 0 auto; background: rgba(255,255,255,.8); color: inherit;
+}
+
+/* 광고 분석설정: PC 팝업 / 모바일 버텀시트 */
+.analysis-settings-modal .modal-dialog {
+    max-width: 1040px;
+}
+
+.analysis-settings-modal .modal-content {
+    overflow: hidden;
+    border: 0;
+    border-radius: 24px;
+    box-shadow: 0 28px 80px rgba(5, 29, 51, .24);
+}
+
+.analysis-settings-modal .modal-header {
+    padding: 20px 24px;
+    background:
+        radial-gradient(circle at 92% 8%, rgba(125, 211, 252, .22), transparent 34%),
+        linear-gradient(135deg, #10243e, #164e72 62%, #0f7eb8);
+}
+
+.analysis-settings-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: #fff;
+}
+
+.analysis-settings-title > span {
+    display: grid;
+    width: 42px;
+    height: 42px;
+    flex: 0 0 42px;
+    place-items: center;
+    border: 1px solid rgba(255, 255, 255, .2);
+    border-radius: 13px;
+    color: #dff4ff;
+    background: rgba(255, 255, 255, .1);
+}
+
+.analysis-settings-title h5 {
+    margin: 0;
+    font-size: 1.08rem;
+}
+
+.analysis-settings-title small {
+    display: block;
+    margin-top: 3px;
+    color: #b9d9ed;
+    font-size: .7rem;
+}
+
+.analysis-settings-modal .modal-body {
+    padding: 22px 24px 25px;
+    background: #f4f8fb;
+}
+
+.analysis-settings-intro {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    margin-bottom: 17px;
+    padding: 12px 14px;
+    border: 1px solid #cfe6f4;
+    border-radius: 14px;
+    color: #164e72;
+    background: #edf8fe;
+}
+
+.analysis-settings-intro > span {
+    display: grid;
+    width: 34px;
+    height: 34px;
+    flex: 0 0 34px;
+    place-items: center;
+    border-radius: 10px;
+    color: #0f6cbd;
+    background: #fff;
+}
+
+.analysis-settings-intro strong,
+.analysis-settings-intro small {
+    display: block;
+}
+
+.analysis-settings-intro strong {
+    font-size: .82rem;
+}
+
+.analysis-settings-intro small {
+    margin-top: 2px;
+    color: #668197;
+    font-size: .7rem;
+}
+
+.analysis-settings-section {
+    height: 100%;
+    padding: 18px;
+    border: 1px solid #dbe7f0;
+    border-radius: 18px;
+    background: #fff;
+    box-shadow: 0 8px 24px rgba(15, 76, 129, .06);
+}
+
+.analysis-settings-section.is-competitor {
+    border-color: #d5e3ed;
+}
+
+.analysis-settings-section-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.analysis-settings-section-head > span {
+    display: grid;
+    width: 38px;
+    height: 38px;
+    flex: 0 0 38px;
+    place-items: center;
+    border-radius: 11px;
+    color: #0f6cbd;
+    background: #eaf6fd;
+}
+
+.analysis-settings-section.is-competitor .analysis-settings-section-head > span {
+    color: #2c5f8a;
+    background: #edf3f8;
+}
+
+.analysis-settings-section-head h6 {
+    margin: 0;
+    color: #173a59;
+    font-size: .9rem;
+    font-weight: 800;
+}
+
+.analysis-settings-section-head small {
+    display: block;
+    margin-top: 2px;
+    color: #7b8d9d;
+    font-size: .66rem;
+}
+
+.analysis-settings-section > p {
+    min-height: 42px;
+    margin: 0 0 14px;
+    color: #718096;
+    font-size: .72rem;
+    line-height: 1.55;
+}
+
+.analysis-settings-section .form-label {
+    margin-bottom: 5px;
+    color: #405a70;
+    font-size: .7rem;
+}
+
+.analysis-settings-section .form-control {
+    min-height: 43px;
+    border-color: #d6e2eb;
+    font-size: .78rem;
+}
+
+.analysis-settings-add-btn {
+    min-width: 76px;
+}
+
+.analysis-competitor-inputs #newCompMemo {
+    max-width: 130px;
+}
+
+.analysis-settings-list {
+    max-height: 180px;
+    overflow-y: auto;
+    padding-right: 2px;
+}
+
+.analysis-settings-modal .modal-footer {
+    justify-content: space-between;
+    padding: 14px 24px;
+    background: #fff;
+}
+
+.analysis-settings-modal .modal-footer small {
+    color: #718096;
+    font-size: .68rem;
+}
+
+.analysis-settings-sheet-handle {
+    display: none;
+}
+
+@media (max-width: 767.98px) {
+    .analysis-settings-modal {
+        padding: 0 !important;
+    }
+
+    .analysis-settings-modal .modal-dialog {
+        width: 100%;
+        max-width: none;
+        min-height: 100%;
+        margin: 0;
+        align-items: flex-end;
+    }
+
+    .analysis-settings-modal.fade .modal-dialog {
+        transform: translate3d(0, 100%, 0);
+    }
+
+    .analysis-settings-modal.show .modal-dialog {
+        transform: none;
+    }
+
+    .analysis-settings-modal .modal-content {
+        max-height: min(90dvh, 820px);
+        border-radius: 24px 24px 0 0;
+        box-shadow: 0 -18px 52px rgba(5, 29, 51, .24);
+    }
+
+    .analysis-settings-sheet-handle {
+        position: absolute;
+        z-index: 2;
+        top: 8px;
+        left: 50%;
+        display: block;
+        width: 42px;
+        height: 4px;
+        border-radius: 99px;
+        background: rgba(255, 255, 255, .5);
+        transform: translateX(-50%);
+    }
+
+    .analysis-settings-modal .modal-header {
+        padding: 22px 17px 15px;
+    }
+
+    .analysis-settings-title > span {
+        width: 36px;
+        height: 36px;
+        flex-basis: 36px;
+        border-radius: 11px;
+    }
+
+    .analysis-settings-title h5 {
+        font-size: .95rem;
+    }
+
+    .analysis-settings-modal .modal-body {
+        padding: 14px 13px 20px;
+        overscroll-behavior: contain;
+    }
+
+    .analysis-settings-intro {
+        align-items: flex-start;
+        margin-bottom: 12px;
+        padding: 10px 11px;
+    }
+
+    .analysis-settings-intro small {
+        line-height: 1.45;
+    }
+
+    .analysis-settings-grid {
+        gap: 10px !important;
+    }
+
+    .analysis-settings-section {
+        height: auto;
+        padding: 14px;
+        border-radius: 16px;
+    }
+
+    .analysis-settings-section > p {
+        min-height: 0;
+    }
+
+    .analysis-settings-section .form-control {
+        min-height: 46px;
+        font-size: .8rem;
+    }
+
+    .analysis-competitor-inputs {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 7px;
+    }
+
+    .analysis-competitor-inputs > .form-control,
+    .analysis-competitor-inputs #newCompMemo,
+    .analysis-competitor-inputs > .btn {
+        width: 100%;
+        max-width: none;
+        border-radius: 10px !important;
+    }
+
+    .analysis-settings-add-btn {
+        min-height: 44px;
+    }
+
+    .analysis-settings-list {
+        max-height: 145px;
+    }
+
+    .analysis-settings-modal .modal-footer {
+        gap: 9px;
+        padding: 11px 13px calc(11px + env(safe-area-inset-bottom, 0px));
+    }
+
+    .analysis-settings-modal .modal-footer small {
+        display: none;
+    }
+
+    .analysis-settings-modal .modal-footer .btn {
+        width: 100%;
+        min-height: 46px;
+    }
 }
 .analysis-readiness {
     padding: 15px 17px; border: 1px solid #cdebdc; border-radius: 16px;
@@ -249,6 +1418,85 @@ body { background: #f0f2f5; margin: 0; min-height: 100vh; -webkit-font-smoothing
 }
 .analysis-progress strong { color: #0f6cbd; font-size: 1.15rem; }
 .analysis-progress span { font-size: .78rem; }
+
+/* ─── 추이 차트 개별 카드 ──────────────────────────────── */
+.trend-metric-card .card-header {
+    background: #fff;
+    border-bottom: 1px solid #f0f4f8;
+    padding: 11px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.trend-period-badge { font-size: .72rem; font-weight: 700; border-radius: 6px; padding: 3px 8px; }
+/* 카드 상단 색상 구분선 + 헤더 배경 */
+.trend-rank-card    { border-top: 4px solid #3b82f6 !important; }
+.trend-blog-card    { border-top: 4px solid #10b981 !important; }
+.trend-visitor-card { border-top: 4px solid #8b5cf6 !important; }
+.trend-rank-card    .card-header { background: #eff6ff; }
+.trend-blog-card    .card-header { background: #f0fdf4; }
+.trend-visitor-card .card-header { background: #faf5ff; }
+.trend-rank-card    .card-header h6 { color: #1d4ed8; }
+.trend-blog-card    .card-header h6 { color: #065f46; }
+.trend-visitor-card .card-header h6 { color: #5b21b6; }
+/* 차트 래퍼 touch-action: 가로 스크롤 시 세로 흔들림 방지 */
+.trend-pane { touch-action: pan-x; }
+.trend-pane canvas { touch-action: pan-x; }
+/* 요약 통계 미니 카드 */
+.stat-mini-cards { display: flex; gap: 8px; margin: 10px 0 12px; }
+.stat-mini-card { flex: 1; background: #fff; border-radius: 8px; padding: 10px 8px; text-align: center; box-shadow: 0 1px 4px rgba(0,0,0,0.08); border: 1px solid #f0f4f8; }
+.stat-mini-card .label { font-size: 0.68rem; color: #6b7280; font-weight: 600; display: block; margin-bottom: 4px; }
+.stat-mini-card .value { font-size: 0.95rem; font-weight: 800; color: #1e3a5f; line-height: 1.2; }
+
+.trend-history {
+    margin-top: 13px;
+    border: 1px solid #dbe8f2;
+    border-radius: 14px;
+    overflow: hidden;
+    background: #fff;
+}
+.trend-history-head {
+    padding: 11px 13px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    border-bottom: 1px solid #e6eef5;
+    background: #f6faff;
+}
+.trend-history-head strong { color: #164e72; font-size: .8rem; }
+.trend-history-head span { color: #7a8b9d; font-size: .68rem; }
+.trend-history .table-responsive { max-height: 340px; border-radius: 0; }
+.trend-history-table { min-width: 580px; font-size: .75rem; }
+.trend-history-table thead { position: sticky; z-index: 2; top: 0; }
+.trend-history-table thead th { border-bottom: 1px solid #dce8f1; background: #edf6fc; color: #395a70; }
+.trend-history-table th, .trend-history-table td { padding: 9px 11px; text-align: center; white-space: nowrap; }
+.trend-history-table tbody th { color: #536b7d; background: #fbfdff; font-weight: 700; }
+.trend-history-table thead small { display: block; margin-top: 2px; color: #8294a4; font-size: .6rem; font-weight: 600; }
+.trend-history-table td strong { display: block; color: #213750; font-size: .8rem; }
+.trend-change { display: inline-block; margin-top: 3px; font-size: .62rem; font-weight: 800; }
+.trend-change.is-up { color: #168653; }
+.trend-change.is-down { color: #c14747; }
+.trend-change.is-neutral { color: #8a98a7; font-weight: 600; }
+
+.analysis-detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.analysis-detail-section {
+    min-width: 0;
+    padding: 15px;
+    border: 1px solid #dbe8f2;
+    border-radius: 15px;
+    background: #f8fbfe;
+}
+.analysis-detail-section.competitor { border-color: #ecdde1; background: #fffafb; }
+.analysis-detail-section > h6 { margin: 0 0 12px; color: #164e72; font-size: .84rem; font-weight: 800; }
+.analysis-detail-section.competitor > h6 { color: #8b4c60; }
+.analysis-detail-section .analysis-scroll { max-height: none; overflow: visible; }
+
+@media (max-width: 767px) {
+    .analysis-detail-grid { grid-template-columns: 1fr; }
+    .trend-history-head { align-items: flex-start; flex-direction: column; }
+    .trend-history .table-responsive { max-height: 300px; }
+}
 
 /* CRM five-feature workspace */
 #crmTabBar { scrollbar-width: none; }
@@ -328,9 +1576,12 @@ body { background: #f0f2f5; margin: 0; min-height: 100vh; -webkit-font-smoothing
 }
 
 /* ═══════════════════════════════════════════
-   RESPONSIVE — Mobile (max-width: 768px)
+   RESPONSIVE — Mobile
+   부트스트랩 md 브레이크포인트(767.98px)와 반드시 같아야 한다.
+   768px 로 두면 정확히 768px 폭에서 사이드바는 화면 밖으로 밀리는데
+   햄버거 버튼(.d-md-none)은 이미 숨겨져 메뉴에 접근할 수 없다.
    ═══════════════════════════════════════════ */
-@media (max-width: 768px) {
+@media (max-width: 767.98px) {
     :root { --sidebar-width: 260px; }
 
     .sidebar { transform: translateX(-100%); }
@@ -919,22 +2170,30 @@ body { background: #f0f2f5; margin: 0; min-height: 100vh; -webkit-font-smoothing
         position: sticky;
         z-index: 20;
         top: calc(66px + env(safe-area-inset-top));
+        display: grid !important;
+        grid-template-columns: repeat(4, 1fr) !important;
+        gap: 4px !important;
         width: calc(100% + 24px) !important;
         max-width: none !important;
         margin: 0 -12px 14px !important;
-        padding: 8px 12px !important;
-        flex-wrap: nowrap !important;
-        overflow-x: auto;
+        padding: 6px 8px !important;
+        overflow-x: unset;
         border-radius: 0 !important;
         background: rgba(243,246,250,.97) !important;
         box-shadow: 0 5px 14px rgba(16,36,62,.05);
     }
     body.role-mobile-ui #crmTabBar .crm-tab {
-        min-height: 42px;
-        padding: 8px 12px !important;
-        flex: 0 0 auto;
-        font-size: .76rem !important;
-        white-space: nowrap;
+        min-height: 52px;
+        padding: 6px 4px !important;
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        justify-content: center !important;
+        gap: 3px !important;
+        font-size: .7rem !important;
+        white-space: normal;
+        text-align: center;
+        width: 100%;
     }
     body.role-mobile-ui .page-header { margin-bottom: 8px !important; }
     body.role-mobile-ui .page-header h2 { font-size: 1.12rem !important; }
@@ -957,4 +2216,1404 @@ body { background: #f0f2f5; margin: 0; min-height: 100vh; -webkit-font-smoothing
     body.role-mobile-ui .crm-service-grid { grid-template-columns: 1fr; }
     body.role-mobile-ui .crm-service-card { padding: 14px; border-radius: 14px; }
     body.role-mobile-ui .crm-recent-list button { min-height: 70px; padding: 11px 13px; }
+}
+
+/* Final cascade: preserve the ADPAY palette over legacy component rules. */
+.workspace-hero,
+.crm-welcome {
+    border-color: transparent !important;
+    background:
+        radial-gradient(circle at 88% 8%, rgba(255,255,255,.18), transparent 28%),
+        linear-gradient(135deg, #4b343e 0%, #845064 55%, #b96e83 100%) !important;
+    box-shadow: 0 18px 40px rgba(105,58,75,.18) !important;
+}
+.workspace-eyebrow, .crm-welcome span { color: #f5c9d5; }
+.crm-overview-card, .crm-service-card, .crm-staff-card { border-color: #eadfe3; background: #fffdfd; }
+.crm-overview-card:hover { border-color: #d5a6b3; }
+.crm-overview-icon, .crm-service-icon { background: #faedf1 !important; color: #9f596d !important; }
+.analysis-target-chip { border-color: #e7d7dc; background: #fffafa; }
+.analysis-readiness { border-color: #e7d7dc; background: #fcf8f9; }
+.analysis-readiness-icon { background: #faeaf0; color: #9f596d; }
+.analysis-progress strong { color: #9f596d; }
+
+@media (max-width: 767.98px) {
+    body.role-mobile-ui {
+        --mobile-accent: #a4576e;
+        --mobile-accent-dark: #7f4054;
+        --mobile-bg: #f8f5f6;
+    }
+    body.role-mobile-ui .main-content { background: var(--mobile-bg); }
+    body.role-mobile-ui .role-mobile-header {
+        border-color: #eadfe3;
+        background: rgba(255,252,253,.97);
+        box-shadow: 0 4px 18px rgba(78,45,57,.07);
+    }
+    body.role-mobile-ui .role-mobile-heading span { color: #a36a7b; }
+    body.role-mobile-ui .role-mobile-heading strong { color: #3c2e34; }
+    body.role-mobile-ui .mobile-header-action { background: #f8e9ee; color: #985168; }
+    body.role-mobile-ui .role-mobile-bottom-nav {
+        border-color: #eadfe3;
+        background: rgba(255,252,253,.98);
+        box-shadow: 0 -7px 24px rgba(67,40,50,.09);
+    }
+    body.role-mobile-ui .role-mobile-bottom-nav button.active { background: #f9e9ee; color: #934d63; }
+    body.role-mobile-ui .role-mobile-sheet { background: #fffdfd; }
+    body.role-mobile-ui .role-mobile-menu-grid button { border-color: #eadfe3; background: #fffdfd; }
+    body.role-mobile-ui .role-mobile-menu-grid button.active { border-color: #d7a8b5; background: #fbecf1; color: #7f4054; }
+    body.role-mobile-ui .role-mobile-menu-icon { background: #f8e9ee; color: #985168; }
+    body.role-mobile-ui .mobile-card-table tr { border-color: #eadfe3; box-shadow: 0 3px 12px rgba(72,43,53,.05); }
+    body.role-mobile-ui .mobile-card-table td { border-color: #f1e8eb; }
+}
+
+/* Classic ADPAY palette — original navy and sky-blue colorway. */
+:root {
+    --primary: #1b3a5c;
+    --primary-light: #2c5f8a;
+    --accent: #0ea5e9;
+    --dark: #0d1b2a;
+    --sidebar-bg: linear-gradient(180deg, #0d1b2a 0%, #1b3a5c 100%);
+    --beauty-ink: #172b46;
+    --beauty-muted: #718096;
+    --beauty-line: #dce6ef;
+    --beauty-soft: #f4f8fb;
+    --beauty-rose: #0f6cbd;
+    --beauty-shadow: 0 12px 34px rgba(15,76,129,.10);
+}
+body {
+    background:
+        radial-gradient(circle at 91% 4%, rgba(14,165,233,.10), transparent 24rem),
+        #f3f6fa;
+}
+.beauty-brand-mark {
+    background: linear-gradient(145deg,#eaf7ff,#8fd8f8);
+    color: #0f5f98;
+    box-shadow: 0 9px 22px rgba(5,29,51,.24);
+}
+.sidebar .user-info .user-role { background: rgba(14,165,233,.16) !important; color: #9bdcff !important; }
+.sidebar .nav-link.active {
+    background: linear-gradient(135deg,rgba(14,165,233,.24),rgba(255,255,255,.07));
+    box-shadow: inset 0 0 0 1px rgba(125,211,252,.12);
+}
+.sidebar .nav-link.active i { background: #dff4ff; color: #0f6cbd; }
+.sidebar nav { scrollbar-color: rgba(125,211,252,.52) transparent; }
+.sidebar nav::-webkit-scrollbar-thumb { background: rgba(125,211,252,.56); background-clip: content-box; }
+.kpi-card::before { background: linear-gradient(#0ea5e9,#1b3a5c); }
+.kpi-card .kpi-icon { background: #eaf6fd !important; color: #0f6cbd !important; }
+.workspace-hero,
+.crm-welcome {
+    background:
+        radial-gradient(circle at 88% 8%,rgba(255,255,255,.18),transparent 28%),
+        linear-gradient(135deg,#10243e 0%,#164e72 56%,#0f7eb8 100%) !important;
+    box-shadow: 0 18px 40px rgba(16,36,62,.16) !important;
+}
+.workspace-eyebrow, .crm-welcome span { color: #7dd3fc !important; }
+.btn-primary { border-color: #1b6ea8; background: linear-gradient(135deg,#1b3a5c,#0e8fc9); }
+.btn-primary:hover, .btn-primary:focus { border-color: #153f66; background: linear-gradient(135deg,#153f66,#0b76aa); }
+.btn-outline-primary { border-color: #8bc8e8; color: #0f6cbd; background: #fff; }
+.btn-outline-primary:hover { border-color: #0f6cbd; background: #0f6cbd; }
+.form-control:focus, .form-select:focus { border-color: #0ea5e9; box-shadow: 0 0 0 4px rgba(14,165,233,.11); }
+.nav-tabs .nav-link.active, .nav-pills .nav-link.active { border-color: #9ccdea !important; color: #0f5f98; background: #eaf6fd; }
+.process-steps > div.active { color: #0f6cbd; }
+.process-steps > div.active span { background: #0f6cbd; }
+body[data-page^="admin-ad"] .card[style*="linear-gradient"],
+body[data-page="admin-metrics"] .card[style*="linear-gradient"] { background: linear-gradient(135deg,#10243e,#164e72 58%,#0e8fc9) !important; }
+.analysis-readiness-icon,
+.crm-overview-icon,
+.crm-service-icon { background: #eaf6fd !important; color: #0f6cbd !important; }
+.analysis-progress strong { color: #0f6cbd; }
+
+@media (max-width: 767.98px) {
+    body.role-mobile-ui {
+        --mobile-accent: #0f6cbd;
+        --mobile-accent-dark: #0f4c81;
+        --mobile-bg: #f3f6fa;
+    }
+    body.role-mobile-ui .mobile-header-action,
+    body.role-mobile-ui .role-mobile-menu-icon { background: #eaf3fb; color: #0f6cbd; }
+    body.role-mobile-ui .role-mobile-bottom-nav button.active { background: #eaf3fb; color: #0f6cbd; }
+    body.role-mobile-ui .role-mobile-menu-grid button.active { border-color: #9cc7e9; background: #eef7ff; color: #0f4c81; }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   ADMIN / SALES — 모바일 최적화
+   원장·디자이너는 전용 앱 셸(.role-mobile-ui)을 쓰고,
+   최고관리자·영업관리자는 기존 사이드바(햄버거) 구조를 그대로 유지한 채
+   페이지 안쪽만 손가락으로 쓸 수 있게 다듬는다.
+   ═══════════════════════════════════════════════════════════ */
+@media (max-width: 767.98px) {
+
+    /* ── 사이드바: 안전영역 + 터치 크기 + 배경 스크롤 잠금 ── */
+    .sidebar {
+        width: min(84vw, 300px);
+        padding-top: env(safe-area-inset-top);
+        padding-bottom: env(safe-area-inset-bottom);
+        box-shadow: 14px 0 38px rgba(13, 27, 42, .3);
+    }
+    .sidebar .nav-link { min-height: 46px; }
+    .sidebar .sidebar-footer .nav-link { min-height: 44px; }
+    body.sidebar-open { overflow: hidden; }
+
+    /* ── 상단 헤더를 고정해 스크롤 중에도 메뉴 버튼이 남게 한다 ── */
+    body.admin-mobile-ui .mobile-header {
+        position: sticky;
+        z-index: 1030;
+        top: 0;
+        min-height: 58px;
+        padding: calc(9px + env(safe-area-inset-top)) 13px 9px;
+        background: rgba(255, 255, 255, .97);
+        backdrop-filter: saturate(180%) blur(8px);
+        box-shadow: 0 2px 12px rgba(15, 76, 129, .07);
+    }
+    body.admin-mobile-ui .mobile-header .btn {
+        width: 44px;
+        min-width: 44px;
+        height: 44px;
+        padding: 0 !important;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1rem !important;
+    }
+
+    /* ── 터치 목표 최소 44px ── */
+    body.admin-mobile-ui .btn,
+    body.admin-mobile-ui .page-content button,
+    body.admin-mobile-ui [role="button"] {
+        min-height: 44px;
+        touch-action: manipulation;
+    }
+    body.admin-mobile-ui .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 9px 13px !important;
+        font-size: .82rem !important;
+    }
+    body.admin-mobile-ui .btn-sm {
+        min-height: 42px;
+        padding: 8px 11px !important;
+        font-size: .78rem !important;
+    }
+    body.admin-mobile-ui .btn > i:only-child { margin: 0 !important; }
+    body.admin-mobile-ui .btn-group { max-width: 100%; flex-wrap: wrap; gap: 5px; }
+    body.admin-mobile-ui .btn-group > .btn {
+        flex: 1 1 auto;
+        border-radius: 9px !important;
+    }
+    body.admin-mobile-ui .form-check-input[role="switch"] {
+        width: 52px !important;
+        height: 30px !important;
+    }
+
+    /* ── 입력: iOS 자동 확대(16px 미만)를 막는다 ── */
+    body.admin-mobile-ui input,
+    body.admin-mobile-ui select,
+    body.admin-mobile-ui textarea,
+    body.admin-mobile-ui .form-control,
+    body.admin-mobile-ui .form-select,
+    body.admin-mobile-ui .form-control-sm,
+    body.admin-mobile-ui .form-select-sm {
+        min-height: 46px;
+        padding: 10px 12px !important;
+        font-size: 16px !important;
+    }
+    body.admin-mobile-ui textarea.form-control { min-height: 96px; }
+    /* 인라인 폭 지정(style="width:110px" 등)을 모바일에서는 무시한다 */
+    body.admin-mobile-ui .page-content .form-select[style*="width"],
+    body.admin-mobile-ui .page-content .form-control[style*="width"] {
+        width: 100% !important;
+        max-width: none !important;
+    }
+    body.admin-mobile-ui .input-group { flex-wrap: wrap; gap: 7px; }
+    body.admin-mobile-ui .input-group > * {
+        width: auto;
+        min-width: 0;
+        border-radius: 9px !important;
+        flex: 1 1 120px;
+    }
+    body.admin-mobile-ui .input-group > .btn,
+    body.admin-mobile-ui .input-group > .input-group-text { flex: 0 0 auto; }
+
+    /* ── 카드 헤더의 제목 + 액션이 겹치지 않게 줄바꿈 ── */
+    body.admin-mobile-ui .card-header.d-flex,
+    body.admin-mobile-ui .page-content .d-flex.justify-content-between {
+        row-gap: 8px;
+        flex-wrap: wrap;
+    }
+
+    /* ── 표를 카드형으로 전환 (mobile-keep-table 은 가로 스크롤 유지) ── */
+    body.admin-mobile-ui .table-responsive {
+        overflow: visible;
+        border-radius: 0;
+    }
+    body.admin-mobile-ui .mobile-card-table,
+    body.admin-mobile-ui .mobile-card-table tbody { display: block; width: 100%; }
+    body.admin-mobile-ui .mobile-card-table thead { display: none; }
+    body.admin-mobile-ui .mobile-card-table tr {
+        display: block;
+        margin-bottom: 10px;
+        padding: 8px 12px;
+        border: 1px solid #e5ebf2;
+        border-radius: 13px;
+        background: #fff;
+        box-shadow: 0 2px 8px rgba(16, 36, 62, .04);
+    }
+    body.admin-mobile-ui .mobile-card-table td {
+        display: flex;
+        min-height: 40px;
+        padding: 8px 0 !important;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 12px;
+        border: 0;
+        border-bottom: 1px solid #eef2f6;
+        color: #25364d;
+        font-size: .84rem !important;
+        text-align: right;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+    body.admin-mobile-ui .mobile-card-table td:last-child { border-bottom: 0; }
+    body.admin-mobile-ui .mobile-card-table td::before {
+        content: attr(data-label);
+        margin-right: auto;
+        flex: 0 0 36%;
+        color: #718096;
+        font-size: .72rem;
+        font-weight: 700;
+        text-align: left;
+    }
+    body.admin-mobile-ui .mobile-card-table td[colspan] {
+        justify-content: center;
+        text-align: center;
+    }
+    body.admin-mobile-ui .mobile-card-table td[colspan]::before { display: none; }
+    /* 액션 셀: 셀렉트·입력이 눌리지 않게 라벨 아래로 흘린다 */
+    body.admin-mobile-ui .mobile-card-table td:has(.form-select),
+    body.admin-mobile-ui .mobile-card-table td:has(.input-group) {
+        align-items: stretch;
+        flex-direction: column;
+        gap: 8px;
+        text-align: left;
+    }
+    body.admin-mobile-ui .mobile-card-table td:has(.form-select)::before,
+    body.admin-mobile-ui .mobile-card-table td:has(.input-group)::before {
+        margin-right: 0;
+        flex: 0 0 auto;
+    }
+    body.admin-mobile-ui .mobile-card-table td .form-select,
+    body.admin-mobile-ui .mobile-card-table td .form-control { width: 100% !important; }
+    body.admin-mobile-ui .mobile-card-table td .btn { margin: 0 2px 2px 0 !important; }
+    body.admin-mobile-ui .mobile-card-table td .d-flex { flex-wrap: wrap; justify-content: flex-end; }
+    /* 가로 스크롤을 유지하기로 한 표는 손가락 스크롤을 부드럽게 */
+    body.admin-mobile-ui .mobile-keep-table { display: table; }
+    body.admin-mobile-ui .card-body:has(> .table-responsive > .mobile-keep-table) .table-responsive {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    /* ── 모달: 바텀시트 ── */
+    body.admin-mobile-ui .modal { padding-top: env(safe-area-inset-top); }
+    body.admin-mobile-ui .modal-dialog,
+    body.admin-mobile-ui .modal-dialog.modal-lg,
+    body.admin-mobile-ui .modal-dialog.modal-sm {
+        width: 100%;
+        max-width: 100% !important;
+        min-height: calc(100% - env(safe-area-inset-top));
+        margin: env(safe-area-inset-top) 0 0 !important;
+        display: flex;
+        align-items: flex-end;
+    }
+    body.admin-mobile-ui .modal-content {
+        width: 100%;
+        max-height: calc(100vh - env(safe-area-inset-top));
+        max-height: calc(100dvh - env(safe-area-inset-top));
+        border-radius: 20px 20px 0 0 !important;
+    }
+    body.admin-mobile-ui .modal-body {
+        overflow-y: auto;
+        padding: 15px !important;
+        overscroll-behavior: contain;
+    }
+    body.admin-mobile-ui .modal-footer {
+        gap: 8px;
+        padding-bottom: calc(12px + env(safe-area-inset-bottom));
+        flex-wrap: wrap;
+    }
+    body.admin-mobile-ui .modal-footer .btn { flex: 1 1 120px; margin: 0; }
+    body.admin-mobile-ui .modal-header .btn-close { width: 20px; height: 20px; padding: 12px; }
+
+    /* ── 본문 여백·타이포 ── */
+    body.admin-mobile-ui .page-content { padding: 12px 12px calc(18px + env(safe-area-inset-bottom)) !important; }
+    body.admin-mobile-ui .page-content h5 { font-size: .95rem !important; }
+    body.admin-mobile-ui .workspace-hero { min-height: 112px; padding: 17px; border-radius: 18px; }
+    body.admin-mobile-ui .workspace-hero h2 { font-size: 1.1rem !important; }
+    body.admin-mobile-ui .workspace-hero p { font-size: .74rem; line-height: 1.5; }
+    body.admin-mobile-ui .workspace-hero-icon { width: 50px; height: 50px; border-radius: 16px; }
+    body.admin-mobile-ui .alert ul { padding-left: 1.1rem !important; }
+    body.admin-mobile-ui canvas { width: 100% !important; max-height: 220px !important; }
+    body.admin-mobile-ui .row > [class*="col-md-3"] > .card.text-center,
+    body.admin-mobile-ui .row > [class*="col-md-4"] > .card.text-center { height: 100%; }
+}
+
+/* 아주 좁은 화면: 요약 카드는 2열로 */
+@media (max-width: 480px) {
+    body.admin-mobile-ui .row > [class*="col-md-3"]:has(> .card.text-center),
+    body.admin-mobile-ui .row > [class*="col-md-4"]:has(> .card.text-center) {
+        width: 50%;
+        flex: 0 0 50%;
+    }
+    body.admin-mobile-ui .mobile-card-table td::before { flex-basis: 40%; }
+}
+
+/* 원장 광고분석 — 모바일 전용 정보 밀도와 터치 흐름 */
+@media (max-width: 767.98px) {
+    body.role-mobile-ui[data-page="owner-analysis"] .page-content {
+        padding-right: 10px !important;
+        padding-left: 10px !important;
+        overflow-x: hidden;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .owner-analysis-page {
+        display: flex;
+        flex-direction: column;
+        gap: 11px;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .owner-analysis-page > .mb-3 {
+        margin-bottom: 0 !important;
+    }
+
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-page-header {
+        margin-bottom: 0 !important;
+        padding: 15px;
+        border: 0;
+        border-radius: 18px;
+        align-items: flex-start !important;
+        background:
+            radial-gradient(circle at 92% 5%, rgba(125,211,252,.24), transparent 38%),
+            linear-gradient(135deg, #10243e, #164e72);
+        box-shadow: 0 10px 26px rgba(15,76,129,.16);
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-page-title {
+        width: 100%;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-page-title h5 {
+        color: #fff;
+        font-size: 1.02rem !important;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-page-title h5 i {
+        color: #7dd3fc !important;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-page-title small {
+        display: block;
+        margin-top: 5px;
+        color: rgba(255,255,255,.7) !important;
+        font-size: .7rem;
+        line-height: 1.45;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-page-actions {
+        width: 100%;
+        display: grid !important;
+        grid-template-columns: 1fr 1fr;
+        gap: 7px !important;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-page-actions .btn {
+        width: 100%;
+        min-width: 0;
+        min-height: 42px;
+        margin: 0;
+        border-color: rgba(255,255,255,.24);
+        color: #fff;
+        background: rgba(255,255,255,.1);
+        font-size: .73rem !important;
+        white-space: nowrap;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-page-actions .btn-primary {
+        border-color: #0ea5e9;
+        background: linear-gradient(135deg, #0ea5e9, #2363ad);
+    }
+
+    body.role-mobile-ui[data-page="owner-analysis"] #collectStatus:not(:empty) {
+        padding: 10px 11px;
+        border: 1px solid #dce8f2;
+        border-radius: 14px;
+        background: #fff;
+        box-shadow: 0 3px 12px rgba(16,36,62,.045);
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #collectStatus > .d-flex {
+        gap: 6px !important;
+        line-height: 1.45;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #collectStatus .badge {
+        min-height: 27px;
+        display: inline-flex;
+        align-items: center;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-tab-wrap {
+        position: sticky;
+        z-index: 24;
+        top: calc(66px + env(safe-area-inset-top));
+        margin: 0 -10px !important;
+        padding: 7px 10px 0;
+        border-bottom: 1px solid #dce6ef;
+        background: rgba(248,250,252,.97);
+        box-shadow: 0 5px 14px rgba(16,36,62,.055);
+        backdrop-filter: blur(10px);
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-tab-nav {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 3px;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-tab-btn {
+        min-width: 0;
+        min-height: 48px;
+        padding: 7px 3px !important;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        gap: 3px;
+        border-radius: 10px 10px 0 0;
+        font-size: .68rem !important;
+        line-height: 1.2;
+        white-space: normal;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-tab-btn i {
+        margin-right: 0 !important;
+        font-size: .85rem;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-tab-guide {
+        margin-bottom: 9px;
+        padding: 10px 11px;
+        border-radius: 13px;
+        align-items: flex-start;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-tab-guide > i {
+        width: 31px;
+        height: 31px;
+        border-radius: 10px;
+        font-size: .78rem;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-tab-guide strong { font-size: .72rem; }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-tab-guide small { font-size: .63rem; }
+
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-notice {
+        margin-bottom: 0 !important;
+        padding: 11px 12px;
+        align-items: flex-start;
+        border-radius: 14px;
+        font-size: .72rem;
+        line-height: 1.5;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-notice-icon {
+        font-size: .9rem;
+    }
+
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisToday > .d-flex {
+        margin-bottom: 8px !important;
+        align-items: flex-start !important;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisToday h6 {
+        width: 100%;
+        line-height: 1.4;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisToday h6 small {
+        display: block;
+        margin: 3px 0 0 25px !important;
+        font-size: .65rem;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisToday > .d-flex > .d-flex {
+        width: 100%;
+        display: grid !important;
+        grid-template-columns: 1fr;
+        gap: 7px !important;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisToday .btn-group {
+        width: 100%;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisToday .badge {
+        width: fit-content;
+        max-width: 100%;
+        min-height: 30px;
+        display: inline-flex;
+        align-items: center;
+        white-space: normal;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisToday > .row {
+        margin: 0;
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 7px;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisToday > .row > [class*="col"] {
+        width: auto;
+        padding: 0;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisToday .card {
+        min-height: 82px;
+        border-radius: 14px !important;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisToday .card-body {
+        min-height: 80px;
+        padding: 11px 12px !important;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 2px 12px;
+        text-align: left !important;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisToday .card-body > .small {
+        font-size: .7rem !important;
+        line-height: 1.3;
+        white-space: nowrap;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisToday .fw-bold[style*="font-size"] {
+        margin: 0;
+        color: #10243e;
+        font-size: 1.35rem !important;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisToday .card-body > div:last-child {
+        grid-column: 1 / -1;
+        margin-top: 2px !important;
+        font-size: .65rem !important;
+        line-height: 1.35;
+        text-align: left;
+    }
+
+    body.role-mobile-ui[data-page="owner-analysis"] .card {
+        overflow: hidden;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .card-header {
+        padding: 12px 13px !important;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .card-body {
+        padding: 12px !important;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .card-header h6 {
+        font-size: .84rem;
+        line-height: 1.4;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisCompare .card-header > small {
+        width: 100%;
+        font-size: .64rem;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisCompare .alert {
+        padding: 10px 11px !important;
+        font-size: .7rem;
+        line-height: 1.5;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .cmp-card {
+        margin-bottom: 9px;
+        padding: 11px;
+        border-radius: 14px;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .cmp-card-head {
+        margin-bottom: 8px;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .cmp-card-body {
+        display: block;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .cmp-card-item {
+        min-width: 0;
+        padding: 9px 2px;
+        border-top: 1px solid #e9eef4;
+        border-left: 0;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 2px 10px;
+        text-align: left;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .cmp-card-item:first-child {
+        padding-top: 3px;
+        border-top: 0;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .cmp-card-metric {
+        font-size: .7rem;
+        white-space: nowrap;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .cmp-card-value {
+        margin: 0;
+        font-size: 1.12rem;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .cmp-card-change {
+        grid-column: 1 / -1;
+        min-height: 0;
+        font-size: .62rem;
+        line-height: 1.3;
+    }
+
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisTrend .card-header .btn-group {
+        width: 100%;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisTrend .card-body > p {
+        font-size: .68rem;
+        line-height: 1.5;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .trend-pane > div[style*="height"] {
+        height: 190px !important;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] canvas {
+        max-height: 190px !important;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #reviewTrendToggle {
+        width: 100%;
+        justify-content: flex-start;
+        padding-right: 2px !important;
+        padding-left: 2px !important;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .trend-history {
+        margin-top: 10px;
+        border-radius: 12px;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .trend-history-head {
+        padding: 9px 10px;
+        gap: 3px;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .trend-history-head strong {
+        font-size: .73rem;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .trend-history-head span {
+        font-size: .61rem;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .trend-history-desktop { display: none; }
+    body.role-mobile-ui[data-page="owner-analysis"] .trend-history-mobile {
+        max-height: 330px;
+        padding: 9px;
+        display: flex;
+        overflow-y: auto;
+        flex-direction: column;
+        gap: 8px;
+        background: #f6f9fc;
+        overscroll-behavior: contain;
+        -webkit-overflow-scrolling: touch;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .trend-day-card {
+        padding: 10px;
+        border: 1px solid #dfe8f0;
+        border-radius: 12px;
+        background: #fff;
+        box-shadow: 0 2px 7px rgba(16,36,62,.035);
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .trend-day-card > time {
+        padding-bottom: 7px;
+        display: block;
+        border-bottom: 1px solid #edf2f6;
+        color: #3d536a;
+        font-size: .7rem;
+        font-weight: 800;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .trend-day-stores {
+        display: flex;
+        flex-direction: column;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .trend-day-store {
+        padding: 8px 1px;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 3px 9px;
+        border-bottom: 1px solid #f0f3f6;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .trend-day-store:last-child {
+        padding-bottom: 1px;
+        border-bottom: 0;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .trend-day-store-head {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .trend-day-store-head span {
+        overflow: hidden;
+        color: #344b62;
+        font-size: .7rem;
+        font-weight: 700;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .trend-day-store-head small {
+        margin-top: 1px;
+        color: #8a98a7;
+        font-size: .57rem;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .trend-day-store.is-mine .trend-day-store-head small {
+        color: #0f6cbd;
+        font-weight: 800;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .trend-day-store > strong {
+        color: #10243e;
+        font-size: .83rem;
+        text-align: right;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .trend-day-store > .trend-change {
+        grid-column: 1 / -1;
+        margin-top: 0;
+        font-size: .61rem;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .trend-card-help {
+        margin-bottom: 7px;
+        padding: 8px 9px;
+        font-size: .64rem;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .stat-mini-cards {
+        gap: 5px;
+        margin: 8px 0 10px;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .stat-mini-card {
+        min-width: 0;
+        padding: 8px 4px;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .stat-mini-card .label {
+        font-size: .58rem;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .stat-mini-card .value {
+        font-size: .76rem;
+        overflow-wrap: anywhere;
+    }
+
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisDetail .card-header {
+        align-items: stretch !important;
+        flex-direction: column;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisDetail #analysisRange {
+        width: 100% !important;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-detail-grid {
+        gap: 10px;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-detail-section {
+        padding: 12px;
+        border-radius: 13px;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-detail-section > h6 {
+        margin-bottom: 9px;
+        font-size: .78rem;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #aiRecommendBtn {
+        width: 100%;
+    }
+
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-bottom-actions {
+        margin-top: 0 !important;
+        padding-bottom: 4px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-bottom-actions .btn {
+        width: 100%;
+        min-width: 0;
+        margin: 0 !important;
+        font-size: .74rem !important;
+        white-space: nowrap;
+    }
+}
+
+@media (max-width: 360px) {
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisToday > .row {
+        gap: 5px;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisToday .card-body {
+        padding-right: 10px !important;
+        padding-left: 10px !important;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-page-actions .btn,
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-bottom-actions .btn {
+        font-size: .67rem !important;
+    }
+}
+
+/* ══════════════════════════════════════════════════════════
+   CRM 미용실 관리 — 모바일 반응형 추가 최적화
+   (기존 스타일 변경 없음 — 추가만)
+   ══════════════════════════════════════════════════════════ */
+
+@media (max-width: 767.98px) {
+    /* 고객관리 테이블: 태그·포인트·예상재방문 컬럼 숨겨서 가로 스크롤 방지 */
+    #crmCustList table thead tr th:nth-child(3),
+    #crmCustList table tbody tr td:nth-child(3),
+    #crmCustList table thead tr th:nth-child(6),
+    #crmCustList table tbody tr td:nth-child(6),
+    #crmCustList table thead tr th:nth-child(7),
+    #crmCustList table tbody tr td:nth-child(7) {
+        display: none !important;
+    }
+
+    /* 고객관리 검색바 full-width (inline style 재정의) */
+    #crmCustSearch {
+        width: 100% !important;
+        min-width: 0 !important;
+    }
+    #crmCustGrade {
+        width: auto !important;
+        flex: 1 1 auto !important;
+    }
+    #crmCustTag {
+        width: auto !important;
+        flex: 1 1 auto !important;
+    }
+
+    /* 고객관리 검색 영역 flex 처리 */
+    .data-card .card-header .d-flex.gap-2.align-items-center.flex-wrap {
+        width: 100%;
+    }
+    .data-card .card-header .d-flex.gap-2.align-items-center.flex-wrap .input-group {
+        flex: 1 1 100% !important;
+        width: 100% !important;
+    }
+
+    /* 예약 관리 날짜 입력 축소 */
+    #crmTabBody input[type="date"] {
+        width: 130px !important;
+    }
+
+    /* 예약 캘린더 가로 스크롤 터치 최적화 */
+    #crmResvBody {
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch !important;
+    }
+    #crmResvBody .card-body {
+        -webkit-overflow-scrolling: touch !important;
+    }
+
+    /* 마케팅 탭 쿠폰 테이블: 만료일 컬럼 숨기기 */
+    #crmMkBody .table thead tr th:nth-child(5),
+    #crmMkBody .table tbody tr td:nth-child(5) {
+        display: none !important;
+    }
+
+    /* 분석 탭 KPI 카드 2열 고정 */
+    #crmAnBody .row > .col-6.col-lg-3 {
+        flex: 0 0 50% !important;
+        max-width: 50% !important;
+    }
+
+    /* 분석 탭 테이블 내용 컬럼 숨기기 */
+    #crmAnBody .table thead tr th:nth-child(2),
+    #crmAnBody .table tbody tr td:nth-child(2) {
+        display: none !important;
+    }
+
+    /* CRM 메시지 발송 폼 full-width */
+    #crmDynModal .row > [class*="col-md"] {
+        flex: 0 0 100% !important;
+        max-width: 100% !important;
+    }
+
+    /* CRM 모달 touch 스크롤 */
+    #crmDynModal .modal-body {
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    /* 서비스 카드 액션 버튼 터치 최적화 */
+    .crm-service-actions {
+        flex-wrap: wrap !important;
+        gap: 6px !important;
+        margin-top: 8px !important;
+        width: 100%;
+    }
+    .crm-service-actions .btn {
+        min-height: 36px !important;
+        min-width: 36px !important;
+        padding: 6px 10px !important;
+        flex: 0 0 auto;
+    }
+
+    /* 재방문 대상 테이블 - 담당 컬럼 숨기기 */
+    #mkRevList .table thead tr th:nth-child(6),
+    #mkRevList .table tbody tr td:nth-child(6) {
+        display: none !important;
+    }
+
+    /* 예약 툴바 세로 쌓기 */
+    #crmTabBody > div > .d-flex.justify-content-between.align-items-center.flex-wrap.gap-2.mb-3 {
+        flex-direction: column !important;
+        align-items: stretch !important;
+        gap: .5rem !important;
+    }
+    #crmTabBody > div > .d-flex.justify-content-between.align-items-center.flex-wrap.gap-2.mb-3 > div {
+        width: 100% !important;
+        justify-content: flex-start !important;
+    }
+
+    /* CRM 고객 상세 모달 탭 */
+    #crmDynModal .nav-tabs {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    #crmDynModal .nav-tabs .nav-link {
+        white-space: nowrap;
+        font-size: .76rem !important;
+        padding: 6px 10px !important;
+    }
+}
+
+@media (max-width: 430px) {
+    /* 서비스 카드 액션 버튼 더 compact */
+    .crm-service-actions .btn {
+        font-size: .7rem !important;
+        padding: 5px 8px !important;
+    }
+
+    /* CRM 모달 전체 폭 */
+    #crmDynModal .modal-dialog {
+        margin: .25rem !important;
+        max-width: calc(100vw - .5rem) !important;
+    }
+
+    /* 분석 KPI 카드 compact */
+    #crmAnBody .card-body.py-3 {
+        padding: .5rem !important;
+    }
+    #crmAnBody .fs-4 {
+        font-size: 1rem !important;
+    }
+
+    /* 마케팅 탭 pill 버튼 */
+    #mkPills .nav-link,
+    #msgPills .nav-link {
+        font-size: .72rem !important;
+        padding: 5px 9px !important;
+    }
+
+    /* 고객 상세 통계 카드 */
+    #crmDynModal .col-3 .fw-bold {
+        font-size: .82rem !important;
+    }
+}
+
+/* === CRM 모바일 Bottom Sheet & UI v2 === */
+
+/* ── 1. Bottom Sheet Modal (≤768px) ─────────────────────── */
+@media (max-width: 768px) {
+    /* 모달 컨테이너: 하단 정렬 */
+    .modal {
+        align-items: flex-end !important;
+        padding: 0 !important;
+    }
+    /* 다이얼로그 — 좌우 margin 완전 제거, position:fixed로 화면 하단 고정 */
+    .modal-dialog {
+        margin: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        position: fixed !important;
+        bottom: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        top: auto !important;
+        transform: none !important;
+        transition: none !important;
+    }
+    /* modal-content — 상단만 라운드, 하단 flat, 슬라이드 애니메이션 */
+    .modal-content {
+        border-radius: 20px 20px 0 0 !important;
+        border: none !important;
+        overflow: hidden !important;
+        width: 100% !important;
+        max-height: 90vh !important;
+        transform: translateY(100%);
+        transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1);
+    }
+    .modal.show .modal-content {
+        transform: translateY(0) !important;
+    }
+    /* modal-content::before 완전 제거 — overflow:hidden 밖으로 삐져나오는 문제 폐기 */
+    .modal-content::before {
+        display: none !important;
+        content: none !important;
+    }
+    /* 드래그 핸들 — modal-header 내부 상단에 절대 위치, modal-content 경계 안에서만 렌더링 */
+    .modal-header {
+        position: relative !important;
+        padding-top: 24px !important;
+    }
+    .modal-header::before {
+        content: '';
+        position: absolute;
+        top: 10px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 40px;
+        height: 4px;
+        background: rgba(255,255,255,0.5);
+        border-radius: 2px;
+    }
+    .modal-body {
+        padding: 24px 20px !important;
+    }
+    .modal-footer {
+        padding: 12px 20px 20px !important;
+        border-top: none !important;
+    }
+    /* 모든 모달 확인·닫기 버튼 풀너비 */
+    .modal-footer .btn {
+        width: 100% !important;
+        height: 50px !important;
+        border-radius: 10px !important;
+        font-size: 1rem !important;
+        font-weight: 600 !important;
+    }
+    /* scrollable 모달 */
+    .modal-dialog-scrollable .modal-content {
+        overflow: hidden !important;
+    }
+    .modal-dialog-scrollable .modal-body {
+        overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch !important;
+        overscroll-behavior-y: contain;
+    }
+}
+
+/* ── 2. 탭바 래퍼 (fade gradient) ───────────────────────── */
+.crm-tabbar-wrap {
+    position: relative;
+}
+
+/* ── 3. 탭 그리드 레이아웃 (모바일) */
+@media (max-width: 767.98px) {
+    body.role-mobile-ui #crmTabBarWrap::after,
+    body.role-mobile-ui #crmTabBarWrap::before {
+        display: none !important;
+    }
+    body.role-mobile-ui #crmTabBar::-webkit-scrollbar { display: none !important; }
+    body.role-mobile-ui #crmTabBar {
+        overflow-x: unset !important;
+        flex-wrap: wrap !important;
+        width: 100% !important;
+        max-width: 100% !important;
+    }
+
+    /* 탭 버튼 — 인라인 스타일 전면 오버라이드 */
+    body.role-mobile-ui #crmTabBar .crm-tab {
+        background: transparent !important;
+        color: #8a9ab0 !important;
+        font-weight: 400 !important;
+        box-shadow: none !important;
+        border-radius: 10px !important;
+        padding: 7px 4px !important;
+        font-size: .7rem !important;
+        min-width: 0 !important;
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        justify-content: center !important;
+        gap: 3px !important;
+        border: none !important;
+        width: 100%;
+        text-align: center;
+    }
+    body.role-mobile-ui #crmTabBar .crm-tab i {
+        margin: 0 !important;
+        font-size: .9rem !important;
+    }
+    body.role-mobile-ui #crmTabBar .crm-tab span {
+        font-size: .65rem !important;
+        line-height: 1;
+        white-space: nowrap;
+    }
+    body.role-mobile-ui #crmTabBar .crm-tab.crm-tab-active {
+        background: #0f6cbd !important;
+        color: #fff !important;
+        font-weight: 600 !important;
+        box-shadow: 0 2px 8px rgba(15,76,129,.2) !important;
+    }
+}
+
+/* ── 4. 고객 테이블 ↔ 카드 뷰 전환 ──────────────────────── */
+.crm-cust-table-wrap { display: block; }
+.crm-cust-card-list  { display: none; }
+
+@media (max-width: 767.98px) {
+    .crm-cust-table-wrap { display: none !important; }
+    .crm-cust-card-list  { display: block !important; }
+}
+
+.crm-cust-mobile-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 11px 14px;
+    border: none;
+    background: transparent;
+    border-bottom: 1px solid #f3f4f6;
+    text-align: left;
+    cursor: pointer;
+    transition: background .12s;
+}
+.crm-cust-mobile-card:last-child { border-bottom: none; }
+.crm-cust-mobile-card:active { background: #f6f8fb; }
+
+/* ── 5. 시술 아코디언 카테고리 헤더 ────────────────────── */
+.crm-svc-cat-hdr {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    user-select: none;
+    padding: 8px 12px;
+    margin: 0 -12px;
+    border-radius: 10px;
+    transition: background .15s;
+    color: #506070;
+    font-size: .82rem;
+    font-weight: 800;
+}
+.crm-svc-cat-hdr:hover { background: rgba(0,0,0,.04); }
+
+.crm-svc-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #e3e9f1;
+    color: #607086;
+    border-radius: 10px;
+    padding: 1px 7px;
+    font-size: .63rem;
+    font-weight: 700;
+}
+.crm-svc-arrow {
+    margin-left: auto;
+    font-size: .68rem;
+    transition: transform .22s ease;
+    color: #9ca3af;
+}
+.crm-service-section.crm-svc-collapsed .crm-svc-arrow {
+    transform: rotate(-90deg);
+}
+
+@media (max-width: 767.98px) {
+    .crm-service-section .crm-service-grid {
+        overflow: hidden;
+        max-height: 3000px;
+        transition: max-height .3s ease, opacity .2s;
+        opacity: 1;
+    }
+    .crm-service-section.crm-svc-collapsed .crm-service-grid {
+        max-height: 0 !important;
+        opacity: 0;
+    }
+
+    /* 예약 날짜 네비 full-width */
+    #crmTabBody .d-flex.align-items-center.gap-2.mb-3 {
+        flex-wrap: wrap;
+    }
+    #crmTabBody .btn-group.btn-group-sm {
+        width: 100%;
+    }
+    #crmTabBody .btn-group.btn-group-sm .btn {
+        flex: 1;
+    }
+
+    /* 메시지 서브탭 full-width */
+    #msgPills {
+        display: flex !important;
+        width: 100% !important;
+    }
+    #msgPills .nav-link {
+        flex: 1 !important;
+        text-align: center !important;
+        font-size: .72rem !important;
+        padding: 6px 4px !important;
+    }
+
+    /* 마케팅 서브탭 full-width */
+    #mkPills {
+        display: flex !important;
+        width: 100% !important;
+    }
+    #mkPills .nav-link {
+        flex: 1 !important;
+        text-align: center !important;
+        font-size: .72rem !important;
+        padding: 6px 4px !important;
+    }
+
+    /* 분석 기간 선택 full-width */
+    #crmAnRange { width: 100% !important; }
+
+    /* ─── 직원 관리 헤더 버튼 세로 배치 ────────────────── */
+    body.role-mobile-ui .staff-mgmt-header-btns {
+        flex-direction: column !important;
+        width: 100% !important;
+    }
+    body.role-mobile-ui .staff-mgmt-header-btns .btn {
+        width: 100% !important;
+        min-height: 44px !important;
+        justify-content: center;
+    }
+
+    /* ─── 직원 관리 테이블 → 모바일 카드 변환 ──────────── */
+    body.role-mobile-ui .staff-mgmt-table,
+    body.role-mobile-ui .staff-mgmt-table tbody,
+    body.role-mobile-ui .staff-mgmt-table tr,
+    body.role-mobile-ui .staff-mgmt-table td { display: block !important; }
+    body.role-mobile-ui .staff-mgmt-table thead { display: none !important; }
+    body.role-mobile-ui .staff-mgmt-table tbody tr {
+        margin-bottom: .75rem;
+        border: 1px solid #eadfe3 !important;
+        border-radius: 14px !important;
+        padding: 14px !important;
+        background: #fffcfd;
+        box-shadow: 0 2px 10px rgba(72,43,53,.07);
+    }
+    body.role-mobile-ui .staff-mgmt-table td {
+        padding: .28rem 0 !important;
+        border: none !important;
+    }
+    body.role-mobile-ui .staff-mgmt-table td[data-label="ID"] { display: none !important; }
+    body.role-mobile-ui .staff-mgmt-table td[data-label="이름"] {
+        font-size: 1rem !important;
+        font-weight: 700 !important;
+        padding-bottom: .5rem !important;
+        border-bottom: 1px solid #f0e5e8 !important;
+        margin-bottom: .15rem;
+    }
+    body.role-mobile-ui .staff-mgmt-table td[data-label="이름"]::before { display: none !important; }
+    body.role-mobile-ui .staff-mgmt-table td[data-label]::before {
+        content: attr(data-label);
+        font-size: .64rem;
+        color: #a36a7b;
+        display: block;
+        font-weight: 700;
+        letter-spacing: .05em;
+        text-transform: uppercase;
+        margin-bottom: 3px;
+    }
+    body.role-mobile-ui .staff-mgmt-table td[data-label="분배율"] .input-group { flex-wrap: nowrap !important; }
+    body.role-mobile-ui .staff-mgmt-table td[data-label="액션"] .btn {
+        width: 100% !important;
+        min-height: 44px !important;
+        margin-top: .4rem;
+    }
+
+    /* ─── 직원별 매출 거래 테이블 → 모바일 카드 변환 ───── */
+    body.role-mobile-ui .staff-sales-tx-table,
+    body.role-mobile-ui .staff-sales-tx-table tbody { display: block !important; }
+    body.role-mobile-ui .staff-sales-tx-table thead { display: none !important; }
+    body.role-mobile-ui .staff-sales-tx-table tbody tr {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        margin-bottom: .5rem;
+        border: 1px solid #eadfe3 !important;
+        border-radius: 12px !important;
+        padding: 12px 14px !important;
+        background: #fffcfd;
+        box-shadow: 0 1px 6px rgba(72,43,53,.05);
+    }
+    body.role-mobile-ui .staff-sales-tx-table td {
+        display: block !important;
+        border: none !important;
+        padding: .15rem 0 !important;
+    }
+    body.role-mobile-ui .staff-sales-tx-table td[data-label="ID"] { display: none !important; }
+    body.role-mobile-ui .staff-sales-tx-table td[data-label="금액"] {
+        flex: 0 0 100%;
+        font-size: 1rem !important;
+        font-weight: 700 !important;
+        color: #9f596d;
+        padding-bottom: .4rem !important;
+        border-bottom: 1px solid #f0e5e8 !important;
+        margin-bottom: .2rem;
+    }
+    body.role-mobile-ui .staff-sales-tx-table td[data-label="승인일"],
+    body.role-mobile-ui .staff-sales-tx-table td[data-label="등록일"] {
+        flex: 0 0 50%;
+        font-size: .72rem !important;
+        color: #a36a7b;
+    }
+    body.role-mobile-ui .staff-sales-tx-table td[data-label="승인일"]::before { content: '승인 '; font-weight: 700; color: #7a4a5b; }
+    body.role-mobile-ui .staff-sales-tx-table td[data-label="등록일"]::before { content: '등록 '; font-weight: 700; color: #7a4a5b; }
+}
+
+/* 전역 모바일 모달 규칙 뒤에서 광고 분석설정 버텀시트의 세부 디자인을 고정한다. */
+@media (max-width: 767.98px) {
+    body.role-mobile-ui .analysis-settings-modal .modal-dialog,
+    .analysis-settings-modal .modal-dialog {
+        width: 100% !important;
+        height: 70vh !important;
+        height: 70dvh !important;
+        min-height: 0 !important;
+        max-height: 70vh !important;
+        max-height: 70dvh !important;
+        margin: 0 !important;
+    }
+
+    body.role-mobile-ui .analysis-settings-modal .modal-content,
+    .analysis-settings-modal .modal-content {
+        height: 70vh !important;
+        height: 70dvh !important;
+        min-height: 0 !important;
+        max-height: 70vh !important;
+        max-height: 70dvh !important;
+    }
+
+    .analysis-settings-modal .modal-header::before {
+        display: none !important;
+        content: none !important;
+    }
+
+    .analysis-settings-modal .modal-header {
+        padding: 22px 17px 15px !important;
+    }
+
+    .analysis-settings-modal .modal-body {
+        padding: 14px 13px 20px !important;
+    }
+
+    .analysis-settings-modal .modal-footer {
+        padding: 11px 13px calc(11px + env(safe-area-inset-bottom, 0px)) !important;
+    }
+
+    .analysis-settings-modal .modal-footer .btn {
+        height: 46px !important;
+        font-size: .86rem !important;
+    }
+}
+
+/* ─── 광고 실행 현황 (어드민) ───────────────────────────── */
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+}
+
+/* 미달성(일 목표 미달 또는 월 잔여 음수) 행 · 항목 */
+tr.ad-exec-behind > td {
+    background: #fff5f5;
+    animation: blink 1s infinite;
+}
+
+.ad-exec-item {
+    border: 1px solid #f3f4f6;
+    border-radius: .6rem;
+    padding: .7rem .8rem;
+    margin-bottom: .6rem;
+}
+
+.ad-exec-item:last-child {
+    margin-bottom: 0;
+}
+
+.ad-exec-item.ad-exec-behind {
+    border: 2px solid #dc3545;
+    background: #fff5f5;
+    animation: blink 1s infinite;
+}
+
+.ad-exec-input {
+    max-width: 180px;
+}
+
+/* 깜빡임을 원치 않는 사용자는 정적 강조만 본다 */
+@media (prefers-reduced-motion: reduce) {
+    tr.ad-exec-behind > td,
+    .ad-exec-item.ad-exec-behind {
+        animation: none;
+    }
 }

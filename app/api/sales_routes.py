@@ -15,7 +15,9 @@ from app.models.settlement import (
     MerchantSalesAssignment, FeePolicy, PayoutRequest, PayoutStatus,
 )
 from app.auth.dependencies import get_current_user, require_roles
-from app.services.settlement_service import compute_distribution
+from app.services.settlement_service import (
+    compute_distribution, get_effective_fee_rates, apply_vat, VAT_RATE,
+)
 from app.services.visibility import commission_visible_for
 from app.schemas.schemas import PayoutRequestCreate
 
@@ -39,7 +41,8 @@ def _date_range(range_str: str):
 @router.get("/merchants")
 def list_my_merchants(db: Session = Depends(get_db), user: User = Depends(require_sales)):
     assigns = db.query(MerchantSalesAssignment).filter(
-        MerchantSalesAssignment.sales_manager_user_id == user.id
+        MerchantSalesAssignment.sales_manager_user_id == user.id,
+        MerchantSalesAssignment.is_active == True,  # noqa: E712
     ).all()
     results = []
     for a in assigns:
@@ -63,6 +66,7 @@ def merchant_stats(
     assign = db.query(MerchantSalesAssignment).filter(
         MerchantSalesAssignment.merchant_id == mid,
         MerchantSalesAssignment.sales_manager_user_id == user.id,
+        MerchantSalesAssignment.is_active == True,  # noqa: E712
     ).first()
     if not assign:
         raise HTTPException(status_code=403, detail="Not assigned to this merchant")
@@ -80,10 +84,18 @@ def merchant_stats(
 
     gross = sum(float(t.amount) for t in txns)
 
-    fp = db.query(FeePolicy).filter(FeePolicy.merchant_id == mid).first()
-    fee_rate = float(fp.pg_fee_rate) if fp else 0.033
-    pg_fee = round(gross * fee_rate, 2)
-    commission = round(gross * float(assign.commission_rate), 2)
+    # 기본 수수료율은 정산 로직(settlement_service)과 반드시 같아야 한다.
+    # net_amount 는 net_payout = gross - merchant_fee 기준.
+    # 저장된 수수료율은 부가세 별도이므로 금액 계산은 실제 적용율(× 1.1)로 한다.
+    merchant_fee_rate, pg_fee_rate, commission_rate = get_effective_fee_rates(
+        db, mid, assign.sales_manager_user_id
+    )
+    merchant_fee_rate_vat = apply_vat(merchant_fee_rate)
+    pg_fee_rate_vat = apply_vat(pg_fee_rate)
+
+    merchant_fee = round(gross * merchant_fee_rate_vat)
+    pg_fee = round(gross * pg_fee_rate_vat, 2)
+    commission = round(gross * commission_rate, 2)
 
     show_commission = commission_visible_for(db, user.role)
     return {
@@ -91,11 +103,20 @@ def merchant_stats(
         "range": range,
         "transaction_count": len(txns),
         "gross_amount": gross,
+        # 수수료율 — merchant_fee_rate/pg_fee_rate 는 부가세 별도, *_with_vat 가 실제 적용율
+        "merchant_fee_rate": merchant_fee_rate,
+        "pg_fee_rate": pg_fee_rate,
+        "merchant_fee_rate_with_vat": merchant_fee_rate_vat,
+        "pg_fee_rate_with_vat": pg_fee_rate_vat,
+        "vat_rate": VAT_RATE,
+        "fee_rate_vat_exclusive": True,
+        # 금액은 부가세 포함 적용율 기준
+        "merchant_fee": merchant_fee,
         "pg_fee": pg_fee,
         "show_commission": show_commission,
-        "commission_rate": float(assign.commission_rate) if show_commission else None,
+        "commission_rate": commission_rate if show_commission else None,
         "commission_amount": commission if show_commission else None,
-        "net_amount": round(gross - pg_fee, 2),
+        "net_amount": round(gross - merchant_fee, 2),
     }
 
 
@@ -113,6 +134,7 @@ def merchant_breakdown(
     assign = db.query(MerchantSalesAssignment).filter(
         MerchantSalesAssignment.merchant_id == mid,
         MerchantSalesAssignment.sales_manager_user_id == user.id,
+        MerchantSalesAssignment.is_active == True,  # noqa: E712
     ).first()
     if not assign and user.role != UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="Not assigned to this merchant")
@@ -177,7 +199,8 @@ def create_payout_request(req: PayoutRequestCreate, db: Session = Depends(get_db
 @router.get("/dashboard-stats")
 def sales_dashboard_stats(db: Session = Depends(get_db), user: User = Depends(require_sales)):
     assigns = db.query(MerchantSalesAssignment).filter(
-        MerchantSalesAssignment.sales_manager_user_id == user.id
+        MerchantSalesAssignment.sales_manager_user_id == user.id,
+        MerchantSalesAssignment.is_active == True,  # noqa: E712
     ).all()
     merchant_ids = [a.merchant_id for a in assigns]
 

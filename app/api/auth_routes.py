@@ -1,22 +1,28 @@
 """
 Authentication routes: register, login, OAuth stubs, test-login, /me
 """
+import secrets
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.user import User, UserRole
+from app.models.merchant import Merchant
+from app.models.settlement import MerchantSalesAssignment
 from app.auth.jwt_handler import (
     hash_password, verify_password,
-    create_access_token, create_refresh_token,
+    create_access_token, create_refresh_token, decode_token,
 )
 from app.auth.dependencies import get_current_user
-from app.schemas.schemas import RegisterRequest, LoginRequest, TokenResponse
+from app.schemas.schemas import RegisterRequest, LoginRequest, TokenResponse, RefreshRequest
+from app.services import plan_service
 from app.config import get_settings
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 settings = get_settings()
+
+_ALLOWED_REGISTER_ROLES = {"owner", "sales"}
 
 
 def _user_dict(u: User) -> dict:
@@ -40,17 +46,66 @@ def _issue_tokens(user: User) -> dict:
 
 @router.post("/register")
 def register(req: RegisterRequest, db: Session = Depends(get_db)):
+    role_str = req.role.lower()
+    if role_str not in _ALLOWED_REGISTER_ROLES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"가입 가능한 역할: {sorted(_ALLOWED_REGISTER_ROLES)} (admin 가입 불가)",
+        )
+
     existing = db.query(User).filter(User.email == req.email).first()
     if existing:
-        raise HTTPException(status_code=400, detail="Email already registered")
+        raise HTTPException(status_code=400, detail="이미 사용 중인 이메일입니다")
+
+    role = UserRole(role_str)
+
+    # SALES 가입: 고유 추천 코드 자동 생성
+    referral_code = None
+    if role == UserRole.SALES:
+        referral_code = f"SALES-{secrets.token_hex(4).upper()}"
+        while db.query(User).filter(User.referral_code == referral_code).first():
+            referral_code = f"SALES-{secrets.token_hex(4).upper()}"
 
     user = User(
         email=req.email,
         password_hash=hash_password(req.password),
         name=req.name,
-        role=UserRole.OWNER,
+        phone=req.phone,
+        role=role,
+        referral_code=referral_code,
     )
     db.add(user)
+    db.flush()  # user.id 확보
+
+    # OWNER 가입: shop_name 있으면 Merchant 자동 생성
+    if role == UserRole.OWNER and req.shop_name:
+        merchant = Merchant(
+            name=req.shop_name,
+            owner_user_id=user.id,
+            business_no=req.business_number,
+            address=req.address,
+            phone=req.phone,
+        )
+        db.add(merchant)
+        db.flush()  # merchant.id 확보
+
+        # 신규 가맹점은 베이직 플랜으로 시작
+        plan_service.ensure_default_plan(db, merchant.id)
+
+        # 추천 코드로 영업관리자 자동 연결
+        if req.sales_referral_code:
+            sales_user = db.query(User).filter(
+                User.referral_code == req.sales_referral_code,
+                User.role == UserRole.SALES,
+                User.is_active == True,  # noqa: E712
+            ).first()
+            if sales_user:
+                assignment = MerchantSalesAssignment(
+                    merchant_id=merchant.id,
+                    sales_manager_user_id=sales_user.id,
+                )
+                db.add(assignment)
+
     db.commit()
     db.refresh(user)
     return _issue_tokens(user)
@@ -66,6 +121,33 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Account is disabled")
     return _issue_tokens(user)
+
+
+@router.post("/refresh")
+def refresh_access_token(req: RefreshRequest, db: Session = Depends(get_db)):
+    """refresh_token 으로 새 access_token 발급.
+
+    access_token 만료마다 강제 로그아웃되지 않도록 프론트가 401 시 호출한다.
+    """
+    payload = decode_token(req.refresh_token)
+    if not payload or payload.get("type") != "refresh":
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    user = db.query(User).filter(User.id == int(user_id)).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="Account is disabled")
+
+    access = create_access_token({
+        "sub": str(user.id),
+        "role": user.role.value if isinstance(user.role, UserRole) else user.role,
+    })
+    return {"access_token": access, "token_type": "bearer"}
 
 
 @router.post("/test-login")

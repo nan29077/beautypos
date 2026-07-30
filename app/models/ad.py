@@ -54,6 +54,29 @@ class AdMetric(Base):
     )
 
 
+class PlaceMetricSnapshot(Base):
+    """네이버 플레이스 자동 수집 결과의 일 단위 스냅샷."""
+
+    __tablename__ = "place_metric_snapshots"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    merchant_id = Column(Integer, ForeignKey("merchants.id"), nullable=False, index=True)
+    date = Column(Date, nullable=False, index=True)
+    place_id = Column(String(50), nullable=False, index=True)
+    place_url = Column(String(500), nullable=True)
+    place_name = Column(String(300), nullable=True)
+    kind = Column(String(20), default="my")  # my / competitor
+    blog_count = Column(Integer, nullable=True)
+    visitor_count = Column(Integer, nullable=True)
+    rank = Column(Integer, nullable=True)
+    keyword = Column(String(200), nullable=True)
+    collected_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("merchant_id", "place_id", "date", name="uq_snapshot_merchant_place_date"),
+    )
+
+
 # ─── Ad Orders ──────────────────────────────────────────────
 
 class AdOrderType(str, enum.Enum):

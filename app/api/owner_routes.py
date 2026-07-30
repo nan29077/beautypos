@@ -4,10 +4,11 @@ Covers: transactions, staff management, staff sales, ad analysis, ad orders,
         receipt review management, merchant info update.
 """
 import json
+import logging
 import uuid
 import base64
 import io
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlsplit, urlunsplit
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
 from fastapi.responses import HTMLResponse
@@ -20,12 +21,12 @@ from app.models.user import User, UserRole
 from app.models.merchant import Merchant, STAFF_MANAGED_CATEGORIES
 from app.models.staff import Staff
 from app.models.transaction import Transaction
-from app.models.settlement import Settlement
+from app.models.settlement import Settlement, PayoutRequest
 from app.models.ad import (
     AdOrder, AdOrderType, AdOrderStatus,
     AdOrderBlogDetail, AdOrderBlogImage,
     AdOrderPlaceTrafficDetail,
-    AdPlaceProfile, AdCompetitor, AdMetric,
+    AdPlaceProfile, AdCompetitor, AdMetric, PlaceMetricSnapshot,
 )
 from app.models.receipt_review import ReceiptReviewConfig, ReceiptReview
 from app.models.affiliate_mall import AffiliateMall
@@ -38,16 +39,22 @@ from app.models.system_config import (
 from app.auth.dependencies import get_current_user, require_roles
 from app.services.settlement_service import compute_distribution
 from app.services.visibility import commission_visible_for
+from app.services import naver_place
+from app.services import ai_service
 from app.schemas.schemas import (
     StaffCreate, StaffUpdate, DesignerCreate, DesignerUpdate,
     AdBlogOrderCreate, AdPlaceTrafficOrderCreate,
     AdPlaceProfileCreate, AdCompetitorCreate,
+    PayoutRequestCreate,
 )
 from app.auth.jwt_handler import hash_password
 
 router = APIRouter(prefix="/api/owner", tags=["owner"])
 
 require_owner = require_roles([UserRole.ADMIN, UserRole.OWNER])
+
+# 광고 분석에서 비교할 수 있는 경쟁업체 최대 개수
+MAX_COMPETITORS = 5
 
 
 def _get_owner_merchant(user: User, db: Session) -> Merchant:
@@ -432,7 +439,166 @@ def owner_settlement_breakdown(
     return result
 
 
+# ─── Settlements (관리자가 확정한 정산 내역) ──────────────────
+
+@router.get("/settlements")
+def list_owner_settlements(
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_owner),
+):
+    """최고관리자가 계산·확정한 우리 매장 정산 내역.
+
+    금액은 결제액 → PG수수료 → 실지급액(net) 순으로 내려주고,
+    영업수수료 항목은 표시 설정이 OFF 면 마스킹한다.
+    """
+    merchant = _get_owner_merchant(user, db)
+    rows = db.query(Settlement).filter(
+        Settlement.merchant_id == merchant.id,
+    ).order_by(Settlement.period_start.desc(), Settlement.id.desc()).limit(limit).all()
+
+    show_commission = commission_visible_for(db, user.role)
+    return [{
+        "id": s.id,
+        "merchant_name": merchant.name,
+        "period_start": str(s.period_start),
+        "period_end": str(s.period_end),
+        "gross_amount": float(s.gross_amount),
+        "pg_fee_amount": float(s.pg_fee_amount),
+        "net_amount": float(s.net_amount),
+        "commission_amount": float(s.commission_amount) if show_commission else None,
+        "show_sales_commission": show_commission,
+        "created_at": str(s.created_at),
+    } for s in rows]
+
+
+# ─── Payout Requests (원장 출금요청) ──────────────────────────
+
+@router.get("/payout-requests")
+def list_owner_payout_requests(db: Session = Depends(get_db), user: User = Depends(require_owner)):
+    """본인이 신청한 출금요청 내역만 조회한다."""
+    reqs = db.query(PayoutRequest).filter(
+        PayoutRequest.requester_user_id == user.id,
+    ).order_by(PayoutRequest.created_at.desc()).all()
+    return [{
+        "id": r.id, "amount": float(r.amount),
+        "bank_info": r.bank_info, "memo": r.memo,
+        "status": r.status.value if r.status else None,
+        "created_at": str(r.created_at),
+        "reviewed_at": str(r.reviewed_at) if r.reviewed_at else None,
+    } for r in reqs]
+
+
+@router.post("/payout-requests")
+def create_owner_payout_request(
+    req: PayoutRequestCreate, db: Session = Depends(get_db), user: User = Depends(require_owner),
+):
+    """정산금 출금을 신청한다. 최고관리자가 승인/거절한다."""
+    _get_owner_merchant(user, db)  # 가맹점이 없는 계정은 신청할 수 없다
+    pr = PayoutRequest(
+        requester_user_id=user.id,
+        role=user.role.value if isinstance(user.role, UserRole) else user.role,
+        amount=req.amount,
+        bank_info=req.bank_info,
+        memo=req.memo,
+    )
+    db.add(pr)
+    db.commit()
+    db.refresh(pr)
+    return {"id": pr.id, "amount": float(pr.amount), "status": pr.status.value}
+
+
 # ─── Ad Analysis ────────────────────────────────────────────
+
+def _delta(today_value, yesterday_value):
+    """어제 대비 증감. 한쪽이라도 값이 없으면 None."""
+    if today_value is None or yesterday_value is None:
+        return None
+    return today_value - yesterday_value
+
+
+def _daily_change(db: Session, merchant_id: int, place_url: str) -> dict:
+    """오늘/어제 지표와 증감을 계산한다 (순위는 값이 작아질수록 상승)."""
+    today = datetime.utcnow().date()
+    yesterday = today - timedelta(days=1)
+    rows = {
+        m.date: m for m in db.query(AdMetric).filter(
+            AdMetric.merchant_id == merchant_id,
+            AdMetric.place_url == place_url,
+            AdMetric.date.in_([today, yesterday]),
+        ).all()
+    }
+    cur, prev = rows.get(today), rows.get(yesterday)
+    return {
+        "has_today": cur is not None,
+        "today": {
+            "date": str(today),
+            "blog_review_count": cur.blog_review_count if cur else None,
+            "visitor_review_count": cur.visitor_review_count if cur else None,
+            "place_rank": cur.place_rank if cur else None,
+        },
+        "yesterday": {
+            "date": str(yesterday),
+            "blog_review_count": prev.blog_review_count if prev else None,
+            "visitor_review_count": prev.visitor_review_count if prev else None,
+            "place_rank": prev.place_rank if prev else None,
+        },
+        "blog_delta": _delta(
+            cur.blog_review_count if cur else None,
+            prev.blog_review_count if prev else None,
+        ),
+        "visitor_delta": _delta(
+            cur.visitor_review_count if cur else None,
+            prev.visitor_review_count if prev else None,
+        ),
+        # 순위는 숫자가 줄어야 상승이므로 (어제 - 오늘) 로 계산해 양수를 '상승'으로 맞춘다.
+        "rank_delta": _delta(
+            prev.place_rank if prev else None,
+            cur.place_rank if cur else None,
+        ),
+    }
+
+
+KST = timezone(timedelta(hours=9))
+
+
+def _to_kst_str(dt: datetime) -> str:
+    """naive UTC datetime 을 KST 문자열로 변환한다.
+
+    DB에는 naive UTC(datetime.utcnow)로 저장되므로 그대로 내려주면
+    화면에 9시간 이전 시각이 표시된다.
+    """
+    return dt.replace(tzinfo=timezone.utc).astimezone(KST).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _collection_status(db: Session, merchant_id: int) -> dict:
+    """마지막 자동 수집 시각과 오늘 수집 여부. 수집 시각은 KST로 반환."""
+    today = datetime.utcnow().date()
+    last = db.query(PlaceMetricSnapshot).filter(
+        PlaceMetricSnapshot.merchant_id == merchant_id,
+    ).order_by(PlaceMetricSnapshot.collected_at.desc()).first()
+    today_count = db.query(func.count(AdMetric.id)).filter(
+        AdMetric.merchant_id == merchant_id,
+        AdMetric.date == today,
+        AdMetric.source == "api",
+    ).scalar() or 0
+    return {
+        "last_collected_at": _to_kst_str(last.collected_at) if last and last.collected_at else None,
+        "last_keyword": last.keyword if last else None,
+        "has_today_data": today_count > 0,
+        "today_count": int(today_count),
+    }
+
+
+def _actual_place_name(db: Session, merchant_id: int, place_url: str, fallback: str | None = None) -> str:
+    """플레이스 수집 결과에서 확인된 실제 매장명을 반환한다."""
+    snapshot = db.query(PlaceMetricSnapshot).filter(
+        PlaceMetricSnapshot.merchant_id == merchant_id,
+        PlaceMetricSnapshot.place_url == place_url,
+        PlaceMetricSnapshot.place_name.isnot(None),
+    ).order_by(PlaceMetricSnapshot.collected_at.desc()).first()
+    return (snapshot.place_name if snapshot and snapshot.place_name else None) or fallback or place_url
+
 
 @router.get("/ad/analysis")
 def ad_analysis(
@@ -459,7 +625,9 @@ def ad_analysis(
             ).order_by(AdMetric.date.desc()).all()
             my_metrics.append({
                 "place_url": p.place_url, "nickname": p.nickname,
+                "actual_name": _actual_place_name(db, merchant.id, p.place_url, p.nickname),
                 "analysis_keyword": p.analysis_keyword,
+                "daily_change": _daily_change(db, merchant.id, p.place_url),
                 "data": [{
                     "date": str(m.date), "blog_review_count": m.blog_review_count,
                     "visitor_review_count": m.visitor_review_count,
@@ -477,6 +645,8 @@ def ad_analysis(
         ).order_by(AdMetric.date.desc()).all()
         comp_metrics.append({
             "place_url": c.competitor_place_url, "memo": c.memo,
+            "actual_name": _actual_place_name(db, merchant.id, c.competitor_place_url, c.memo),
+            "daily_change": _daily_change(db, merchant.id, c.competitor_place_url),
             "data": [{
                 "date": str(m.date), "blog_review_count": m.blog_review_count,
                 "visitor_review_count": m.visitor_review_count,
@@ -489,10 +659,347 @@ def ad_analysis(
         "competitors": comp_metrics,
         "profiles": [{
             "id": p.id, "place_url": p.place_url, "nickname": p.nickname,
+            "actual_name": _actual_place_name(db, merchant.id, p.place_url, p.nickname) if p.place_url else p.nickname,
             "analysis_keyword": p.analysis_keyword,
         } for p in profiles],
-        "competitor_list": [{"id": c.id, "place_url": c.competitor_place_url, "memo": c.memo} for c in competitors],
+        "competitor_list": [{
+            "id": c.id, "place_url": c.competitor_place_url, "memo": c.memo,
+            "actual_name": _actual_place_name(db, merchant.id, c.competitor_place_url, c.memo),
+        } for c in competitors],
+        "collection_status": _collection_status(db, merchant.id),
     }
+
+
+# ─── Naver Place 자동 수집 ───────────────────────────────────
+
+@router.post("/ad/fetch-now")
+async def ad_fetch_now(
+    force: bool = Query(False, description="오늘 수집분이 있어도 강제로 다시 조회"),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_owner),
+):
+    """네이버 플레이스 리뷰 수 / 검색 순위를 즉시 수집한다 (병렬 조회)."""
+    merchant = _get_owner_merchant(user, db)
+
+    # 강제 재수집 연타는 네이버 요청 한도를 소진시키므로 쿨다운을 둔다.
+    if force:
+        last = db.query(PlaceMetricSnapshot).filter(
+            PlaceMetricSnapshot.merchant_id == merchant.id,
+        ).order_by(PlaceMetricSnapshot.collected_at.desc()).first()
+        if last and last.collected_at:
+            waited = (datetime.utcnow() - last.collected_at).total_seconds()
+            cooldown = naver_place.FORCE_REFRESH_COOLDOWN_SECONDS
+            if waited < cooldown:
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"방금 수집했습니다. {int(cooldown - waited)}초 후에 다시 시도해주세요.",
+                )
+
+    try:
+        result = await naver_place.fetch_all_for_merchant(merchant.id, db=db, force=force)
+    except Exception as exc:  # noqa: BLE001 — 수집 실패가 500 으로 전파되지 않게 한다
+        raise HTTPException(status_code=502, detail=f"네이버 수집에 실패했습니다: {exc}") from exc
+
+    result["collection_status"] = _collection_status(db, merchant.id)
+    return result
+
+
+@router.get("/ad/analysis/history")
+def ad_analysis_history(
+    days: int = Query(30, ge=1, le=365),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_owner),
+):
+    """일별 히스토리(블로그/방문자 리뷰 수, 순위)를 대상별로 반환한다."""
+    merchant = _get_owner_merchant(user, db)
+    today = datetime.utcnow().date()
+    start = today - timedelta(days=days - 1)
+
+    profiles = db.query(AdPlaceProfile).filter(AdPlaceProfile.merchant_id == merchant.id).all()
+    competitors = db.query(AdCompetitor).filter(AdCompetitor.merchant_id == merchant.id).all()
+
+    targets = [
+        {"kind": "my", "label": _actual_place_name(db, merchant.id, p.place_url, p.nickname), "place_url": p.place_url}
+        for p in profiles if p.place_url
+    ] + [
+        {"kind": "competitor", "label": _actual_place_name(db, merchant.id, c.competitor_place_url, c.memo),
+         "place_url": c.competitor_place_url}
+        for c in competitors
+    ]
+
+    dates = [str(start + timedelta(days=i)) for i in range((today - start).days + 1)]
+    series = []
+    for target in targets:
+        rows = db.query(AdMetric).filter(
+            AdMetric.merchant_id == merchant.id,
+            AdMetric.place_url == target["place_url"],
+            AdMetric.date >= start,
+            AdMetric.date <= today,
+        ).order_by(AdMetric.date.asc()).all()
+        by_date = {str(r.date): r for r in rows}
+        series.append({
+            **target,
+            "blog": [by_date[d].blog_review_count if d in by_date else None for d in dates],
+            "visitor": [by_date[d].visitor_review_count if d in by_date else None for d in dates],
+            "rank": [by_date[d].place_rank if d in by_date else None for d in dates],
+            "daily_change": _daily_change(db, merchant.id, target["place_url"]),
+        })
+
+    return {
+        "days": days,
+        "dates": dates,
+        "series": series,
+        "collection_status": _collection_status(db, merchant.id),
+    }
+
+
+# ─── 한눈에 보기 (일별/주별 요약) ─────────────────────────────
+
+RANK_OUT_OF_RANGE = naver_place.RANK_OUT_OF_RANGE
+
+
+def _rank_text(rank) -> str:
+    """순위 표기. 200위 밖 센티넬(201)은 문구로 바꾼다."""
+    if rank is None:
+        return "미확인"
+    return "200위 밖" if rank >= RANK_OUT_OF_RANGE else f"{rank}위"
+
+
+def _has_final_consonant(word: str) -> bool:
+    """한글 마지막 글자에 받침이 있는지 확인한다 (조사 선택용)."""
+    if not word:
+        return False
+    last = word.strip()[-1]
+    if not ("가" <= last <= "힣"):
+        # 숫자로 끝나면 읽는 소리 기준으로 판단 (0,1,3,6,7,8 은 받침 있음)
+        return last in "0136780"
+    return (ord(last) - 0xAC00) % 28 != 0
+
+
+def _with_particle(word: str, consonant_form: str, vowel_form: str) -> str:
+    """받침 유무에 따라 조사를 붙인다. 예: 와/과, 로/으로."""
+    return word + (consonant_form if _has_final_consonant(word) else vowel_form)
+
+
+def _latest_metric(db: Session, merchant_id: int, place_url: str, on_or_before=None):
+    """지정일 이전(포함) 중 가장 최근 지표 1건을 가져온다. 데이터가 듬성해도 동작한다."""
+    q = db.query(AdMetric).filter(
+        AdMetric.merchant_id == merchant_id,
+        AdMetric.place_url == place_url,
+    )
+    if on_or_before is not None:
+        q = q.filter(AdMetric.date <= on_or_before)
+    return q.order_by(AdMetric.date.desc()).first()
+
+
+def _metric_snapshot(db: Session, merchant_id: int, place_url: str, period: str) -> dict:
+    """현재 지표와 비교 기준(어제 / 지난주) 지표를 함께 계산한다."""
+    current = _latest_metric(db, merchant_id, place_url)
+    if current is None:
+        return {"has_data": False}
+
+    if period == "week":
+        baseline = _latest_metric(db, merchant_id, place_url, current.date - timedelta(days=7))
+    else:
+        baseline = _latest_metric(db, merchant_id, place_url, current.date - timedelta(days=1))
+
+    def _diff(now_value, before_value, reverse=False):
+        if now_value is None or before_value is None:
+            return None
+        # 순위는 숫자가 작아질수록 상승이므로 부호를 뒤집어 양수를 '상승'으로 맞춘다.
+        return (before_value - now_value) if reverse else (now_value - before_value)
+
+    return {
+        "has_data": True,
+        "date": str(current.date),
+        "blog": current.blog_review_count,
+        "visitor": current.visitor_review_count,
+        "rank": current.place_rank,
+        "baseline_date": str(baseline.date) if baseline else None,
+        "baseline_blog": baseline.blog_review_count if baseline else None,
+        "baseline_visitor": baseline.visitor_review_count if baseline else None,
+        "baseline_rank": baseline.place_rank if baseline else None,
+        "blog_change": _diff(current.blog_review_count, baseline.blog_review_count if baseline else None),
+        "visitor_change": _diff(current.visitor_review_count, baseline.visitor_review_count if baseline else None),
+        "rank_change": _diff(current.place_rank, baseline.place_rank if baseline else None, reverse=True),
+    }
+
+
+def _competitor_insight(name: str, blog_gap, visitor_gap, mine: dict, period_label: str) -> str:
+    """요청 예시와 같은 형태의 안내 문구를 만든다.
+
+    두 지표의 우열 방향이 다르면 '~도' 가 아니라 '~지만 / ~는' 으로 이어 붙인다.
+    """
+    def _amount(gap):
+        return f"{abs(gap)}건 " + ("많" if gap > 0 else "적")
+
+    if blog_gap == 0 and visitor_gap == 0:
+        sentence = f"블로그·방문자 리뷰 모두 {_with_particle(name, '과', '와')} 같습니다."
+    elif blog_gap == 0:
+        sentence = (f"블로그 리뷰는 {_with_particle(name, '과', '와')} 같고, "
+                    f"방문자 리뷰는 {_amount(visitor_gap)}습니다.")
+    elif visitor_gap == 0:
+        sentence = (f"블로그 리뷰가 {name}보다 {_amount(blog_gap)}고, "
+                    f"방문자 리뷰는 같습니다.")
+    elif (blog_gap > 0) == (visitor_gap > 0):
+        # 두 지표가 같은 방향 → '도' 로 연결
+        sentence = (f"블로그 리뷰가 {name}보다 {_amount(blog_gap)}고, "
+                    f"방문자 리뷰도 {_amount(visitor_gap)}습니다.")
+    else:
+        # 방향이 엇갈림 → '지만 / 는' 으로 연결
+        sentence = (f"블로그 리뷰는 {name}보다 {_amount(blog_gap)}지만, "
+                    f"방문자 리뷰는 {_amount(visitor_gap)}습니다.")
+
+    # 순위 변화 문장
+    rank_now, rank_before = mine.get("rank"), mine.get("baseline_rank")
+    if rank_now is None:
+        rank_sentence = ""
+    elif rank_before is None:
+        rank_sentence = f" 플레이스 순위는 {_rank_text(rank_now)}이며, {period_label} 데이터가 없어 변화는 비교할 수 없습니다."
+    elif rank_before == rank_now:
+        rank_sentence = f" 플레이스 순위는 {_with_particle(period_label, '과', '와')} 동일한 {_rank_text(rank_now)}입니다."
+    else:
+        moved = "상승" if rank_now < rank_before else "하락"
+        rank_sentence = (
+            f" 플레이스 순위는 {period_label} {_rank_text(rank_before)}에서 "
+            f"오늘 {_with_particle(_rank_text(rank_now), '으로', '로')} {moved}했습니다."
+        )
+    return (sentence + rank_sentence).strip()
+
+
+@router.get("/ad/analysis/overview")
+def ad_analysis_overview(
+    period: str = Query("day", pattern="^(day|week)$"),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_owner),
+):
+    """한눈에 보기 — 우리 매장과 각 경쟁업체의 일별/주별 비교 요약."""
+    merchant = _get_owner_merchant(user, db)
+    period_label = "지난주" if period == "week" else "어제"
+
+    profiles = db.query(AdPlaceProfile).filter(
+        AdPlaceProfile.merchant_id == merchant.id,
+    ).all()
+    competitors = db.query(AdCompetitor).filter(
+        AdCompetitor.merchant_id == merchant.id,
+    ).all()
+
+    # 우리 매장이 여러 곳이면 순위가 가장 높은 곳을 대표로 삼는다.
+    my_candidates = []
+    for profile in profiles:
+        if not profile.place_url:
+            continue
+        snapshot = _metric_snapshot(db, merchant.id, profile.place_url, period)
+        if snapshot["has_data"]:
+            my_candidates.append({
+                "name": _actual_place_name(db, merchant.id, profile.place_url, profile.nickname),
+                "place_url": profile.place_url,
+                **snapshot,
+            })
+
+    mine = min(
+        my_candidates,
+        key=lambda c: c["rank"] if c["rank"] is not None else 10 ** 6,
+    ) if my_candidates else None
+
+    comp_items = []
+    for competitor in competitors:
+        snapshot = _metric_snapshot(db, merchant.id, competitor.competitor_place_url, period)
+        name = _actual_place_name(db, merchant.id, competitor.competitor_place_url, competitor.memo)
+        if not snapshot["has_data"] or mine is None:
+            comp_items.append({
+                "id": competitor.id, "name": name,
+                "place_url": competitor.competitor_place_url,
+                "has_data": False,
+                "insight": "아직 수집된 데이터가 없습니다. 상단 ‘지금 수집’을 눌러주세요.",
+            })
+            continue
+
+        blog_gap = (mine["blog"] or 0) - (snapshot["blog"] or 0)
+        visitor_gap = (mine["visitor"] or 0) - (snapshot["visitor"] or 0)
+        rank_gap = (
+            snapshot["rank"] - mine["rank"]
+            if (mine["rank"] is not None and snapshot["rank"] is not None) else None
+        )
+        wins = sum([blog_gap > 0, visitor_gap > 0, bool(rank_gap and rank_gap > 0)])
+        losses = sum([blog_gap < 0, visitor_gap < 0, bool(rank_gap and rank_gap < 0)])
+
+        comp_items.append({
+            "id": competitor.id, "name": name,
+            "place_url": competitor.competitor_place_url,
+            "has_data": True,
+            "blog": snapshot["blog"], "visitor": snapshot["visitor"], "rank": snapshot["rank"],
+            "blog_gap": blog_gap, "visitor_gap": visitor_gap, "rank_gap": rank_gap,
+            "comp_blog_change": snapshot["blog_change"],
+            "comp_visitor_change": snapshot["visitor_change"],
+            "comp_rank_change": snapshot["rank_change"],
+            "verdict": "ahead" if wins > losses else ("behind" if losses > wins else "even"),
+            "wins": wins, "losses": losses,
+            "insight": _competitor_insight(name, blog_gap, visitor_gap, mine, period_label),
+        })
+
+    # 종합 한 줄 요약
+    ready = [c for c in comp_items if c["has_data"]]
+    if mine is None:
+        headline = "우리 매장 플레이스를 등록하고 지표를 수집하면 비교 요약을 제공합니다."
+    elif not ready:
+        headline = "경쟁업체를 등록하고 ‘지금 수집’을 실행하면 비교 요약을 제공합니다."
+    else:
+        ahead = sum(1 for c in ready if c["verdict"] == "ahead")
+        behind = sum(1 for c in ready if c["verdict"] == "behind")
+        rank_move = mine.get("rank_change")
+        if mine.get("baseline_date") is None:
+            move_text = f"플레이스 순위는 {_rank_text(mine.get('rank'))}이며 {period_label} 비교 데이터가 아직 없습니다"
+        elif rank_move is None or rank_move == 0:
+            move_text = f"플레이스 순위는 {_with_particle(_rank_text(mine.get('rank')), '으로', '로')} 큰 변동이 없습니다"
+        else:
+            move_text = (
+                f"플레이스 순위는 {period_label} 대비 {abs(rank_move)}단계 "
+                f"{'상승해 ' if rank_move > 0 else '하락해 '}{_rank_text(mine.get('rank'))}입니다"
+            )
+        headline = f"경쟁업체 {len(ready)}곳 중 {ahead}곳에 앞서고 {behind}곳에 뒤집니다. {move_text}."
+
+    return {
+        "period": period,
+        "period_label": period_label,
+        "my_place": mine,
+        "competitors": comp_items,
+        "headline": headline,
+        "has_data": bool(mine and ready),
+        "collection_status": _collection_status(db, merchant.id),
+    }
+
+
+@router.get("/ad/recommendation")
+async def ad_recommendation(
+    db: Session = Depends(get_db),
+    user: User = Depends(require_owner),
+):
+    """마케팅 추천 문구.
+
+    최고관리자가 OpenAI API 키를 등록해 두면 AI 추천을 사용하고,
+    없으면 화면의 기존 규칙 기반 문구를 그대로 쓰도록 mode 를 내려준다.
+    """
+    merchant = _get_owner_merchant(user, db)
+    overview = ad_analysis_overview(period="day", db=db, user=user)
+
+    if not ai_service.is_configured(db):
+        return {"ai_enabled": False, "mode": "rule", "text": None}
+
+    context = {
+        "merchant_name": merchant.name,
+        "my_place": overview.get("my_place"),
+        "competitors": [c for c in overview.get("competitors", []) if c.get("has_data")],
+    }
+    try:
+        text = await ai_service.generate_ad_recommendation(db, context)
+    except Exception as exc:  # noqa: BLE001 — AI 실패 시 규칙 기반으로 되돌린다
+        logging.getLogger(__name__).warning("AI 추천 생성 실패: %s", exc)
+        text = None
+
+    if not text:
+        return {"ai_enabled": True, "mode": "rule", "text": None}
+    return {"ai_enabled": True, "mode": "ai", "text": text}
 
 
 # ─── Ad Analysis Comparison Summary ──────────────────────────
@@ -658,6 +1165,8 @@ def ad_analysis_summary(
         "my_places": my_summaries,
         "competitors": comp_summaries,
         "comparison": comparison,
+        "head_to_head": _head_to_head(my_valid, comp_summaries),
+        "max_competitors": MAX_COMPETITORS,
         "range": range,
         "analysis_keyword": primary_keyword,
         "data_status": {
@@ -668,6 +1177,64 @@ def ad_analysis_summary(
             "needs_admin_action": bool(missing_targets or stale_targets),
         },
     }
+
+
+def _head_to_head(my_valid: list, comp_summaries: list) -> list:
+    """우리 매장 대표값과 각 경쟁업체를 1:1 로 비교한 결과를 만든다.
+
+    종합(평균) 비교와 별개로, 경쟁업체별 우열을 개별 확인하기 위한 데이터.
+    """
+    if not my_valid:
+        return []
+
+    # 우리 매장이 여러 곳이면 가장 상위 순위인 곳을 대표로 삼는다.
+    def _rank_key(summary):
+        rank = summary["metrics"]["latest_rank"]
+        return rank if rank is not None else 10 ** 6
+
+    mine = min(my_valid, key=_rank_key)
+    my_metrics = mine["metrics"]
+
+    results = []
+    for comp in comp_summaries:
+        metrics = comp["metrics"]
+        if not metrics:
+            results.append({
+                "competitor_id": comp["id"],
+                "name": comp["name"],
+                "place_url": comp["place_url"],
+                "has_data": False,
+            })
+            continue
+
+        blog_gap = (my_metrics["latest_blog_reviews"] or 0) - (metrics["latest_blog_reviews"] or 0)
+        visitor_gap = (my_metrics["latest_visitor_reviews"] or 0) - (metrics["latest_visitor_reviews"] or 0)
+        # 순위는 숫자가 작을수록 상위이므로 (상대 - 우리) 가 양수면 우리가 앞선다.
+        my_rank, comp_rank = my_metrics["latest_rank"], metrics["latest_rank"]
+        rank_gap = (comp_rank - my_rank) if (my_rank and comp_rank) else None
+
+        wins = sum([blog_gap > 0, visitor_gap > 0, bool(rank_gap and rank_gap > 0)])
+        losses = sum([blog_gap < 0, visitor_gap < 0, bool(rank_gap and rank_gap < 0)])
+
+        results.append({
+            "competitor_id": comp["id"],
+            "name": comp["name"],
+            "place_url": comp["place_url"],
+            "has_data": True,
+            "my_blog": my_metrics["latest_blog_reviews"],
+            "comp_blog": metrics["latest_blog_reviews"],
+            "blog_gap": blog_gap,
+            "my_visitor": my_metrics["latest_visitor_reviews"],
+            "comp_visitor": metrics["latest_visitor_reviews"],
+            "visitor_gap": visitor_gap,
+            "my_rank": my_rank,
+            "comp_rank": comp_rank,
+            "rank_gap": rank_gap,
+            "wins": wins,
+            "losses": losses,
+            "verdict": "ahead" if wins > losses else ("behind" if losses > wins else "even"),
+        })
+    return results
 
 
 # ─── Delete Place Profile & Competitor ────────────────────────
@@ -725,6 +1292,15 @@ def create_place_profile(req: AdPlaceProfileCreate, db: Session = Depends(get_db
 def create_competitor(req: AdCompetitorCreate, db: Session = Depends(get_db), user: User = Depends(require_owner)):
     merchant = _get_owner_merchant(user, db)
     url = _normalize_place_url(req.competitor_place_url)
+    registered = db.query(func.count(AdCompetitor.id)).filter(
+        AdCompetitor.merchant_id == merchant.id,
+    ).scalar() or 0
+    if registered >= MAX_COMPETITORS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"경쟁업체는 최대 {MAX_COMPETITORS}개까지 등록할 수 있습니다. "
+                   f"기존 항목을 삭제한 뒤 추가해주세요.",
+        )
     duplicate = db.query(AdCompetitor).filter(
         AdCompetitor.merchant_id == merchant.id,
         AdCompetitor.competitor_place_url == url,

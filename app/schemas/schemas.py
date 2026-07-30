@@ -13,6 +13,12 @@ class RegisterRequest(BaseModel):
     email: str
     password: str = Field(min_length=6)
     name: str
+    phone: Optional[str] = None
+    role: str = "OWNER"                    # OWNER / SALES 가능 (ADMIN 불가)
+    sales_referral_code: Optional[str] = None  # OWNER 가입 시 SALES 추천 코드
+    shop_name: Optional[str] = None        # OWNER 가입 시 가맹점명
+    business_number: Optional[str] = None  # OWNER 가입 시 사업자번호
+    address: Optional[str] = None          # OWNER 가입 시 주소
 
 
 class LoginRequest(BaseModel):
@@ -25,6 +31,10 @@ class TokenResponse(BaseModel):
     refresh_token: str
     token_type: str = "bearer"
     user: dict
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
 
 
 # ─── Merchant ────────────────────────────────────────────────
@@ -103,7 +113,7 @@ class TerminalTransactionCreate(BaseModel):
 # ─── Payout ──────────────────────────────────────────────────
 
 class PayoutRequestCreate(BaseModel):
-    amount: float
+    amount: float = Field(gt=0, description="출금 요청 금액 (원)")
     bank_info: Optional[str] = None
     memo: Optional[str] = None
 
@@ -161,13 +171,28 @@ class AdCompetitorCreate(BaseModel):
 # ─── Fee Policy ──────────────────────────────────────────────
 
 class FeePolicyUpdate(BaseModel):
-    pg_fee_rate: float = 0.035  # 3.5% (VAT 별도)
+    pg_fee_rate: float = 0.035  # 3.5% (VAT 별도, 하위 호환)
+
+
+class GlobalFeeSettingsUpdate(BaseModel):
+    merchant_fee_rate: float  # 미용실 부과 총 수수료율
+    pg_fee_rate: float        # PG사 실비용
+    sales_commission_rate: float  # 전역 기본 영업 커미션율
+
+
+class MerchantFeeOverrideUpdate(BaseModel):
+    merchant_fee_rate: Optional[float] = None  # None 이면 전역값 사용
+    pg_fee_rate: Optional[float] = None        # None 이면 전역값 사용
+
+
+class SalesCommissionOverrideUpdate(BaseModel):
+    commission_rate: Optional[float] = None  # None 이면 전역값 사용
 
 
 class SalesAssignmentCreate(BaseModel):
     merchant_id: int
     sales_manager_user_id: int
-    commission_rate: float = 0.01  # 3.5% 내에서 영업관리자 수익률
+    commission_rate: float = 0.01
     memo: Optional[str] = None
 
 
@@ -208,3 +233,38 @@ class ReceiptReviewConfigUpdate(BaseModel):
     place_url: Optional[str] = None
     welcome_message: Optional[str] = None
     is_active: Optional[bool] = None
+
+
+# ─── AI 설정 (Admin) ─────────────────────────────────────────
+
+class AISettingsUpdate(BaseModel):
+    api_key: str
+
+
+# ─── 플랜 관리 (Admin) ───────────────────────────────────────
+
+class PlanUpdate(BaseModel):
+    """플랜 수수료율/광고 목표 건수 수정. 일별 값은 월 목표에서 자동 산정한다."""
+    merchant_fee_rate: Optional[float] = Field(default=None, ge=0, le=100)  # 부가세 별도 퍼센트 값
+    blog_review_daily: Optional[int] = Field(default=None, ge=0)
+    blog_review_monthly: Optional[int] = Field(default=None, ge=0)
+    receipt_review_daily: Optional[int] = Field(default=None, ge=0)
+    receipt_review_monthly: Optional[int] = Field(default=None, ge=0)
+    place_traffic_daily: Optional[int] = Field(default=None, ge=0)
+    place_traffic_monthly: Optional[int] = Field(default=None, ge=0)
+    place_save_daily: Optional[int] = Field(default=None, ge=0)
+    place_save_monthly: Optional[int] = Field(default=None, ge=0)
+    shorts_daily: Optional[int] = Field(default=None, ge=0)
+    shorts_monthly: Optional[int] = Field(default=None, ge=0)
+
+
+class MerchantPlanAssign(BaseModel):
+    plan_id: int
+
+
+class AdExecutionCreate(BaseModel):
+    merchant_id: int
+    ad_type: str                       # blog_review | receipt_review | place_traffic | place_save | shorts
+    executed_count: int = Field(ge=0)
+    execution_date: Optional[date] = None  # 미지정 시 오늘
+    note: Optional[str] = None
