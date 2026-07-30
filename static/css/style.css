@@ -252,12 +252,21 @@ body {
     width: 43px;
     height: 43px;
     border-radius: 15px;
-    display: inline-flex;
+    display: inline-grid;
+    place-items: center;
+    flex: 0 0 43px;
+    overflow: hidden;
     color: #8f4960;
     box-shadow: 0 9px 22px rgba(17,10,13,.2);
-    transform: rotate(-3deg);
+    transform: none;
 }
-.beauty-brand-mark i { color: inherit !important; font-size: 1rem; transform: rotate(3deg); }
+.beauty-brand-mark img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.beauty-brand-mark i { color: inherit !important; font-size: 1rem; transform: none; }
 .beauty-brand-copy { min-width: 0; display: flex; flex-direction: column; line-height: 1.05; }
 .beauty-brand-copy strong { font-size: 1.22rem; font-weight: 900; letter-spacing: -.055em; }
 .beauty-brand-copy small {
@@ -604,6 +613,172 @@ body[data-page="owner-analysis"] #analysisCompare .fw-bold {
 }
 .analysis-tab-btn:hover { color: #2563eb; background: #f0f7ff; }
 .analysis-tab-btn.active { color: #1d4ed8; border-bottom-color: #2563eb; }
+.analysis-tab-guide {
+    margin-bottom: 12px;
+    padding: 12px 14px;
+    border: 1px solid #dce8f2;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    background: #f7fbff;
+    color: #164e72;
+}
+
+/* ─── 원장님 결제 내역 통합 탭 ───────────────────────── */
+.owner-payment-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 16px;
+    padding: 6px;
+    border: 1px solid var(--beauty-line);
+    border-radius: 18px;
+    background: var(--beauty-soft);
+    box-shadow: 0 6px 20px rgba(15, 76, 129, .07);
+}
+
+.owner-payment-tab {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 68px;
+    padding: 12px 16px;
+    border: 0;
+    border-radius: 13px;
+    color: var(--beauty-muted);
+    background: transparent;
+    text-align: left;
+    transition: background .18s ease, box-shadow .18s ease, color .18s ease, transform .18s ease;
+}
+
+.owner-payment-tab:hover {
+    color: var(--primary);
+    background: rgba(255, 255, 255, .72);
+}
+
+.owner-payment-tab.active {
+    color: #fff;
+    background: linear-gradient(135deg, var(--primary), #0e8fc9);
+    box-shadow: 0 7px 18px rgba(15, 76, 129, .22);
+}
+
+.owner-payment-tab-icon {
+    display: inline-grid;
+    flex: 0 0 38px;
+    width: 38px;
+    height: 38px;
+    place-items: center;
+    border-radius: 11px;
+    color: #0f6cbd;
+    background: #fff;
+}
+
+.owner-payment-tab.active .owner-payment-tab-icon {
+    color: #0f6cbd;
+}
+
+.owner-payment-tab strong,
+.owner-payment-tab small {
+    display: block;
+}
+
+.owner-payment-tab strong {
+    font-size: .92rem;
+    line-height: 1.3;
+}
+
+.owner-payment-tab small {
+    margin-top: 3px;
+    color: var(--beauty-muted);
+    font-size: .72rem;
+}
+
+.owner-payment-tab.active small {
+    color: rgba(255, 255, 255, .78);
+}
+
+.owner-payment-tab-panel > .data-card {
+    animation: ownerPaymentPaneIn .2s ease both;
+}
+
+@keyframes ownerPaymentPaneIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 767.98px) {
+    body.role-mobile-ui[data-page="owner-transactions"] .owner-payment-tabs,
+    body.role-mobile-ui[data-page="owner-daily-summary"] .owner-payment-tabs {
+        position: sticky;
+        top: calc(64px + env(safe-area-inset-top, 0px));
+        z-index: 20;
+        gap: 5px;
+        margin: -2px -4px 12px;
+        padding: 5px;
+        border-radius: 14px;
+        box-shadow: 0 5px 16px rgba(15, 76, 129, .12);
+    }
+
+    body.role-mobile-ui .owner-payment-tab {
+        justify-content: center;
+        gap: 7px;
+        min-height: 52px;
+        padding: 8px 7px;
+        text-align: center;
+    }
+
+    body.role-mobile-ui .owner-payment-tab-icon {
+        flex-basis: 28px;
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+        font-size: .75rem;
+    }
+
+    body.role-mobile-ui .owner-payment-tab strong {
+        font-size: .78rem;
+        white-space: nowrap;
+    }
+
+    body.role-mobile-ui .owner-payment-tab small {
+        display: none;
+    }
+
+    body.role-mobile-ui .owner-payment-list-card .card-header {
+        align-items: stretch !important;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    body.role-mobile-ui .owner-payment-list-card #ownerTxRange {
+        width: 100% !important;
+        min-height: 44px;
+    }
+}
+.analysis-tab-guide > i {
+    width: 34px;
+    height: 34px;
+    border-radius: 11px;
+    display: grid;
+    place-items: center;
+    flex: 0 0 auto;
+    background: #e5f3fc;
+}
+.analysis-tab-guide span { min-width: 0; display: flex; flex-direction: column; }
+.analysis-tab-guide strong { font-size: .8rem; }
+.analysis-tab-guide small { margin-top: 2px; color: #72869a; font-size: .7rem; line-height: 1.45; }
+.trend-card-help {
+    margin: 0 0 9px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: #f5f8fb;
+    color: #60758a;
+    font-size: .7rem;
+    line-height: 1.45;
+}
+.trend-card-help i { margin-right: 5px; color: #0f6cbd; }
+.trend-history-mobile { display: none; }
 
 /* 자동 수집 안내 박스 */
 .analysis-notice {
@@ -1937,10 +2112,54 @@ body[data-page="admin-metrics"] .card[style*="linear-gradient"] { background: li
         display: inline-flex;
         align-items: center;
     }
-    body.role-mobile-ui[data-page="owner-analysis"] .analysis-tab-btn {
-        padding: 7px 13px;
-        font-size: .8rem;
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-tab-wrap {
+        position: sticky;
+        z-index: 24;
+        top: calc(66px + env(safe-area-inset-top));
+        margin: 0 -10px !important;
+        padding: 7px 10px 0;
+        border-bottom: 1px solid #dce6ef;
+        background: rgba(248,250,252,.97);
+        box-shadow: 0 5px 14px rgba(16,36,62,.055);
+        backdrop-filter: blur(10px);
     }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-tab-nav {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 3px;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-tab-btn {
+        min-width: 0;
+        min-height: 48px;
+        padding: 7px 3px !important;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        gap: 3px;
+        border-radius: 10px 10px 0 0;
+        font-size: .68rem !important;
+        line-height: 1.2;
+        white-space: normal;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-tab-btn i {
+        margin-right: 0 !important;
+        font-size: .85rem;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-tab-guide {
+        margin-bottom: 9px;
+        padding: 10px 11px;
+        border-radius: 13px;
+        align-items: flex-start;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-tab-guide > i {
+        width: 31px;
+        height: 31px;
+        border-radius: 10px;
+        font-size: .78rem;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-tab-guide strong { font-size: .72rem; }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-tab-guide small { font-size: .63rem; }
 
     body.role-mobile-ui[data-page="owner-analysis"] .analysis-notice {
         margin-bottom: 0 !important;
@@ -1989,7 +2208,7 @@ body[data-page="admin-metrics"] .card[style*="linear-gradient"] { background: li
     body.role-mobile-ui[data-page="owner-analysis"] #analysisToday > .row {
         margin: 0;
         display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-columns: 1fr;
         gap: 7px;
     }
     body.role-mobile-ui[data-page="owner-analysis"] #analysisToday > .row > [class*="col"] {
@@ -1997,31 +2216,34 @@ body[data-page="admin-metrics"] .card[style*="linear-gradient"] { background: li
         padding: 0;
     }
     body.role-mobile-ui[data-page="owner-analysis"] #analysisToday .card {
-        min-height: 116px;
+        min-height: 82px;
         border-radius: 14px !important;
     }
     body.role-mobile-ui[data-page="owner-analysis"] #analysisToday .card-body {
-        min-height: 114px;
-        padding: 11px 5px !important;
-        display: flex;
+        min-height: 80px;
+        padding: 11px 12px !important;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
         align-items: center;
-        justify-content: center;
-        flex-direction: column;
+        gap: 2px 12px;
+        text-align: left !important;
     }
     body.role-mobile-ui[data-page="owner-analysis"] #analysisToday .card-body > .small {
-        font-size: .62rem !important;
+        font-size: .7rem !important;
         line-height: 1.3;
         white-space: nowrap;
     }
     body.role-mobile-ui[data-page="owner-analysis"] #analysisToday .fw-bold[style*="font-size"] {
-        margin: 5px 0 3px;
+        margin: 0;
         color: #10243e;
-        font-size: 1.32rem !important;
+        font-size: 1.35rem !important;
     }
     body.role-mobile-ui[data-page="owner-analysis"] #analysisToday .card-body > div:last-child {
-        font-size: .62rem !important;
+        grid-column: 1 / -1;
+        margin-top: 2px !important;
+        font-size: .65rem !important;
         line-height: 1.35;
-        text-align: center;
+        text-align: left;
     }
 
     body.role-mobile-ui[data-page="owner-analysis"] .card {
@@ -2055,31 +2277,35 @@ body[data-page="admin-metrics"] .card[style*="linear-gradient"] { background: li
         margin-bottom: 8px;
     }
     body.role-mobile-ui[data-page="owner-analysis"] .cmp-card-body {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        display: block;
     }
     body.role-mobile-ui[data-page="owner-analysis"] .cmp-card-item {
         min-width: 0;
-        padding: 7px 6px;
-        border-top: 0;
-        border-left: 1px solid #e9eef4;
-        text-align: center;
+        padding: 9px 2px;
+        border-top: 1px solid #e9eef4;
+        border-left: 0;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 2px 10px;
+        text-align: left;
     }
     body.role-mobile-ui[data-page="owner-analysis"] .cmp-card-item:first-child {
-        padding-top: 7px;
-        border-left: 0;
+        padding-top: 3px;
+        border-top: 0;
     }
     body.role-mobile-ui[data-page="owner-analysis"] .cmp-card-metric {
-        font-size: .62rem;
+        font-size: .7rem;
         white-space: nowrap;
     }
     body.role-mobile-ui[data-page="owner-analysis"] .cmp-card-value {
-        margin: 3px 0;
-        font-size: 1.08rem;
+        margin: 0;
+        font-size: 1.12rem;
     }
     body.role-mobile-ui[data-page="owner-analysis"] .cmp-card-change {
-        min-height: 30px;
-        font-size: .57rem;
+        grid-column: 1 / -1;
+        min-height: 0;
+        font-size: .62rem;
         line-height: 1.3;
     }
 
@@ -2118,21 +2344,100 @@ body[data-page="admin-metrics"] .card[style*="linear-gradient"] { background: li
     body.role-mobile-ui[data-page="owner-analysis"] .trend-history-head span {
         font-size: .61rem;
     }
-    body.role-mobile-ui[data-page="owner-analysis"] .trend-history .table-responsive {
-        max-height: 250px;
-        overflow-x: auto !important;
-        overflow-y: auto !important;
-        border-radius: 0;
-        -webkit-overflow-scrolling: touch;
+    body.role-mobile-ui[data-page="owner-analysis"] .trend-history-desktop { display: none; }
+    body.role-mobile-ui[data-page="owner-analysis"] .trend-history-mobile {
+        max-height: 330px;
+        padding: 9px;
+        display: flex;
+        overflow-y: auto;
+        flex-direction: column;
+        gap: 8px;
+        background: #f6f9fc;
         overscroll-behavior: contain;
+        -webkit-overflow-scrolling: touch;
     }
-    body.role-mobile-ui[data-page="owner-analysis"] .trend-history-table {
-        min-width: 560px;
-        font-size: .68rem;
+    body.role-mobile-ui[data-page="owner-analysis"] .trend-day-card {
+        padding: 10px;
+        border: 1px solid #dfe8f0;
+        border-radius: 12px;
+        background: #fff;
+        box-shadow: 0 2px 7px rgba(16,36,62,.035);
     }
-    body.role-mobile-ui[data-page="owner-analysis"] .trend-history-table th,
-    body.role-mobile-ui[data-page="owner-analysis"] .trend-history-table td {
+    body.role-mobile-ui[data-page="owner-analysis"] .trend-day-card > time {
+        padding-bottom: 7px;
+        display: block;
+        border-bottom: 1px solid #edf2f6;
+        color: #3d536a;
+        font-size: .7rem;
+        font-weight: 800;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .trend-day-stores {
+        display: flex;
+        flex-direction: column;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .trend-day-store {
+        padding: 8px 1px;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 3px 9px;
+        border-bottom: 1px solid #f0f3f6;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .trend-day-store:last-child {
+        padding-bottom: 1px;
+        border-bottom: 0;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .trend-day-store-head {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .trend-day-store-head span {
+        overflow: hidden;
+        color: #344b62;
+        font-size: .7rem;
+        font-weight: 700;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .trend-day-store-head small {
+        margin-top: 1px;
+        color: #8a98a7;
+        font-size: .57rem;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .trend-day-store.is-mine .trend-day-store-head small {
+        color: #0f6cbd;
+        font-weight: 800;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .trend-day-store > strong {
+        color: #10243e;
+        font-size: .83rem;
+        text-align: right;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .trend-day-store > .trend-change {
+        grid-column: 1 / -1;
+        margin-top: 0;
+        font-size: .61rem;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .trend-card-help {
+        margin-bottom: 7px;
         padding: 8px 9px;
+        font-size: .64rem;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .stat-mini-cards {
+        gap: 5px;
+        margin: 8px 0 10px;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .stat-mini-card {
+        min-width: 0;
+        padding: 8px 4px;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .stat-mini-card .label {
+        font-size: .58rem;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .stat-mini-card .value {
+        font-size: .76rem;
+        overflow-wrap: anywhere;
     }
 
     body.role-mobile-ui[data-page="owner-analysis"] #analysisDetail .card-header {
@@ -2197,8 +2502,8 @@ body[data-page="admin-metrics"] .card[style*="linear-gradient"] { background: li
         gap: 5px;
     }
     body.role-mobile-ui[data-page="owner-analysis"] #analysisToday .card-body {
-        padding-right: 3px !important;
-        padding-left: 3px !important;
+        padding-right: 10px !important;
+        padding-left: 10px !important;
     }
     body.role-mobile-ui[data-page="owner-analysis"] .analysis-page-actions .btn,
     body.role-mobile-ui[data-page="owner-analysis"] .analysis-bottom-actions .btn {

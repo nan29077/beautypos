@@ -157,7 +157,7 @@ function ownerMobilePages() {
     if (needsStaff) {
         pages.push('owner-staff', 'owner-staff-sales', 'owner-settlement');
     }
-    pages.push('owner-daily-summary', 'owner-settlements', 'owner-payouts',
+    pages.push('owner-settlements', 'owner-payouts',
                'owner-receipt-review', 'owner-analysis');
     if (adFeatureFlags.ad_order_mgmt_enabled) {
         pages.push('owner-adorders', 'owner-adorder-new');
@@ -214,7 +214,7 @@ function buildMobileNavigation() {
     if (!isRoleMobile()) return;
     const pages = roleMobilePages();
     const bottomPages = currentUser.role === 'owner'
-        ? ['home', 'owner-transactions', pages.includes('owner-staff') ? 'owner-staff' : 'owner-daily-summary', 'crm']
+        ? ['home', 'owner-transactions', pages.includes('owner-staff') ? 'owner-staff' : 'owner-analysis', 'crm']
         : ['home', 'designer-transactions', 'designer-monthly', 'crm'];
     const nav = document.getElementById('mobileBottomNav');
     nav.innerHTML = bottomPages.map(page => {
@@ -381,7 +381,6 @@ function buildSidebar() {
         <a class="nav-link" href="#" data-page="owner-settlement"><i class="fas fa-coins"></i>정산 분배</a>`;
         }
         html += `
-        <a class="nav-link" href="#" data-page="owner-daily-summary"><i class="fas fa-calendar-day"></i>일별 결제내역</a>
         <div class="nav-section">정산 · 출금</div>
         <a class="nav-link" href="#" data-page="owner-settlements"><i class="fas fa-file-invoice-dollar"></i>정산 내역</a>
         <a class="nav-link" href="#" data-page="owner-payouts"><i class="fas fa-money-bill-wave"></i>출금 요청</a>
@@ -478,7 +477,7 @@ async function loadPage(page) {
             case 'owner-settlement': await loadOwnerSettlement(c, t); break;
             case 'owner-settlements': await loadOwnerSettlements(c, t); break;
             case 'owner-payouts': await loadOwnerPayouts(c, t); break;
-            case 'owner-daily-summary': await loadOwnerDailySummary(c, t); break;
+            case 'owner-daily-summary': await loadOwnerTransactions(c, t, 'daily'); break;
             case 'owner-analysis': await loadOwnerAnalysis(c, t); break;
             case 'owner-adorders': await loadOwnerAdOrders(c, t); break;
             case 'owner-adorder-new': await loadOwnerAdOrderNew(c, t); break;
@@ -943,7 +942,7 @@ async function loadHomePage(c, t) {
                                     ${recentTxns.map(tx => `
                                     <tr>
                                         <td style="padding-left:1.2rem;" class="fw-bold">${formatMoney(tx.amount)}</td>
-                                        <td>${tx.staff_name || '<span class="text-muted">사장님</span>'}</td>
+                                        <td>${tx.staff_name || '<span class="text-muted">원장님</span>'}</td>
                                         <td><span class="badge bg-secondary bg-opacity-10 text-secondary">${tx.card_brand || '-'}</span></td>
                                         <td class="text-muted" style="font-size:.8rem;">${formatDate(tx.created_at)}</td>
                                     </tr>`).join('')}
@@ -3000,10 +2999,49 @@ async function loadSalesPayoutHistory(c, t) {
 // OWNER PAGES
 // ═══════════════════════════════════════════════════════════
 
-async function loadOwnerTransactions(c, t) {
+async function loadOwnerTransactions(c, t, initialTab = 'general') {
     t.textContent = '결제 내역';
-    c.innerHTML = `<div class="card data-card"><div class="card-header d-flex justify-content-between align-items-center">
-        <h5 class="mb-0">결제 내역</h5>
+    c.innerHTML = `
+    <div class="owner-payment-page">
+        <div class="owner-payment-tabs" role="tablist" aria-label="결제 내역 보기">
+            <button type="button" class="owner-payment-tab" role="tab" data-payment-tab="general"
+                onclick="activateOwnerPaymentTab('general')">
+                <span class="owner-payment-tab-icon"><i class="fas fa-receipt"></i></span>
+                <span><strong>일반 결제내역</strong><small>건별 승인 내역을 확인해요</small></span>
+            </button>
+            <button type="button" class="owner-payment-tab" role="tab" data-payment-tab="daily"
+                onclick="activateOwnerPaymentTab('daily')">
+                <span class="owner-payment-tab-icon"><i class="fas fa-calendar-day"></i></span>
+                <span><strong>일별 결제내역</strong><small>날짜별 매출을 한눈에 봐요</small></span>
+            </button>
+        </div>
+        <div id="ownerPaymentTabPanel" class="owner-payment-tab-panel" role="tabpanel"></div>
+    </div>`;
+    await activateOwnerPaymentTab(initialTab);
+}
+
+async function activateOwnerPaymentTab(tab = 'general') {
+    const selectedTab = tab === 'daily' ? 'daily' : 'general';
+    document.querySelectorAll('.owner-payment-tab').forEach(button => {
+        const isActive = button.dataset.paymentTab === selectedTab;
+        button.classList.toggle('active', isActive);
+        button.setAttribute('aria-selected', String(isActive));
+        button.tabIndex = isActive ? 0 : -1;
+    });
+
+    const panel = document.getElementById('ownerPaymentTabPanel');
+    if (!panel) return;
+    panel.innerHTML = '<div class="text-center py-5"><div class="spinner-border spinner-border-sm text-primary"></div></div>';
+    if (selectedTab === 'daily') {
+        await loadOwnerDailySummary(panel, { textContent: '' });
+    } else {
+        await renderOwnerTransactionList(panel);
+    }
+}
+
+async function renderOwnerTransactionList(c) {
+    c.innerHTML = `<div class="card data-card owner-payment-list-card"><div class="card-header d-flex justify-content-between align-items-center">
+        <div><h5 class="mb-1">일반 결제내역</h5><small class="text-muted">승인된 결제를 건별로 확인할 수 있어요.</small></div>
         <select class="form-select form-select-sm" style="width:120px" id="ownerTxRange" onchange="reloadOwnerTx()">
             <option value="all">전체</option><option value="month">이번달</option><option value="week">이번주</option><option value="day">오늘</option>
         </select>
@@ -3014,10 +3052,14 @@ async function loadOwnerTransactions(c, t) {
 }
 
 async function reloadOwnerTx() {
-    const range = document.getElementById('ownerTxRange').value;
+    const rangeSelect = document.getElementById('ownerTxRange');
+    const body = document.getElementById('ownerTxBody');
+    if (!rangeSelect || !body) return;
+    const range = rangeSelect.value;
     const txns = await apiGet(`/api/owner/transactions?range=${range}`);
     const total = txns.reduce((s, tx) => s + tx.amount, 0);
-    document.getElementById('ownerTxBody').innerHTML = `
+    if (!document.getElementById('ownerTxBody')) return;
+    body.innerHTML = `
     <div class="d-flex justify-content-between mb-3">
         <span>합계: <strong class="text-primary">${formatMoney(total)}</strong> (${txns.length}건)</span>
     </div>
@@ -3026,7 +3068,7 @@ async function reloadOwnerTx() {
         <tbody>${txns.map(tx => `<tr>
             <td>${tx.id}</td><td class="fw-bold">${formatMoney(tx.amount)}</td>
             <td>${tx.installment_months||'일시불'}</td><td>${tx.card_brand||'-'}</td>
-            <td>${tx.staff_name||'<span class="text-muted">사장님</span>'}</td><td><code>${tx.approval_code||'-'}</code></td>
+            <td>${tx.staff_name||'<span class="text-muted">원장님</span>'}</td><td><code>${tx.approval_code||'-'}</code></td>
             <td>${formatDate(tx.created_at)}</td>
         </tr>`).join('')}</tbody>
     </table></div>`;
@@ -3416,7 +3458,7 @@ async function loadStaffSalesData() {
 }
 
 async function loadOwnerDailySummary(c, t) {
-    t.textContent = '일별 결제내역';
+    if (t) t.textContent = '일별 결제내역';
     const now = new Date();
     let calYear = now.getFullYear();
     let calMonth = now.getMonth() + 1;
@@ -3509,7 +3551,7 @@ async function showDailyDetail(dateStr) {
                     <tbody>${data.transactions.map(tx => `<tr>
                         <td class="fw-bold">${formatMoney(tx.amount)}</td>
                         <td>${tx.card_brand||'-'}</td>
-                        <td>${tx.staff_name||'<span class="text-muted">사장님</span>'}</td>
+                        <td>${tx.staff_name||'<span class="text-muted">원장님</span>'}</td>
                         <td><code>${tx.approval_code||'-'}</code></td>
                         <td class="text-muted" style="font-size:.8rem;">${tx.created_at ? tx.created_at.split(' ')[1]?.substring(0,5) || formatDate(tx.created_at) : '-'}</td>
                     </tr>`).join('')}</tbody>
@@ -3556,28 +3598,31 @@ async function loadOwnerAnalysis(c, t) {
 
     <!-- 탭 네비게이션 -->
     <div class="analysis-tab-wrap mb-3">
-        <div class="analysis-tab-nav">
-            <button class="analysis-tab-btn active" data-tab="compare">
-                <i class="fas fa-scale-balanced me-1"></i>경쟁 비교
+        <div class="analysis-tab-nav" role="tablist" aria-label="광고 분석 상세 메뉴">
+            <button type="button" class="analysis-tab-btn active" data-tab="compare" role="tab" aria-selected="true">
+                <i class="fas fa-scale-balanced me-1"></i>경쟁 매장
             </button>
-            <button class="analysis-tab-btn" data-tab="trend">
-                <i class="fas fa-chart-line me-1"></i>경쟁 업체와 비교 차트
+            <button type="button" class="analysis-tab-btn" data-tab="trend" role="tab" aria-selected="false">
+                <i class="fas fa-chart-line me-1"></i>변화 흐름
             </button>
-            <button class="analysis-tab-btn" data-tab="detail">
-                <i class="fas fa-calendar-days me-1"></i>종합 비교
+            <button type="button" class="analysis-tab-btn" data-tab="detail" role="tab" aria-selected="false">
+                <i class="fas fa-calendar-days me-1"></i>날짜별 기록
             </button>
         </div>
     </div>
 
     <!-- 탭 패널 -->
     <div class="analysis-tab-content">
-        <div id="tab-compare" class="analysis-tab-pane">
+        <div id="tab-compare" class="analysis-tab-pane" role="tabpanel">
+            <div class="analysis-tab-guide"><i class="fas fa-store"></i><span><strong>우리 매장과 주변 매장을 비교해요</strong><small>초록색은 우리 매장이 앞선 항목, 빨간색은 보완할 항목입니다.</small></span></div>
             <div id="analysisCompare"></div>
         </div>
-        <div id="tab-trend" class="analysis-tab-pane" style="display:none">
+        <div id="tab-trend" class="analysis-tab-pane" role="tabpanel" style="display:none">
+            <div class="analysis-tab-guide"><i class="fas fa-arrow-trend-up"></i><span><strong>순위와 리뷰가 어떻게 달라졌는지 확인해요</strong><small>그래프 아래에서 날짜별 실제 수치와 전날 대비 변화를 볼 수 있습니다.</small></span></div>
             <div id="analysisTrend"></div>
         </div>
-        <div id="tab-detail" class="analysis-tab-pane" style="display:none">
+        <div id="tab-detail" class="analysis-tab-pane" role="tabpanel" style="display:none">
+            <div class="analysis-tab-guide"><i class="fas fa-calendar-check"></i><span><strong>수집된 날짜별 기록을 한눈에 확인해요</strong><small>우리 매장과 경쟁업체의 순위·리뷰 기록을 각각 확인할 수 있습니다.</small></span></div>
             <div id="analysisDetail"></div>
         </div>
     </div>
@@ -3620,8 +3665,8 @@ async function loadOwnerAnalysis(c, t) {
 
     <!-- 하단 액션 -->
     <div class="analysis-bottom-actions text-center mt-3">
-        <button class="btn btn-outline-primary me-2" onclick="navigate(‘owner-adorder-new’)"><i class="fas fa-bullhorn me-1"></i>광고 주문하기</button>
-        <button class="btn btn-outline-secondary" onclick="navigate(‘owner-adorders’)"><i class="fas fa-list me-1"></i>주문 내역 보기</button>
+        <button class="btn btn-outline-primary me-2" onclick="navigate('owner-adorder-new')"><i class="fas fa-bullhorn me-1"></i>광고 주문하기</button>
+        <button class="btn btn-outline-secondary" onclick="navigate('owner-adorders')"><i class="fas fa-list me-1"></i>주문 내역 보기</button>
     </div>
     </div>`;
 
@@ -3969,17 +4014,29 @@ function renderTrendSummary(metric) {
     const arrow = rawChange === null ? '─' : (rawChange > 0 ? '<span class="text-success">▲</span>' : (rawChange < 0 ? '<span class="text-danger">▼</span>' : '─'));
     const absChange = rawChange !== null && rawChange !== 0 ? ` ${Math.abs(rawChange).toLocaleString('ko-KR')}` : '';
     const fmt = v => isRank ? v + '위' : v.toLocaleString('ko-KR') + '개';
+    if (!isRank) {
+        const first = values[0];
+        const periodChange = last - first;
+        const periodText = periodChange === 0
+            ? '변화 없음'
+            : `${periodChange > 0 ? '+' : '-'}${Math.abs(periodChange).toLocaleString('ko-KR')}개`;
+        return `<div class="stat-mini-cards">
+            <div class="stat-mini-card"><div class="label">기간 시작</div><div class="value">${fmt(first)}</div></div>
+            <div class="stat-mini-card"><div class="label">현재 리뷰</div><div class="value">${fmt(last)}</div></div>
+            <div class="stat-mini-card"><div class="label">기간 동안</div><div class="value ${periodChange > 0 ? 'text-success' : (periodChange < 0 ? 'text-danger' : '')}">${periodText}</div></div>
+        </div>`;
+    }
     return `<div class="stat-mini-cards">
         <div class="stat-mini-card">
-            <div class="label">${isRank ? '최고 순위' : '최고값'}</div>
+            <div class="label">기간 최고</div>
             <div class="value">${fmt(best)}</div>
         </div>
         <div class="stat-mini-card">
-            <div class="label">${isRank ? '평균 순위' : '평균값'}</div>
+            <div class="label">기간 평균</div>
             <div class="value">${fmt(avg)}</div>
         </div>
         <div class="stat-mini-card">
-            <div class="label">${isRank ? '최근 순위' : '최근값'}</div>
+            <div class="label">현재 순위</div>
             <div class="value">${fmt(last)} ${arrow}${absChange}</div>
         </div>
     </div>`;
@@ -4003,15 +4060,29 @@ function renderTrendHistoryTable(metric) {
             return '<span class="trend-change is-neutral">변화 -</span>';
         }
         const change = metric === 'rank' ? previous - current : current - previous;
-        if (change === 0) return '<span class="trend-change is-neutral">변화 없음</span>';
+        if (change === 0) return '<span class="trend-change is-neutral">전날과 같음</span>';
         const better = change > 0;
-        const unit = metric === 'rank' ? '위' : '개';
-        return `<span class="trend-change ${better ? 'is-up' : 'is-down'}">${better ? '▲' : '▼'} ${Math.abs(change).toLocaleString('ko-KR')}${unit}</span>`;
+        const amount = Math.abs(change).toLocaleString('ko-KR');
+        const wording = metric === 'rank'
+            ? `전날보다 ${amount}위 ${better ? '상승' : '하락'}`
+            : `전날보다 ${amount}개 ${better ? '증가' : '감소'}`;
+        return `<span class="trend-change ${better ? 'is-up' : 'is-down'}">${better ? '▲' : '▼'} ${wording}</span>`;
     };
     const header = visibleSeries.map(s => `<th scope="col">${escapeHtml(s.label)}${s.kind === 'my' ? '<small>우리 매장</small>' : '<small>경쟁업체</small>'}</th>`).join('');
     const rows = dates.map((date, index) => {
         const cells = visibleSeries.map(s => `<td><strong>${valueText((s[metric] || [])[index])}</strong>${changeText(s[metric] || [], index)}</td>`).join('');
         return `<tr><th scope="row">${escapeHtml(date)}</th>${cells}</tr>`;
+    }).reverse().join('');
+    const mobileRows = dates.map((date, index) => {
+        const stores = visibleSeries.map(s => {
+            const value = (s[metric] || [])[index];
+            return `<div class="trend-day-store ${s.kind === 'my' ? 'is-mine' : ''}">
+                <div class="trend-day-store-head"><span>${escapeHtml(s.label)}</span><small>${s.kind === 'my' ? '우리 매장' : '경쟁 매장'}</small></div>
+                <strong>${valueText(value)}</strong>
+                ${changeText(s[metric] || [], index)}
+            </div>`;
+        }).join('');
+        return `<article class="trend-day-card"><time datetime="${escapeHtml(date)}">${escapeHtml(date)}</time><div class="trend-day-stores">${stores}</div></article>`;
     }).reverse().join('');
 
     return `<div class="trend-history">
@@ -4019,12 +4090,13 @@ function renderTrendHistoryTable(metric) {
             <strong><i class="fas fa-table-list me-1"></i>${metricLabel} 일자별 변화</strong>
             <span>전일 대비 변화량 · 최신 일자 우선</span>
         </div>
-        <div class="table-responsive">
+        <div class="table-responsive trend-history-desktop">
             <table class="table table-sm align-middle mb-0 mobile-keep-table trend-history-table">
                 <thead><tr><th scope="col">날짜</th>${header}</tr></thead>
                 <tbody>${rows}</tbody>
             </table>
         </div>
+        <div class="trend-history-mobile">${mobileRows}</div>
     </div>`;
 }
 
@@ -4179,6 +4251,7 @@ async function loadAnalysisTrend(days) {
                     <span class="badge trend-period-badge" style="background:#3b82f620;color:#3b82f6">${period}일간 · 위로 갈수록 높은 순위</span>
                 </div>
                 <div class="card-body pt-2">
+                    <p class="trend-card-help"><i class="fas fa-circle-info"></i>순위 숫자가 작을수록 검색 결과에서 더 위에 노출됩니다.</p>
                     <div class="trend-pane" data-metric="rank"><div style="height:240px"><canvas id="trendRank"></canvas></div></div>
                     ${renderTrendSummary('rank')}
                     ${renderTrendHistoryTable('rank')}
@@ -4191,6 +4264,7 @@ async function loadAnalysisTrend(days) {
                     <span class="badge trend-period-badge" style="background:#10b98120;color:#10b981">${period}일간</span>
                 </div>
                 <div class="card-body pt-2">
+                    <p class="trend-card-help"><i class="fas fa-circle-info"></i>네이버 블로그에 등록된 우리 매장 리뷰 수의 변화를 보여줍니다.</p>
                     <div class="trend-pane" data-metric="blog"><div style="height:200px"><canvas id="trendBlog"></canvas></div></div>
                     ${renderTrendSummary('blog')}
                     ${renderTrendHistoryTable('blog')}
@@ -4203,6 +4277,7 @@ async function loadAnalysisTrend(days) {
                     <span class="badge trend-period-badge" style="background:#8b5cf620;color:#8b5cf6">${period}일간</span>
                 </div>
                 <div class="card-body pt-2">
+                    <p class="trend-card-help"><i class="fas fa-circle-info"></i>매장을 실제 이용한 방문자가 남긴 리뷰 수의 변화를 보여줍니다.</p>
                     <div class="trend-pane" data-metric="visitor"><div style="height:200px"><canvas id="trendVisitor"></canvas></div></div>
                     ${renderTrendSummary('visitor')}
                     ${renderTrendHistoryTable('visitor')}
@@ -4229,8 +4304,14 @@ function toggleManagePanel() {
 }
 
 function switchAnalysisTab(tabName, btnEl) {
-    document.querySelectorAll('.analysis-tab-btn').forEach(b => b.classList.remove('active'));
-    if (btnEl) btnEl.classList.add('active');
+    document.querySelectorAll('.analysis-tab-btn').forEach(b => {
+        b.classList.remove('active');
+        b.setAttribute('aria-selected', 'false');
+    });
+    if (btnEl) {
+        btnEl.classList.add('active');
+        btnEl.setAttribute('aria-selected', 'true');
+    }
     document.querySelectorAll('.analysis-tab-pane').forEach(p => { p.style.display = 'none'; });
     const pane = document.getElementById('tab-' + tabName);
     if (pane) pane.style.display = '';
