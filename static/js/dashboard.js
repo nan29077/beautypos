@@ -5039,7 +5039,8 @@ async function generateAIRecommendation() {
 
 async function loadOwnerAdOrders(c, t) {
     t.textContent = '내 광고 주문';
-    const orders = await apiGet('/api/owner/ad/orders');
+    // 본문이 비어 있거나 예상과 다른 응답이 와도 페이지 전체가 죽지 않게 한다.
+    const orders = (await apiGet('/api/owner/ad/orders')) || [];
     c.innerHTML = `<div class="workspace-hero mb-3">
         <div><span class="workspace-eyebrow">AD ORDERS</span><h2>내 광고 주문</h2><p>요청 후 최고관리자 검토와 집행을 거쳐 완료됩니다.</p></div>
         <button class="btn btn-light" onclick="navigate('owner-adorder-new')"><i class="fas fa-plus me-1"></i>새 주문</button>

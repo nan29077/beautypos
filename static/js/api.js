@@ -57,8 +57,54 @@ async function api(path, options = {}) {
         res = await send();
         if (res.status === 401) { logout(); return null; }
     }
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'API Error');
+    return parseApiResponse(res);
+}
+
+/** FastAPI 의 detail 을 사람이 읽을 수 있는 한 줄로 만든다.
+ *
+ * 422(Query pattern / 타입 검증 실패)는 detail 이 객체 배열로 오므로 그대로 문자열로
+ * 만들면 "[object Object]" 가 되어 무엇이 틀렸는지 알 수 없다.
+ */
+function formatApiDetail(detail) {
+    if (!detail) return '';
+    if (typeof detail === 'string') return detail;
+    if (Array.isArray(detail)) {
+        return detail.map(item => {
+            if (typeof item === 'string') return item;
+            const loc = Array.isArray(item?.loc)
+                ? item.loc.filter(part => part !== 'body' && part !== 'query' && part !== 'path')
+                : [];
+            const msg = item?.msg || '입력값이 올바르지 않습니다';
+            return loc.length ? `${loc.join('.')}: ${msg}` : msg;
+        }).filter(Boolean).join(', ');
+    }
+    if (typeof detail === 'object') return detail.msg || detail.message || '';
+    return String(detail);
+}
+
+/** 응답 본문을 안전하게 해석한다.
+ *
+ * 이전에는 res.ok 확인 전에 res.json() 을 무조건 호출했다. 서버가 JSON 이 아닌 본문
+ * (500 의 text/plain "Internal Server Error", 프록시의 502/504 HTML, 빈 본문 등)을
+ * 주면 그 자리에서 파싱이 터졌고, WebKit(사파리)은 그 예외 메시지를
+ * "The string did not match the expected pattern." 으로 낸다. 그래서 실제 원인인
+ * HTTP 오류가 정규식/패턴 오류처럼 보였다. 본문은 텍스트로 먼저 받고 파싱은 시도만 해,
+ * 어떤 응답이 와도 원인을 알 수 있는 메시지를 던진다.
+ */
+async function parseApiResponse(res) {
+    let raw = '';
+    try { raw = await res.text(); } catch { raw = ''; }
+
+    let data = null;
+    if (raw) {
+        try { data = JSON.parse(raw); } catch { data = null; }
+    }
+
+    if (!res.ok) {
+        const detail = data ? formatApiDetail(data.detail) : '';
+        throw new Error(detail || `서버 오류가 발생했습니다 (HTTP ${res.status})`);
+    }
+    // 본문이 없는 정상 응답(204 등)은 null 로 돌려준다.
     return data;
 }
 
