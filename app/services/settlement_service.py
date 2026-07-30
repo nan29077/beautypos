@@ -222,8 +222,50 @@ def compute_fee_distribution(
     }
 
 
+def _allocate_with_remainder(total: int, weights: list) -> list:
+    """정수 total 을 weights 비율로 배분한다. 합계는 항상 total 과 정확히 일치한다.
+
+    마지막 항목이 나머지를 흡수한다(last-person adjustment). 각 항목을 개별로
+    반올림해서 더하면 총액과 최대 (항목 수)원 만큼 어긋나므로, 총액을 먼저 확정하고
+    거기서 쪼개는 방식을 쓴다.
+
+    weights 합이 0이면(매출이 모두 0) 마지막 항목에 전액을 넣는다.
+    """
+    n = len(weights)
+    if n == 0:
+        return []
+    weight_sum = sum(weights)
+    if weight_sum <= 0:
+        out = [0] * n
+        out[-1] = total
+        return out
+
+    out = []
+    running = 0
+    for w in weights[:-1]:
+        v = int(round(total * (w / weight_sum)))
+        out.append(v)
+        running += v
+    out.append(total - running)  # 마지막 항목 = 나머지
+    return out
+
+
 def compute_distribution(db: Session, merchant_id: int, txns) -> dict:
     """거래 목록으로 디자이너/원장 분배 내역을 계산한다.
+
+    계산 순서 (누적 반올림 오차 방지):
+        1) 전체 매출 합계로 compute_fee_distribution() 을 한 번 호출해 총액을 확정한다.
+           → settlements/calculate 가 만드는 확정 정산 금액과 항상 일치한다.
+        2) 확정된 총액을 디자이너별 매출 비율로 쪼갠다. 마지막 배분 단위가 나머지를
+           흡수하므로(_allocate_with_remainder) 디자이너별 금액의 합은 항상 총액과 같다.
+        3) 미귀속 거래가 있으면 그것이 마지막 단위가 되어 잔액이 원장 몫으로 흡수된다.
+
+    보장되는 항등식:
+        sum(designers[].merchant_fee) + unassigned.merchant_fee == merchant_fee
+        sum(designers[].pg_cost)      + unassigned.pg_cost      == pg_cost
+        sum(designers[].sales_commission) + unassigned.sales_commission == sales_commission
+        sum(designers[].net_payout)   + unassigned.net_payout   == net_payout
+        designer_total + owner_amount == net_payout
 
     반환:
         {
@@ -261,81 +303,99 @@ def compute_distribution(db: Session, merchant_id: int, txns) -> dict:
         else:
             unassigned_txns.append(t)
 
-    def _split(gross_amt: float, share_rate: float):
-        d = compute_fee_distribution(gross_amt, merchant_fee_rate, pg_fee_rate, commission_rate)
-        net = d["net_payout"]
-        designer = round(net * share_rate)
-        owner = net - designer
-        return d, designer, owner
+    # ── 1) 총액 기준으로 수수료를 먼저 확정한다 ──────────────────
+    # settlements/calculate 가 쓰는 계산과 동일한 입력(전체 매출 합계)이므로
+    # 여기서 나온 총액이 확정 정산 금액과 항상 일치한다.
+    total_gross = sum(float(t.amount) for t in txns)
+    totals = compute_fee_distribution(
+        total_gross, merchant_fee_rate, pg_fee_rate, commission_rate
+    )
 
+    # ── 2) 배분 단위 구성 (디자이너 매출 큰 순 → 미귀속 마지막) ──
+    # 나머지 보정은 마지막 단위가 흡수한다. 미귀속 거래가 있으면 그것이 마지막이 되어
+    # 잔액이 원장 몫으로 흡수되고, 디자이너 몫은 왜곡되지 않는다.
+    gross_by_staff = {sid: sum(float(t.amount) for t in ts) for sid, ts in groups.items()}
+    ordered_staff = sorted(groups.keys(), key=lambda sid: (-gross_by_staff[sid], sid))
+
+    un_gross = sum(float(t.amount) for t in unassigned_txns)
+    alloc_units = [(sid, groups[sid], gross_by_staff[sid]) for sid in ordered_staff]
+    if unassigned_txns:
+        alloc_units.append((None, unassigned_txns, un_gross))
+
+    weights = [g for _, _, g in alloc_units]
+    mf_alloc = _allocate_with_remainder(totals["merchant_fee"], weights)
+    pg_alloc = _allocate_with_remainder(totals["pg_cost"], weights)
+    comm_alloc = _allocate_with_remainder(totals["sales_commission"], weights)
+
+    # 실수령액은 행 단위로 gross - merchant_fee 가 성립하도록 유도한 뒤,
+    # 마지막 단위에서 잔액을 흡수해 총 실수령액과 정확히 맞춘다.
+    net_alloc = [int(g) - mf for (_, _, g), mf in zip(alloc_units, mf_alloc)]
+    if net_alloc:
+        net_alloc[-1] += totals["net_payout"] - sum(net_alloc)
+
+    # ── 3) 단위별 분배 ──────────────────────────────────────────
     designers = []
     designer_total = 0
     owner_amount = 0
-    total_gross = 0.0
-    total_merchant_fee = 0
-    total_pg_cost = 0
-    total_comm = 0
-    total_platform = 0
-    total_company_profit = 0
+    un_row = {
+        "gross": int(un_gross), "count": len(unassigned_txns),
+        "merchant_fee": 0, "pg_cost": 0, "pg_fee": 0, "platform_income": 0,
+        "sales_commission": 0, "company_profit": 0,
+        "net_payout": 0, "distributable": 0, "owner_amount": 0,
+    }
 
-    for sid, ts in groups.items():
+    for i, (sid, ts, g) in enumerate(alloc_units):
+        mf, pg, comm_amt, net = mf_alloc[i], pg_alloc[i], comm_alloc[i], net_alloc[i]
+        platform = mf - pg
+        company = platform - comm_amt
+
+        if sid is None:
+            # 미귀속 거래 → 실수령액 전액 원장
+            owner_amount += net
+            un_row.update({
+                "merchant_fee": mf, "pg_cost": pg, "pg_fee": pg,
+                "platform_income": platform, "sales_commission": comm_amt,
+                "company_profit": company,
+                "net_payout": net, "distributable": net, "owner_amount": net,
+            })
+            continue
+
         s = staff_by_id[sid]
-        g = sum(float(t.amount) for t in ts)
         share_rate = float(s.share_rate) if s.share_rate is not None else 0.5
-        d, designer, owner = _split(g, share_rate)
+        designer = round(net * share_rate)
+        owner = net - designer
         designers.append({
             "staff_id": sid,
             "name": s.name,
             "staff_code": s.staff_code,
             "share_rate": share_rate,
             "gross": int(g),
-            "merchant_fee": d["merchant_fee"],
-            "pg_cost": d["pg_cost"],
-            "platform_income": d["platform_income"],
-            "sales_commission": d["sales_commission"],
-            "company_profit": d["company_profit"],
-            "net_payout": d["net_payout"],
+            "merchant_fee": mf,
+            "pg_cost": pg,
+            "platform_income": platform,
+            "sales_commission": comm_amt,
+            "company_profit": company,
+            "net_payout": net,
             "designer_amount": designer,
             "owner_amount": owner,
             "count": len(ts),
             # 하위 호환
-            "pg_fee": d["pg_cost"],
-            "distributable": d["net_payout"],
-            "platform_amount": d["platform_income"],
+            "pg_fee": pg,
+            "distributable": net,
+            "platform_amount": platform,
         })
         designer_total += designer
         owner_amount += owner
-        total_gross += g
-        total_merchant_fee += d["merchant_fee"]
-        total_pg_cost += d["pg_cost"]
-        total_comm += d["sales_commission"]
-        total_platform += d["platform_income"]
-        total_company_profit += d["company_profit"]
 
-    # 미귀속 거래 → 전액 원장
-    un_gross = sum(float(t.amount) for t in unassigned_txns)
-    if un_gross > 0:
-        un_d, _, _ = _split(un_gross, 0.0)
-    else:
-        un_d = {"merchant_fee": 0, "pg_cost": 0, "platform_income": 0,
-                "sales_commission": 0, "company_profit": 0, "net_payout": 0}
-    owner_amount += un_d["net_payout"]
-    total_gross += un_gross
-    total_merchant_fee += un_d["merchant_fee"]
-    total_pg_cost += un_d["pg_cost"]
-    total_comm += un_d["sales_commission"]
-    total_platform += un_d["platform_income"]
-    total_company_profit += un_d["company_profit"]
-
-    total_net_payout = int(total_gross) - total_merchant_fee
+    total_net_payout = totals["net_payout"]
 
     return {
         "gross": int(total_gross),
-        "merchant_fee": total_merchant_fee,
-        "pg_cost": total_pg_cost,
-        "platform_income": total_platform,
-        "sales_commission": total_comm,
-        "company_profit": total_company_profit,
+        "merchant_fee": totals["merchant_fee"],
+        "pg_cost": totals["pg_cost"],
+        "platform_income": totals["platform_income"],
+        "sales_commission": totals["sales_commission"],
+        "company_profit": totals["company_profit"],
         "net_payout": total_net_payout,
         "owner_amount": int(owner_amount),
         "designer_total": int(designer_total),
@@ -349,17 +409,11 @@ def compute_distribution(db: Session, merchant_id: int, txns) -> dict:
         "fee_rate_vat_exclusive": True,
         "vat_notice": VAT_NOTICE,
         # 하위 호환 필드
-        "pg_fee": total_pg_cost,
+        "pg_fee": totals["pg_cost"],
         "distributable": total_net_payout,
-        "platform_amount": total_platform,
-        "commission_amount": total_comm,
-        "vat_inclusive_rate": round(pg_fee_rate * 1.1, 4),
+        "platform_amount": totals["platform_income"],
+        "commission_amount": totals["sales_commission"],
+        "vat_inclusive_rate": round(apply_vat(pg_fee_rate), 4),
         "designers": sorted(designers, key=lambda d: d["gross"], reverse=True),
-        "unassigned": {
-            "gross": int(un_gross),
-            "net_payout": un_d["net_payout"],
-            "distributable": un_d["net_payout"],
-            "owner_amount": un_d["net_payout"],
-            "count": len(unassigned_txns),
-        },
+        "unassigned": un_row,
     }
