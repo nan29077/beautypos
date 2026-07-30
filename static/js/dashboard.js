@@ -3922,6 +3922,7 @@ function renderCollectStatus(status) {
     const box = document.getElementById('collectStatus');
     if (!box || !status) return;
     const hasToday = status.has_today_data;
+    // 서버가 이미 KST 문자열로 내려주므로 시간대 변환을 하지 않는다 (분 단위까지만 표시).
     const last = status.last_collected_at
         ? status.last_collected_at.replace('T', ' ').slice(0, 16)
         : (localStorage.getItem('lastAnalysisAt') || null);

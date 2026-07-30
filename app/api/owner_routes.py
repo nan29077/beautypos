@@ -8,7 +8,7 @@ import logging
 import uuid
 import base64
 import io
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlsplit, urlunsplit
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
 from fastapi.responses import HTMLResponse
@@ -559,8 +559,20 @@ def _daily_change(db: Session, merchant_id: int, place_url: str) -> dict:
     }
 
 
+KST = timezone(timedelta(hours=9))
+
+
+def _to_kst_str(dt: datetime) -> str:
+    """naive UTC datetime 을 KST 문자열로 변환한다.
+
+    DB에는 naive UTC(datetime.utcnow)로 저장되므로 그대로 내려주면
+    화면에 9시간 이전 시각이 표시된다.
+    """
+    return dt.replace(tzinfo=timezone.utc).astimezone(KST).strftime("%Y-%m-%d %H:%M:%S")
+
+
 def _collection_status(db: Session, merchant_id: int) -> dict:
-    """마지막 자동 수집 시각과 오늘 수집 여부."""
+    """마지막 자동 수집 시각과 오늘 수집 여부. 수집 시각은 KST로 반환."""
     today = datetime.utcnow().date()
     last = db.query(PlaceMetricSnapshot).filter(
         PlaceMetricSnapshot.merchant_id == merchant_id,
@@ -571,7 +583,7 @@ def _collection_status(db: Session, merchant_id: int) -> dict:
         AdMetric.source == "api",
     ).scalar() or 0
     return {
-        "last_collected_at": str(last.collected_at) if last and last.collected_at else None,
+        "last_collected_at": _to_kst_str(last.collected_at) if last and last.collected_at else None,
         "last_keyword": last.keyword if last else None,
         "has_today_data": today_count > 0,
         "today_count": int(today_count),

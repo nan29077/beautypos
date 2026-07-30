@@ -323,6 +323,8 @@ def approve_payout(pid: int, db: Session = Depends(get_db), admin: User = Depend
     pr = db.query(PayoutRequest).filter(PayoutRequest.id == pid).first()
     if not pr:
         raise HTTPException(status_code=404)
+    if pr.status != PayoutStatus.PENDING:
+        raise HTTPException(status_code=400, detail="이미 처리된 페이아웃 요청입니다.")
     pr.status = PayoutStatus.APPROVED
     pr.reviewed_at = datetime.utcnow()
     pr.reviewed_by = admin.id
@@ -335,6 +337,8 @@ def reject_payout(pid: int, db: Session = Depends(get_db), admin: User = Depends
     pr = db.query(PayoutRequest).filter(PayoutRequest.id == pid).first()
     if not pr:
         raise HTTPException(status_code=404)
+    if pr.status != PayoutStatus.PENDING:
+        raise HTTPException(status_code=400, detail="이미 처리된 페이아웃 요청입니다.")
     pr.status = PayoutStatus.REJECTED
     pr.reviewed_at = datetime.utcnow()
     pr.reviewed_by = admin.id
@@ -591,11 +595,16 @@ def set_fee_policy(mid: int, req: FeePolicyUpdate, db: Session = Depends(get_db)
     """하위 호환 엔드포인트 — pg_fee_rate 만 저장. 신규는 PUT /merchants/{mid}/fee-override 사용 권장."""
     pgr = float(req.pg_fee_rate)
     fp = db.query(FeePolicy).filter(FeePolicy.merchant_id == mid).first()
+    mfr_global, _, _ = get_effective_fee_rates(db, None)
+
+    # 저장 전 교차 검증 — 변경 후 플랫폼 수익률이 기존 커미션율을 감당하는지 확인한다.
+    new_mfr = float(fp.merchant_fee_rate) if fp and fp.merchant_fee_rate is not None else mfr_global
+    _validate_merchant_commission_fit(db, mid, new_mfr, pgr)
+
     if fp:
         fp.pg_fee_rate = pgr
         fp.vat_inclusive_rate = pgr
     else:
-        mfr_global, _, _ = get_effective_fee_rates(db, None)
         fp = FeePolicy(merchant_id=mid, pg_fee_rate=pgr, merchant_fee_rate=mfr_global, vat_inclusive_rate=pgr)
         db.add(fp)
     db.commit()
@@ -738,11 +747,9 @@ def update_sales_assignment(aid: int, req: SalesAssignmentUpdate, db: Session = 
     if not a:
         raise HTTPException(status_code=404, detail="영업배정을 찾을 수 없습니다.")
     if req.commission_rate is not None:
-        if req.commission_rate < 0 or req.commission_rate > 0.035:
-            raise HTTPException(
-                status_code=400,
-                detail=f"영업관리자 수익율은 0% ~ 3.5% (VAT 별도) 범위 내에서 설정해야 합니다."
-            )
+        # 커미션율 검증 (생성 시와 동일하게 유효 수수료율 기준)
+        mfr, pgr, _ = get_effective_fee_rates(db, a.merchant_id)
+        _validate_commission_rate(req.commission_rate, mfr, pgr)
         a.commission_rate = req.commission_rate
     if req.memo is not None:
         a.memo = req.memo
@@ -958,6 +965,15 @@ def calculate_settlement(
     end = dt.fromisoformat(period_end)
     if end.hour == 0 and end.minute == 0 and end.second == 0:
         end = end + timedelta(days=1) - timedelta(microseconds=1)
+
+    # 같은 기간으로 재호출 시 Settlement 중복 생성 방지 (기간 겹침 검사)
+    existing = db.query(Settlement).filter(
+        Settlement.merchant_id == merchant_id,
+        Settlement.period_start <= end,
+        Settlement.period_end >= start,
+    ).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="이미 해당 기간에 정산이 존재합니다.")
 
     txns = db.query(Transaction).filter(
         Transaction.merchant_id == merchant_id,
@@ -1365,6 +1381,27 @@ def _validate_commission_rate(commission_rate: float, merchant_fee_rate: float, 
         )
 
 
+def _validate_merchant_commission_fit(
+    db: Session, merchant_id: int, merchant_fee_rate: float, pg_fee_rate: float
+):
+    """수수료율 변경 전 교차 검증.
+
+    해당 가맹점의 기존 유효 영업 커미션율이 새 플랫폼 수익률
+    (merchant_fee_rate - pg_fee_rate)을 초과하면 400.
+    검증 없이 저장하면 이후 정산 계산에서 ValueError → 500 이 된다.
+    """
+    assign = db.query(MerchantSalesAssignment).filter(
+        MerchantSalesAssignment.merchant_id == merchant_id,
+        MerchantSalesAssignment.is_active == True,  # noqa: E712
+    ).first()
+    if not assign:
+        return
+    _, _, commission_rate = get_effective_fee_rates(
+        db, merchant_id, assign.sales_manager_user_id
+    )
+    _validate_commission_rate(commission_rate, merchant_fee_rate, pg_fee_rate)
+
+
 @router.get("/fee-settings")
 def get_fee_settings(db: Session = Depends(get_db), _=Depends(require_admin)):
     """전역 기본 수수료 설정 조회 (merchant_id=NULL 레코드)."""
@@ -1466,13 +1503,25 @@ def update_merchant_fee_override(
         raise HTTPException(status_code=404, detail="가맹점을 찾을 수 없습니다")
 
     fp = db.query(FeePolicy).filter(FeePolicy.merchant_id == mid).first()
+    mfr_default, pgr_default, _ = get_effective_fee_rates(db, None)
 
     # 오버라이드 값이 없으면 기존 레코드 삭제 (전역값 사용)
     if req.merchant_fee_rate is None and req.pg_fee_rate is None:
         if fp:
+            # 전역값으로 되돌려도 기존 커미션율이 수용 가능해야 한다.
+            _validate_merchant_commission_fit(db, mid, mfr_default, pgr_default)
             db.delete(fp)
             db.commit()
         return {"ok": True, "action": "reset_to_global"}
+
+    # 저장 전 교차 검증 — 변경 후 유효 수수료율로 기존 커미션율을 확인한다.
+    new_mfr = float(req.merchant_fee_rate) if req.merchant_fee_rate is not None else (
+        float(fp.merchant_fee_rate) if fp and fp.merchant_fee_rate is not None else mfr_default
+    )
+    new_pgr = float(req.pg_fee_rate) if req.pg_fee_rate is not None else (
+        float(fp.pg_fee_rate) if fp and fp.pg_fee_rate is not None else pgr_default
+    )
+    _validate_merchant_commission_fit(db, mid, new_mfr, new_pgr)
 
     if fp:
         if req.merchant_fee_rate is not None:
@@ -1481,7 +1530,6 @@ def update_merchant_fee_override(
             fp.pg_fee_rate = req.pg_fee_rate
     else:
         # 새 레코드 생성 (미지정 필드는 전역값에서 채움)
-        mfr_default, pgr_default, _ = get_effective_fee_rates(db, None)
         fp = FeePolicy(
             merchant_id=mid,
             merchant_fee_rate=req.merchant_fee_rate if req.merchant_fee_rate is not None else mfr_default,

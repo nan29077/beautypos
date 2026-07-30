@@ -33,6 +33,10 @@ class TokenResponse(BaseModel):
     user: dict
 
 
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
 # ─── Merchant ────────────────────────────────────────────────
 
 class MerchantCreate(BaseModel):

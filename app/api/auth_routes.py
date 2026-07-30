@@ -11,10 +11,10 @@ from app.models.merchant import Merchant
 from app.models.settlement import MerchantSalesAssignment
 from app.auth.jwt_handler import (
     hash_password, verify_password,
-    create_access_token, create_refresh_token,
+    create_access_token, create_refresh_token, decode_token,
 )
 from app.auth.dependencies import get_current_user
-from app.schemas.schemas import RegisterRequest, LoginRequest, TokenResponse
+from app.schemas.schemas import RegisterRequest, LoginRequest, TokenResponse, RefreshRequest
 from app.config import get_settings
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -117,6 +117,33 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Account is disabled")
     return _issue_tokens(user)
+
+
+@router.post("/refresh")
+def refresh_access_token(req: RefreshRequest, db: Session = Depends(get_db)):
+    """refresh_token 으로 새 access_token 발급.
+
+    access_token 만료마다 강제 로그아웃되지 않도록 프론트가 401 시 호출한다.
+    """
+    payload = decode_token(req.refresh_token)
+    if not payload or payload.get("type") != "refresh":
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    user = db.query(User).filter(User.id == int(user_id)).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="Account is disabled")
+
+    access = create_access_token({
+        "sub": str(user.id),
+        "role": user.role.value if isinstance(user.role, UserRole) else user.role,
+    })
+    return {"access_token": access, "token_type": "bearer"}
 
 
 @router.post("/test-login")
