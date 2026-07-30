@@ -88,6 +88,29 @@
     </section>
 
     <!-- Modals -->
+    <div class="modal fade analysis-settings-modal" id="analysisSettingsModal" tabindex="-1" aria-labelledby="analysisSettingsTitle" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="analysis-settings-sheet-handle" aria-hidden="true"></div>
+                <div class="modal-header">
+                    <div class="analysis-settings-title">
+                        <span><i class="fas fa-chart-line"></i></span>
+                        <div>
+                            <h5 class="modal-title" id="analysisSettingsTitle">광고 분석설정</h5>
+                            <small>우리 매장과 경쟁 매장을 관리합니다</small>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="설정창 닫기"></button>
+                </div>
+                <div class="modal-body" id="analysisSettingsBody"></div>
+                <div class="modal-footer">
+                    <small><i class="fas fa-shield-alt me-1"></i>등록한 정보는 광고 분석에만 사용됩니다.</small>
+                    <button type="button" class="btn btn-primary px-4" data-bs-dismiss="modal">설정 완료</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="modal fade" id="formModal" tabindex="-1">
         <div class="modal-dialog modal-lg">
             <div class="modal-content" style="border-radius:1rem; border:none;">

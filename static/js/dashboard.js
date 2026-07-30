@@ -3632,42 +3632,6 @@ async function loadOwnerAnalysis(c, t) {
         </div>
     </div>
 
-    <!-- 설정 패널 (토글) -->
-    <div id="managePanel" style="display:none" class="mt-3 mb-3">
-        <div class="card border-secondary border-opacity-25">
-            <div class="card-header bg-light border-0">
-                <h6 class="mb-0 fw-bold"><i class="fas fa-gear text-secondary me-2"></i>광고 분석설정 — 우리 매장과 경쟁업체 등록</h6>
-            </div>
-            <div class="card-body">
-                <div class="row g-3">
-                    <div class="col-md-6">
-                        <h6 class="fw-bold text-primary mb-1"><i class="fas fa-map-marker-alt me-1"></i>우리 매장</h6>
-                        <p class="text-muted mb-2" style="font-size:.76rem">네이버 지도에서 우리 매장 페이지 주소를 복사해 붙여넣고, 손님이 검색할 만한 단어를 적어주세요.</p>
-                        <div class="input-group input-group-sm mb-2">
-                            <input class="form-control" id="newProfileUrl" placeholder="네이버 플레이스 URL">
-                            <button class="btn btn-primary" onclick="addPlaceProfile()"><i class="fas fa-plus"></i></button>
-                        </div>
-                        <div class="row g-2 mb-2">
-                            <div class="col-5"><input class="form-control form-control-sm" id="newProfileNick" placeholder="매장 별칭"></div>
-                            <div class="col-7"><input class="form-control form-control-sm" id="newProfileKeyword" placeholder="검색어 (예: 홍대 미용실)"></div>
-                        </div>
-                        <div id="profileList"></div>
-                    </div>
-                    <div class="col-md-6">
-                        <h6 class="fw-bold text-danger mb-1"><i class="fas fa-users me-1"></i>경쟁업체 (최대 ${MAX_COMPETITORS}곳)</h6>
-                        <p class="text-muted mb-2" style="font-size:.76rem">비교하고 싶은 근처 매장을 등록하면 순위와 리뷰를 나란히 보여드려요.</p>
-                        <div class="input-group input-group-sm mb-2">
-                            <input class="form-control" id="newCompUrl" placeholder="경쟁업체 플레이스 URL">
-                            <input class="form-control" id="newCompMemo" placeholder="업체명" style="max-width:120px">
-                            <button class="btn btn-danger" onclick="addCompetitor()"><i class="fas fa-plus"></i></button>
-                        </div>
-                        <div id="competitorList"></div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <!-- 하단 액션 -->
     <div class="analysis-bottom-actions text-center mt-3">
         <button class="btn btn-outline-primary me-2" onclick="navigate('owner-adorder-new')"><i class="fas fa-bullhorn me-1"></i>광고 주문하기</button>
@@ -3682,6 +3646,7 @@ async function loadOwnerAnalysis(c, t) {
         if (btn) switchAnalysisTab(btn.dataset.tab, btn);
     });
 
+    renderAnalysisSettingsModal();
     loadAnalysisOverview();
     reloadAnalysis();
     loadAnalysisTrend();
@@ -3761,7 +3726,7 @@ function renderTodayStatus(box, d) {
         box.innerHTML = `<div class="card border-0 shadow-sm"><div class="card-body text-center py-4">
             <i class="fas fa-store fa-2x text-muted mb-2 d-block opacity-50"></i>
             <p class="mb-1 fw-bold">아직 우리 매장이 등록되지 않았어요</p>
-            <p class="text-muted small mb-3">아래 <strong>광고 분석설정</strong>에서 네이버 플레이스 주소와 검색어를 등록해 주세요.</p>
+            <p class="text-muted small mb-3"><strong>광고 분석설정</strong> 버튼을 눌러 네이버 플레이스 주소와 검색어를 등록해 주세요.</p>
             <button class="btn btn-sm btn-primary" onclick="toggleManagePanel()"><i class="fas fa-gear me-1"></i>광고 분석설정 열기</button>
         </div></div>`;
         return;
@@ -4296,16 +4261,64 @@ async function loadAnalysisTrend(days) {
     }
 }
 
+function renderAnalysisSettingsModal() {
+    const body = document.getElementById('analysisSettingsBody');
+    if (!body) return;
+    body.innerHTML = `
+        <div class="analysis-settings-intro">
+            <span><i class="fas fa-lightbulb"></i></span>
+            <div><strong>우리 매장과 주변 매장을 등록해 주세요</strong><small>네이버 플레이스 순위와 리뷰 변화를 매일 비교해서 보여드려요.</small></div>
+        </div>
+        <div class="row g-3 analysis-settings-grid">
+            <div class="col-md-6">
+                <section class="analysis-settings-section is-mine">
+                    <div class="analysis-settings-section-head">
+                        <span><i class="fas fa-store"></i></span>
+                        <div><h6>우리 매장</h6><small>순위를 확인할 기준 매장</small></div>
+                    </div>
+                    <p>네이버 지도에서 우리 매장 페이지 주소를 복사해 붙여넣고, 손님이 검색할 만한 단어를 적어주세요.</p>
+                    <label class="form-label" for="newProfileUrl">네이버 플레이스 주소</label>
+                    <div class="input-group mb-3">
+                        <input class="form-control" id="newProfileUrl" placeholder="https://naver.me/..." inputmode="url">
+                        <button class="btn btn-primary analysis-settings-add-btn" type="button" onclick="addPlaceProfile()" aria-label="우리 매장 등록"><i class="fas fa-plus me-1"></i><span>등록</span></button>
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-5"><label class="form-label" for="newProfileNick">매장 별칭</label><input class="form-control" id="newProfileNick" placeholder="예: 홍대점"></div>
+                        <div class="col-7"><label class="form-label" for="newProfileKeyword">주요 검색어</label><input class="form-control" id="newProfileKeyword" placeholder="예: 홍대 미용실"></div>
+                    </div>
+                    <div id="profileList" class="analysis-settings-list"></div>
+                </section>
+            </div>
+            <div class="col-md-6">
+                <section class="analysis-settings-section is-competitor">
+                    <div class="analysis-settings-section-head">
+                        <span><i class="fas fa-store-alt"></i></span>
+                        <div><h6>경쟁 매장</h6><small>비교할 주변 매장 · 최대 ${MAX_COMPETITORS}곳</small></div>
+                    </div>
+                    <p>비교하고 싶은 근처 매장을 등록하면 순위와 리뷰를 우리 매장과 나란히 보여드려요.</p>
+                    <label class="form-label" for="newCompUrl">경쟁 매장 정보</label>
+                    <div class="input-group analysis-competitor-inputs mb-3">
+                        <input class="form-control" id="newCompUrl" placeholder="네이버 플레이스 URL" inputmode="url">
+                        <input class="form-control" id="newCompMemo" placeholder="업체명">
+                        <button class="btn btn-primary analysis-settings-add-btn" type="button" onclick="addCompetitor()" aria-label="경쟁 매장 등록"><i class="fas fa-plus me-1"></i><span>등록</span></button>
+                    </div>
+                    <div id="competitorList" class="analysis-settings-list"></div>
+                </section>
+            </div>
+        </div>`;
+}
+
 function toggleManagePanel() {
-    const panel = document.getElementById('managePanel');
-    if (!panel) return;
-    const opening = panel.style.display === 'none';
-    panel.style.display = opening ? '' : 'none';
-    if (opening) {
-        loadManageLists();
-        // 설정 패널이 화면 아래에 있으므로 열 때 위치로 이동시켜 준다.
-        try { panel.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) { panel.scrollIntoView(); }
+    const modalEl = document.getElementById('analysisSettingsModal');
+    if (!modalEl || !window.bootstrap) return;
+    renderAnalysisSettingsModal();
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    if (modalEl.classList.contains('show')) {
+        modal.hide();
+        return;
     }
+    modal.show();
+    loadManageLists();
 }
 
 function switchAnalysisTab(tabName, btnEl) {
