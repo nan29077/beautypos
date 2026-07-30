@@ -5458,6 +5458,65 @@ async function crmReservationSave(force){
 }
 
 // ─── Analytics ─────────────────────────────────────────────
+function crmAnalyticsMoneyLabel(value) {
+    const amount = Number(value) || 0;
+    if (amount === 0) return '0원';
+    if (Math.abs(amount) >= 100000000) {
+        const eok = amount / 100000000;
+        return `${Number.isInteger(eok) ? eok : eok.toFixed(1)}억원`;
+    }
+    if (Math.abs(amount) >= 10000) {
+        const man = amount / 10000;
+        return `${Number.isInteger(man) ? man : man.toFixed(1)}만원`;
+    }
+    if (Math.abs(amount) >= 1000) return `${Math.round(amount / 1000)}천원`;
+    return `${amount.toLocaleString('ko-KR')}원`;
+}
+
+function crmAnalyticsChartOptions({ xTitle, yTitle, valueType = 'money' }) {
+    const isMoney = valueType === 'money';
+    return {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { intersect: false, mode: 'index' },
+        plugins: {
+            legend: { display: false },
+            tooltip: {
+                displayColors: false,
+                backgroundColor: 'rgba(15, 36, 62, .94)',
+                padding: 12,
+                titleFont: { size: 13, weight: '700' },
+                bodyFont: { size: 13, weight: '600' },
+                callbacks: {
+                    label: context => isMoney
+                        ? ` 매출액: ${formatMoney(Number(context.raw) || 0)}`
+                        : ` 방문 건수: ${(Number(context.raw) || 0).toLocaleString('ko-KR')}건`
+                }
+            }
+        },
+        scales: {
+            x: {
+                title: { display: true, text: xTitle, color: '#52677a', font: { size: 12, weight: '700' } },
+                ticks: { color: '#52677a', font: { size: 11 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 12 },
+                grid: { display: false }
+            },
+            y: {
+                beginAtZero: true,
+                title: { display: true, text: yTitle, color: '#52677a', font: { size: 12, weight: '700' } },
+                ticks: {
+                    color: '#52677a',
+                    font: { size: 11, weight: '600' },
+                    maxTicksLimit: 6,
+                    precision: 0,
+                    callback: value => isMoney ? crmAnalyticsMoneyLabel(value) : `${value}건`
+                },
+                grid: { color: 'rgba(113, 139, 163, .18)', drawTicks: false },
+                border: { display: false }
+            }
+        }
+    };
+}
+
 async function crmRenderAnalytics(body){
     body.innerHTML=`
         <div class="d-flex justify-content-end mb-3"><select class="form-select form-select-sm" id="crmAnRange" style="width:140px"><option value="week">이번주</option><option value="month" selected>이번달</option><option value="year">올해</option><option value="all">전체</option></select></div>
@@ -5478,18 +5537,18 @@ async function crmRenderAnalytics(body){
                     ${kpi('방문 수',a.total_visits+'건')}
                 </div>
                 <div class="row g-3">
-                    <div class="col-lg-8"><div class="card data-card"><div class="card-header"><h6 class="mb-0">일별 매출 추이</h6></div><div class="card-body"><canvas id="anDaily" height="110"></canvas></div></div></div>
+                    <div class="col-lg-8"><div class="card data-card crm-analytics-chart-card"><div class="card-header crm-analytics-chart-head"><div><h6 class="mb-1">일별 매출 추이</h6><small>날짜마다 매출이 어떻게 달라졌는지 보여드려요.</small></div><span>세로 기준 · 매출액</span></div><div class="card-body"><div class="crm-analytics-chart crm-analytics-chart-wide"><canvas id="anDaily" aria-label="날짜별 매출액 그래프"></canvas></div><p class="crm-analytics-chart-help"><i class="fas fa-circle-info"></i>왼쪽 숫자는 매출액입니다. 선 위에 마우스를 올리면 정확한 금액을 볼 수 있어요.</p></div></div></div>
                     <div class="col-lg-4"><div class="card data-card"><div class="card-header"><h6 class="mb-0">신규 vs 재방문</h6></div><div class="card-body"><canvas id="anNew" height="110"></canvas></div></div></div>
-                    <div class="col-lg-6"><div class="card data-card"><div class="card-header"><h6 class="mb-0">요일별 매출</h6></div><div class="card-body"><canvas id="anWeekday" height="110"></canvas></div></div></div>
-                    <div class="col-lg-6"><div class="card data-card"><div class="card-header"><h6 class="mb-0">시간대별 방문</h6></div><div class="card-body"><canvas id="anHour" height="110"></canvas></div></div></div>
+                    <div class="col-lg-6"><div class="card data-card crm-analytics-chart-card"><div class="card-header crm-analytics-chart-head"><div><h6 class="mb-1">요일별 매출</h6><small>어떤 요일에 매출이 높은지 비교해요.</small></div><span>세로 기준 · 매출액</span></div><div class="card-body"><div class="crm-analytics-chart"><canvas id="anWeekday" aria-label="요일별 매출액 그래프"></canvas></div><p class="crm-analytics-chart-help"><i class="fas fa-circle-info"></i>막대가 높을수록 해당 요일의 매출이 많다는 뜻입니다.</p></div></div></div>
+                    <div class="col-lg-6"><div class="card data-card crm-analytics-chart-card"><div class="card-header crm-analytics-chart-head"><div><h6 class="mb-1">시간대별 방문</h6><small>고객 방문이 몰리는 시간을 확인해요.</small></div><span>세로 기준 · 방문 건수</span></div><div class="card-body"><div class="crm-analytics-chart"><canvas id="anHour" aria-label="시간대별 방문 건수 그래프"></canvas></div><p class="crm-analytics-chart-help"><i class="fas fa-circle-info"></i>막대가 높을수록 해당 시간에 방문 고객이 많다는 뜻입니다.</p></div></div></div>
                     <div class="col-lg-6"><div class="card data-card"><div class="card-header"><h6 class="mb-0">시술별 매출</h6></div><div class="card-body p-0"><table class="table table-sm mb-0 align-middle"><thead class="table-light"><tr><th>시술</th><th class="text-end">건수</th><th class="text-end">매출</th></tr></thead><tbody>${svcRows}</tbody></table></div></div></div>
                     <div class="col-lg-6"><div class="card data-card"><div class="card-header"><h6 class="mb-0">디자이너별 매출</h6></div><div class="card-body p-0"><table class="table table-sm mb-0 align-middle"><thead class="table-light"><tr><th>디자이너</th><th class="text-end">건수</th><th class="text-end">매출</th></tr></thead><tbody>${staffRows}</tbody></table></div></div></div>
                 </div>`;
             if(window.Chart){
-                const dc=document.getElementById('anDaily'); if(dc) crmChartRefs.push(new Chart(dc,{type:'line',data:{labels:(a.daily||[]).map(d=>d.date.slice(5)),datasets:[{data:(a.daily||[]).map(d=>d.revenue),borderColor:'#667eea',backgroundColor:'rgba(102,126,234,.1)',fill:true,tension:.3}]},options:{plugins:{legend:{display:false}},scales:{y:{ticks:{callback:v=>(v/10000)+'만'}}}}}));
+                const dc=document.getElementById('anDaily'); if(dc) crmChartRefs.push(new Chart(dc,{type:'line',data:{labels:(a.daily||[]).map(d=>d.date.slice(5)),datasets:[{data:(a.daily||[]).map(d=>d.revenue),borderColor:'#0f6cbd',backgroundColor:'rgba(14,165,233,.12)',pointBackgroundColor:'#fff',pointBorderColor:'#0f6cbd',pointBorderWidth:2,pointRadius:3,pointHoverRadius:6,borderWidth:3,fill:true,tension:.3}]},options:crmAnalyticsChartOptions({xTitle:'결제 날짜',yTitle:'매출액 (원)'})}));
                 const nc=document.getElementById('anNew'); if(nc) crmChartRefs.push(new Chart(nc,{type:'doughnut',data:{labels:['신규','재방문'],datasets:[{data:[a.new_count,a.revisit_count],backgroundColor:['#10b981','#667eea']}]},options:{plugins:{legend:{position:'bottom'}}}}));
-                const wc=document.getElementById('anWeekday'); if(wc) crmChartRefs.push(new Chart(wc,{type:'bar',data:{labels:(a.by_weekday||[]).map(x=>x.label),datasets:[{data:(a.by_weekday||[]).map(x=>x.revenue),backgroundColor:'#f59e0b',borderRadius:5}]},options:{plugins:{legend:{display:false}},scales:{y:{ticks:{callback:v=>(v/10000)+'만'}}}}}));
-                const hc=document.getElementById('anHour'); if(hc) crmChartRefs.push(new Chart(hc,{type:'bar',data:{labels:(a.by_hour||[]).map(x=>x.hour+'시'),datasets:[{data:(a.by_hour||[]).map(x=>x.count),backgroundColor:'#8b5cf6',borderRadius:5}]},options:{plugins:{legend:{display:false}}}}));
+                const wc=document.getElementById('anWeekday'); if(wc) crmChartRefs.push(new Chart(wc,{type:'bar',data:{labels:(a.by_weekday||[]).map(x=>x.label),datasets:[{data:(a.by_weekday||[]).map(x=>x.revenue),backgroundColor:'#0ea5e9',hoverBackgroundColor:'#0f6cbd',borderRadius:7,borderSkipped:false}]},options:crmAnalyticsChartOptions({xTitle:'요일',yTitle:'매출액 (원)'})}));
+                const hc=document.getElementById('anHour'); if(hc) crmChartRefs.push(new Chart(hc,{type:'bar',data:{labels:(a.by_hour||[]).map(x=>x.hour+'시'),datasets:[{data:(a.by_hour||[]).map(x=>x.count),backgroundColor:'#2c5f8a',hoverBackgroundColor:'#0f6cbd',borderRadius:7,borderSkipped:false}]},options:crmAnalyticsChartOptions({xTitle:'방문 시간',yTitle:'방문 건수 (건)',valueType:'count'})}));
             }
         }catch(e){ box.innerHTML=`<div class="alert alert-danger">${escapeHtml(e.message)}</div>`; }
     };

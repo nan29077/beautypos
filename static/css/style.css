@@ -260,6 +260,80 @@ body {
     box-shadow: 0 9px 22px rgba(17,10,13,.2);
     transform: none;
 }
+
+/* ─── CRM 쉬운 매출 분석 그래프 ───────────────────────── */
+.crm-analytics-chart-card {
+    height: 100%;
+}
+
+.crm-analytics-chart-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.crm-analytics-chart-head small {
+    display: block;
+    color: var(--beauty-muted);
+    font-size: .72rem;
+    line-height: 1.45;
+}
+
+.crm-analytics-chart-head > span {
+    flex: 0 0 auto;
+    padding: 5px 9px;
+    border: 1px solid #cce5f3;
+    border-radius: 999px;
+    color: #0f5f98;
+    background: #eef8fd;
+    font-size: .68rem;
+    font-weight: 800;
+}
+
+.crm-analytics-chart {
+    position: relative;
+    width: 100%;
+    height: 260px;
+}
+
+.crm-analytics-chart-wide {
+    height: 280px;
+}
+
+.crm-analytics-chart-help {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    margin: 12px 0 0;
+    padding: 9px 11px;
+    border-radius: 10px;
+    color: #52677a;
+    background: #f4f8fb;
+    font-size: .72rem;
+    line-height: 1.55;
+}
+
+.crm-analytics-chart-help i {
+    margin-top: 3px;
+    color: #0ea5e9;
+}
+
+@media (max-width: 767.98px) {
+    .crm-analytics-chart-head {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .crm-analytics-chart {
+        height: 235px;
+    }
+
+    .crm-analytics-chart-wide {
+        height: 250px;
+    }
+}
 .beauty-brand-mark img {
     display: block;
     width: 100%;
@@ -2571,7 +2645,7 @@ body[data-page="admin-metrics"] .card[style*="linear-gradient"] { background: li
     }
 
     /* 분석 탭 KPI 카드 2열 고정 */
-    #crmAnBody .row > [class*="col-6"] {
+    #crmAnBody .row > .col-6.col-lg-3 {
         flex: 0 0 50% !important;
         max-width: 50% !important;
     }
