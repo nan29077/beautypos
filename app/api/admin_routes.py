@@ -36,6 +36,8 @@ from app.services.pg_service import get_pg_provider
 from app.services.settlement_service import (
     compute_distribution, get_effective_fee_rates, compute_fee_distribution,
     DEFAULT_MERCHANT_FEE_RATE, DEFAULT_PG_FEE_RATE, DEFAULT_SALES_COMMISSION_RATE,
+    apply_vat, format_rate_excl_vat, format_rate_with_vat,
+    VAT_RATE, VAT_NOTICE,
 )
 from app.schemas.schemas import (
     MerchantCreate, MerchantUpdate, PGConfigCreate,
@@ -551,9 +553,13 @@ def get_fee_policy(mid: int, db: Session = Depends(get_db), _=Depends(require_ad
             "memo": assign.memo,
         }
 
+    # 실제 적용율 (부가세 포함) — 금액은 이 값으로 계산된다.
+    mfr_vat = apply_vat(mfr)
+    pgr_vat = apply_vat(pgr)
+
     sample = 10000
-    sim_merchant_fee = round(sample * mfr)
-    sim_pg_cost = round(sample * pgr)
+    sim_merchant_fee = round(sample * mfr_vat)
+    sim_pg_cost = round(sample * pgr_vat)
     sim_platform = sim_merchant_fee - sim_pg_cost
     sim_commission = round(sample * comm_rate)
     sim_company = sim_platform - sim_commission
@@ -561,15 +567,28 @@ def get_fee_policy(mid: int, db: Session = Depends(get_db), _=Depends(require_ad
 
     return {
         "merchant_id": mid,
+        # 저장값 (부가세 별도)
         "merchant_fee_rate": mfr,
         "pg_fee_rate": pgr,
         "has_fee_policy": fp is not None,
         "has_sales_manager": assign is not None,
         "sales_info": sales_info,
+        # 실제 적용율 (부가세 포함)
+        "merchant_fee_rate_with_vat": mfr_vat,
+        "pg_fee_rate_with_vat": pgr_vat,
+        "vat_rate": VAT_RATE,
+        "fee_rate_vat_exclusive": True,
+        "vat_notice": VAT_NOTICE,
+        "merchant_fee_rate_label": format_rate_with_vat(mfr),
+        "pg_fee_rate_label": format_rate_with_vat(pgr),
         # 하위 호환 필드
-        "vat_inclusive_rate": pgr,
-        "pg_fee_rate_excl_vat": round(pgr / 1.1, 4),
-        "description": f"미용실수수료 {mfr*100:.2f}% / PG비용 {pgr*100:.2f}% / 영업커미션 {comm_rate*100:.2f}%",
+        "vat_inclusive_rate": pgr_vat,
+        "pg_fee_rate_excl_vat": pgr,
+        "description": (
+            f"미용실수수료 {format_rate_excl_vat(mfr)} / PG비용 {format_rate_excl_vat(pgr)}"
+            f" / 영업커미션 {comm_rate*100:.2f}%"
+            f" — 실제 적용: 미용실 {mfr_vat*100:.2f}% / PG {pgr_vat*100:.2f}%"
+        ),
         "simulation": {
             "sample_amount": sample,
             "merchant_fee_amount": sim_merchant_fee,
@@ -580,11 +599,13 @@ def get_fee_policy(mid: int, db: Session = Depends(get_db), _=Depends(require_ad
             "net_amount": int(sim_net),
             # 하위 호환
             "pg_fee_amount": sim_pg_cost,
+            "vat_included": True,
             "breakdown": (
                 f"결제 {sample:,}원 → 미용실수수료 {sim_merchant_fee:,}원"
                 f" (PG {sim_pg_cost:,}원 + 플랫폼 {sim_platform:,}원"
                 + (f" = 영업 {sim_commission:,}원 + 회사 {sim_company:,}원" if assign else "")
                 + f") → 미용실수령액 {int(sim_net):,}원"
+                + " (수수료 금액은 부가세 포함)"
             ),
         },
     }
@@ -592,8 +613,12 @@ def get_fee_policy(mid: int, db: Session = Depends(get_db), _=Depends(require_ad
 
 @router.post("/merchants/{mid}/fee-policy")
 def set_fee_policy(mid: int, req: FeePolicyUpdate, db: Session = Depends(get_db), _=Depends(require_admin)):
-    """하위 호환 엔드포인트 — pg_fee_rate 만 저장. 신규는 PUT /merchants/{mid}/fee-override 사용 권장."""
+    """하위 호환 엔드포인트 — pg_fee_rate 만 저장. 신규는 PUT /merchants/{mid}/fee-override 사용 권장.
+
+    req.pg_fee_rate 는 **부가세 별도** 기준으로 그대로 저장하고, 정산 계산 시 × 1.1 이 적용된다.
+    """
     pgr = float(req.pg_fee_rate)
+    pgr_vat = apply_vat(pgr)
     fp = db.query(FeePolicy).filter(FeePolicy.merchant_id == mid).first()
     mfr_global, _, _ = get_effective_fee_rates(db, None)
 
@@ -601,18 +626,29 @@ def set_fee_policy(mid: int, req: FeePolicyUpdate, db: Session = Depends(get_db)
     new_mfr = float(fp.merchant_fee_rate) if fp and fp.merchant_fee_rate is not None else mfr_global
     _validate_merchant_commission_fit(db, mid, new_mfr, pgr)
 
+    # pg_fee_rate 는 부가세 별도 저장값, vat_inclusive_rate 는 실제 적용율(× 1.1)
     if fp:
         fp.pg_fee_rate = pgr
-        fp.vat_inclusive_rate = pgr
+        fp.vat_inclusive_rate = round(pgr_vat, 4)
     else:
-        fp = FeePolicy(merchant_id=mid, pg_fee_rate=pgr, merchant_fee_rate=mfr_global, vat_inclusive_rate=pgr)
+        fp = FeePolicy(merchant_id=mid, pg_fee_rate=pgr, merchant_fee_rate=mfr_global,
+                       vat_inclusive_rate=round(pgr_vat, 4))
         db.add(fp)
     db.commit()
     return {
         "ok": True,
         "pg_fee_rate": pgr,
-        "vat_inclusive_rate": pgr,
-        "example": f"10,000원 결제 시 PG수수료 {int(10000 * pgr):,}원 / 미용실수령액 {int(10000 * (1 - pgr)):,}원",
+        "pg_fee_rate_with_vat": pgr_vat,
+        "vat_inclusive_rate": pgr_vat,
+        "vat_rate": VAT_RATE,
+        "fee_rate_vat_exclusive": True,
+        "vat_notice": VAT_NOTICE,
+        "pg_fee_rate_label": format_rate_with_vat(pgr),
+        "example": (
+            f"10,000원 결제 시 PG수수료 {int(10000 * pgr_vat):,}원"
+            f" (입력 {pgr*100:.2f}% 부가세 별도 → 실제 적용 {pgr_vat*100:.2f}%)"
+            f" / 미용실수령액 {int(10000 * (1 - pgr_vat)):,}원"
+        ),
     }
 
 
@@ -635,17 +671,21 @@ def fee_policy_overview(db: Session = Depends(get_db), _=Depends(require_admin))
         platform_rate = mfr - pgr
         company_rate = platform_rate - comm_rate
 
+        # 실제 적용율 (부가세 포함) — 금액은 이 값으로 계산된다.
+        mfr_vat = apply_vat(mfr)
+        pgr_vat = apply_vat(pgr)
+
         sales_name = None
         if assign:
             su = db.query(User).filter(User.id == assign.sales_manager_user_id).first()
             sales_name = su.name if su else None
 
         sample = 10000
-        sim_merchant_fee = round(sample * mfr)
-        sim_pg_cost = round(sample * pgr)
-        sim_platform = round(sample * platform_rate)
+        sim_merchant_fee = round(sample * mfr_vat)
+        sim_pg_cost = round(sample * pgr_vat)
+        sim_platform = sim_merchant_fee - sim_pg_cost
         sim_commission = round(sample * comm_rate)
-        sim_company = round(sample * company_rate)
+        sim_company = sim_platform - sim_commission
         sim_net = sample - sim_merchant_fee
 
         results.append({
@@ -664,11 +704,18 @@ def fee_policy_overview(db: Session = Depends(get_db), _=Depends(require_admin))
             "commission_rate_pct": round(comm_rate * 100, 2),
             "company_profit_rate": round(company_rate, 4),
             "assignment_id": assign.id if assign else None,
+            # 실제 적용율 (부가세 포함) — 위 rate 필드는 부가세 별도 저장값
+            "merchant_fee_rate_with_vat": mfr_vat,
+            "merchant_fee_rate_with_vat_pct": round(mfr_vat * 100, 2),
+            "pg_fee_rate_with_vat": pgr_vat,
+            "pg_fee_rate_with_vat_pct": round(pgr_vat * 100, 2),
+            "vat_rate": VAT_RATE,
+            "fee_rate_vat_exclusive": True,
             # 하위 호환 필드
-            "pg_fee_rate_excl_vat": round(pgr / 1.1, 4),
-            "pg_fee_rate_excl_vat_pct": round(pgr / 1.1 * 100, 2),
-            "vat_inclusive_rate": pgr,
-            "vat_inclusive_rate_pct": round(pgr * 100, 2),
+            "pg_fee_rate_excl_vat": pgr,
+            "pg_fee_rate_excl_vat_pct": round(pgr * 100, 2),
+            "vat_inclusive_rate": pgr_vat,
+            "vat_inclusive_rate_pct": round(pgr_vat * 100, 2),
             # 시뮬레이션 (10,000원 기준)
             "sim_merchant_fee": sim_merchant_fee,
             "sim_pg_fee": sim_pg_cost,
@@ -1021,9 +1068,15 @@ def calculate_settlement(
         "company_profit_amount": dist["company_profit"],
         "net_amount": dist["net_payout"],
         "transactions_count": len(txns),
+        # 저장값 (부가세 별도)
         "merchant_fee_rate": merchant_fee_rate,
         "pg_fee_rate": pg_fee_rate,
         "sales_commission_rate": commission_rate,
+        # 실제 적용율 (부가세 포함) — 위 금액은 이 값으로 계산됨
+        "merchant_fee_rate_with_vat": dist["merchant_fee_rate_with_vat"],
+        "pg_fee_rate_with_vat": dist["pg_fee_rate_with_vat"],
+        "vat_rate": VAT_RATE,
+        "fee_rate_vat_exclusive": True,
     }
 
 
@@ -1389,22 +1442,29 @@ def _validate_merchant_commission_fit(
     해당 가맹점의 기존 유효 영업 커미션율이 새 플랫폼 수익률
     (merchant_fee_rate - pg_fee_rate)을 초과하면 400.
     검증 없이 저장하면 이후 정산 계산에서 ValueError → 500 이 된다.
+
+    활성 배정이 없어도 전역 SalesCommissionPolicy / 기본값이 커미션율로 적용되므로
+    (compute_fee_distribution 은 배정 여부와 무관하게 검증한다) 이 경우에도
+    유효 커미션율을 구해서 검증한다.
     """
     assign = db.query(MerchantSalesAssignment).filter(
         MerchantSalesAssignment.merchant_id == merchant_id,
         MerchantSalesAssignment.is_active == True,  # noqa: E712
     ).first()
-    if not assign:
-        return
+    sales_manager_user_id = assign.sales_manager_user_id if assign else None
     _, _, commission_rate = get_effective_fee_rates(
-        db, merchant_id, assign.sales_manager_user_id
+        db, merchant_id, sales_manager_user_id
     )
     _validate_commission_rate(commission_rate, merchant_fee_rate, pg_fee_rate)
 
 
 @router.get("/fee-settings")
 def get_fee_settings(db: Session = Depends(get_db), _=Depends(require_admin)):
-    """전역 기본 수수료 설정 조회 (merchant_id=NULL 레코드)."""
+    """전역 기본 수수료 설정 조회 (merchant_id=NULL 레코드).
+
+    merchant_fee_rate / pg_fee_rate 는 부가세 별도 기준 저장값이며,
+    *_with_vat 필드가 실제 적용율(× 1.1)이다.
+    """
     fp = db.query(FeePolicy).filter(FeePolicy.merchant_id.is_(None)).first()
     scp = db.query(SalesCommissionPolicy).filter(
         SalesCommissionPolicy.sales_manager_user_id.is_(None)
@@ -1416,8 +1476,21 @@ def get_fee_settings(db: Session = Depends(get_db), _=Depends(require_admin)):
     platform_rate = mfr - pgr
     company_rate = platform_rate - scr
 
+    # 실제 적용율 (부가세 포함) — 금액은 이 값으로 계산된다.
+    mfr_vat = apply_vat(mfr)
+    pgr_vat = apply_vat(pgr)
+
+    # 시뮬레이션 — compute_fee_distribution() 과 동일한 계산 순서 (부가세 포함 적용율 기준).
+    # 조회 엔드포인트이므로 커미션율 검증(ValueError)을 타지 않도록 직접 계산한다.
     sample = 10000
+    sim_merchant_fee = round(sample * mfr_vat)
+    sim_pg_cost = round(sample * pgr_vat)
+    sim_platform = sim_merchant_fee - sim_pg_cost
+    sim_commission = round(sample * scr)
+    sim_company = sim_platform - sim_commission
+    sim_net = sample - sim_merchant_fee
     return {
+        # 저장값 (부가세 별도)
         "merchant_fee_rate": mfr,
         "pg_fee_rate": pgr,
         "sales_commission_rate": scr,
@@ -1425,21 +1498,36 @@ def get_fee_settings(db: Session = Depends(get_db), _=Depends(require_admin)):
         "company_profit_rate": round(company_rate, 4),
         "has_global_fee_policy": fp is not None,
         "has_global_commission_policy": scp is not None,
+        # 부가세 (VAT 10% 별도)
+        "vat_rate": VAT_RATE,
+        "fee_rate_vat_exclusive": True,
+        "vat_notice": VAT_NOTICE,
+        "merchant_fee_rate_with_vat": mfr_vat,
+        "pg_fee_rate_with_vat": pgr_vat,
+        "merchant_fee_rate_label": format_rate_with_vat(mfr),
+        "pg_fee_rate_label": format_rate_with_vat(pgr),
+        "sales_commission_rate_label": f"{scr * 100:.2f}% (부가세 미적용)",
         "simulation": {
             "sample_amount": sample,
-            "merchant_fee": round(sample * mfr),
-            "pg_cost": round(sample * pgr),
-            "platform_income": round(sample * platform_rate),
-            "sales_commission": round(sample * scr),
-            "company_profit": round(sample * company_rate),
-            "net_payout": round(sample * (1 - mfr)),
+            "merchant_fee": sim_merchant_fee,
+            "pg_cost": sim_pg_cost,
+            "platform_income": sim_platform,
+            "sales_commission": sim_commission,
+            "company_profit": sim_company,
+            "net_payout": int(sim_net),
+            "vat_included": True,
+            "note": "금액은 부가세 포함 실제 적용율 기준입니다.",
         },
     }
 
 
 @router.put("/fee-settings")
 def update_fee_settings(req: GlobalFeeSettingsUpdate, db: Session = Depends(get_db), _=Depends(require_admin)):
-    """전역 기본 수수료 설정 저장/갱신."""
+    """전역 기본 수수료 설정 저장/갱신.
+
+    입력값(merchant_fee_rate / pg_fee_rate)은 **부가세 별도** 기준으로 그대로 저장하고,
+    실제 정산 계산 시 × 1.1 이 적용된다. 검증은 부가세 별도 기준으로 수행한다.
+    """
     _validate_commission_rate(req.sales_commission_rate, req.merchant_fee_rate, req.pg_fee_rate)
 
     # FeePolicy 전역 레코드 (merchant_id=NULL)
@@ -1469,13 +1557,26 @@ def update_fee_settings(req: GlobalFeeSettingsUpdate, db: Session = Depends(get_
         db.add(scp)
 
     db.commit()
-    return {"ok": True, "merchant_fee_rate": req.merchant_fee_rate,
-            "pg_fee_rate": req.pg_fee_rate, "sales_commission_rate": req.sales_commission_rate}
+    return {
+        "ok": True,
+        # 저장값 (부가세 별도)
+        "merchant_fee_rate": req.merchant_fee_rate,
+        "pg_fee_rate": req.pg_fee_rate,
+        "sales_commission_rate": req.sales_commission_rate,
+        # 실제 적용율 (부가세 포함)
+        "merchant_fee_rate_with_vat": apply_vat(req.merchant_fee_rate),
+        "pg_fee_rate_with_vat": apply_vat(req.pg_fee_rate),
+        "vat_rate": VAT_RATE,
+        "fee_rate_vat_exclusive": True,
+        "vat_notice": VAT_NOTICE,
+        "merchant_fee_rate_label": format_rate_with_vat(req.merchant_fee_rate),
+        "pg_fee_rate_label": format_rate_with_vat(req.pg_fee_rate),
+    }
 
 
 @router.get("/merchants/{mid}/fee-override")
 def get_merchant_fee_override(mid: int, db: Session = Depends(get_db), _=Depends(require_admin)):
-    """가맹점 개별 수수료 오버라이드 조회."""
+    """가맹점 개별 수수료 오버라이드 조회 (수수료율은 모두 부가세 별도 기준)."""
     merchant = db.query(Merchant).filter(Merchant.id == mid).first()
     if not merchant:
         raise HTTPException(status_code=404, detail="가맹점을 찾을 수 없습니다")
@@ -1485,10 +1586,19 @@ def get_merchant_fee_override(mid: int, db: Session = Depends(get_db), _=Depends
         "merchant_id": mid,
         "merchant_name": merchant.name,
         "has_override": fp is not None,
+        # 저장값 (부가세 별도)
         "merchant_fee_rate": float(fp.merchant_fee_rate) if fp else None,
         "pg_fee_rate": float(fp.pg_fee_rate) if fp else None,
         "effective_merchant_fee_rate": mfr,
         "effective_pg_fee_rate": pgr,
+        # 실제 적용율 (부가세 포함)
+        "effective_merchant_fee_rate_with_vat": apply_vat(mfr),
+        "effective_pg_fee_rate_with_vat": apply_vat(pgr),
+        "vat_rate": VAT_RATE,
+        "fee_rate_vat_exclusive": True,
+        "vat_notice": VAT_NOTICE,
+        "effective_merchant_fee_rate_label": format_rate_with_vat(mfr),
+        "effective_pg_fee_rate_label": format_rate_with_vat(pgr),
     }
 
 
@@ -1497,7 +1607,10 @@ def update_merchant_fee_override(
     mid: int, req: MerchantFeeOverrideUpdate,
     db: Session = Depends(get_db), _=Depends(require_admin),
 ):
-    """가맹점 개별 수수료 오버라이드 설정 (None 값이면 해당 필드 전역값 사용)."""
+    """가맹점 개별 수수료 오버라이드 설정 (None 값이면 해당 필드 전역값 사용).
+
+    입력값은 **부가세 별도** 기준으로 그대로 저장하고, 정산 계산 시 × 1.1 이 적용된다.
+    """
     merchant = db.query(Merchant).filter(Merchant.id == mid).first()
     if not merchant:
         raise HTTPException(status_code=404, detail="가맹점을 찾을 수 없습니다")
@@ -1512,7 +1625,7 @@ def update_merchant_fee_override(
             _validate_merchant_commission_fit(db, mid, mfr_default, pgr_default)
             db.delete(fp)
             db.commit()
-        return {"ok": True, "action": "reset_to_global"}
+        return {"ok": True, "action": "reset_to_global", "vat_notice": VAT_NOTICE}
 
     # 저장 전 교차 검증 — 변경 후 유효 수수료율로 기존 커미션율을 확인한다.
     new_mfr = float(req.merchant_fee_rate) if req.merchant_fee_rate is not None else (
@@ -1538,7 +1651,22 @@ def update_merchant_fee_override(
         db.add(fp)
 
     db.commit()
-    return {"ok": True, "merchant_fee_rate": float(fp.merchant_fee_rate), "pg_fee_rate": float(fp.pg_fee_rate)}
+    saved_mfr = float(fp.merchant_fee_rate)
+    saved_pgr = float(fp.pg_fee_rate)
+    return {
+        "ok": True,
+        # 저장값 (부가세 별도)
+        "merchant_fee_rate": saved_mfr,
+        "pg_fee_rate": saved_pgr,
+        # 실제 적용율 (부가세 포함)
+        "merchant_fee_rate_with_vat": apply_vat(saved_mfr),
+        "pg_fee_rate_with_vat": apply_vat(saved_pgr),
+        "vat_rate": VAT_RATE,
+        "fee_rate_vat_exclusive": True,
+        "vat_notice": VAT_NOTICE,
+        "merchant_fee_rate_label": format_rate_with_vat(saved_mfr),
+        "pg_fee_rate_label": format_rate_with_vat(saved_pgr),
+    }
 
 
 @router.get("/sales/{uid}/commission-override")

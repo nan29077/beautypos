@@ -1417,7 +1417,9 @@ async function loadAdminSettlements(c, t) {
         <div class="col-md-7">
             <div class="card data-card"><div class="card-header"><h5>정산 내역</h5></div><div class="card-body">
                 <div class="table-responsive"><table class="table table-sm">
-                    <thead><tr><th>ID</th><th>가맹점</th><th>기간</th><th>총매출</th><th>PG수수료</th><th>커미션</th><th>순매출</th></tr></thead>
+                    <thead><tr><th>ID</th><th>가맹점</th><th>기간</th><th>총매출</th>
+                        <th>PG수수료<br><small class="text-muted fw-normal">(부가세 포함)</small></th>
+                        <th>커미션</th><th>순매출</th></tr></thead>
                     <tbody>${settlements.map(s => `<tr>
                         <td>${s.id}</td><td class="fw-bold">${escapeHtml(s.merchant_name || s.merchant_id)}</td>
                         <td>${s.period_start.split(' ')[0]} ~ ${s.period_end.split(' ')[0]}</td>
@@ -1437,12 +1439,31 @@ async function calcSettlement() {
     if (!start || !end) { alert('기간을 선택하세요'); return; }
     try {
         const res = await apiPost(`/api/admin/settlements/calculate?merchant_id=${mid}&period_start=${start}&period_end=${end}`, {});
-        document.getElementById('settleResult').innerHTML = `<div class="alert alert-success"><strong>정산 완료!</strong><br>총매출: ${formatMoney(res.gross_amount)} | PG수수료: ${formatMoney(res.pg_fee_amount)}<br>커미션: ${formatMoney(res.commission_amount)} | 순매출: <strong>${formatMoney(res.net_amount)}</strong> | ${res.transactions_count}건</div>`;
+        const rateNote = res.pg_fee_rate != null
+            ? `<br><small class="text-muted">PG수수료율 ${fmtRateExclVat(res.pg_fee_rate)} → 실제 적용 ${(((res.pg_fee_rate_with_vat ?? applyVat(res.pg_fee_rate)))*100).toFixed(2)}% (수수료 금액은 부가세 포함)</small>`
+            : '';
+        document.getElementById('settleResult').innerHTML = `<div class="alert alert-success"><strong>정산 완료!</strong><br>총매출: ${formatMoney(res.gross_amount)} | PG수수료: ${formatMoney(res.pg_fee_amount)}<br>커미션: ${formatMoney(res.commission_amount)} | 순매출: <strong>${formatMoney(res.net_amount)}</strong> | ${res.transactions_count}건${rateNote}</div>`;
         navigate('admin-settlements');
     } catch (e) { document.getElementById('settleResult').innerHTML = `<div class="alert alert-danger">${escapeHtml(e.message)}</div>`; }
 }
 
 // ─── 수수료 기본 설정 (전역/가맹점별/영업관리자별) ──────────
+
+// 부가세(VAT 10%) — 저장/입력되는 수수료율은 부가세 별도 기준이며,
+// 실제 적용 수수료율은 입력값 × 1.1 이다. (백엔드 settlement_service.apply_vat 와 동일)
+const VAT_MULTIPLIER = 1.1;
+const VAT_NOTICE = '입력값은 부가세 별도 기준이며, 실제 적용율은 입력값 × 1.1입니다.';
+
+/** 부가세 별도 수수료율 → 실제 적용 수수료율 */
+function applyVat(rate) { return (Number(rate) || 0) * VAT_MULTIPLIER; }
+
+/** '3.00% (부가세 별도)' */
+function fmtRateExclVat(rate) { return `${((Number(rate) || 0) * 100).toFixed(2)}% (부가세 별도)`; }
+
+/** '3.00% (부가세 별도) → 실제 적용: 3.30%' */
+function fmtRateWithVat(rate) {
+    return `${fmtRateExclVat(rate)} → 실제 적용: ${(applyVat(rate) * 100).toFixed(2)}%`;
+}
 
 async function loadAdminFeeSettings(c, t) {
     t.textContent = '수수료 기본 설정';
@@ -1464,28 +1485,49 @@ async function loadAdminFeeSettings(c, t) {
         미용실 부과 수수료 − PG 비용 = 플랫폼 수익 / 플랫폼 수익 − 영업 커미션 = 회사 순수익
     </div>
 
+    <!-- 부가세 안내 -->
+    <div class="alert alert-warning mb-3">
+        <i class="fas fa-percent me-2"></i><strong>부가세(VAT 10%) 별도:</strong>
+        ${VAT_NOTICE}
+        <div class="small mt-1">
+            예) 미용실 수수료 ${fmtRateWithVat(settings.merchant_fee_rate)}
+            &nbsp;/&nbsp; PG 수수료 ${fmtRateWithVat(settings.pg_fee_rate)}
+        </div>
+        <div class="small text-muted mt-1">
+            영업 커미션율은 부가세 적용 대상이 아니며 입력값이 그대로 적용됩니다.
+        </div>
+    </div>
+
     <!-- 전역 기본 수수료 설정 -->
     <div class="card data-card mb-3">
         <div class="card-header"><h5 class="mb-0"><i class="fas fa-globe me-2"></i>전역 기본 수수료 설정</h5></div>
         <div class="card-body">
             <div class="row g-3">
                 <div class="col-md-4">
-                    <label class="form-label fw-bold">미용실 부과 수수료율 <span class="text-danger">*</span></label>
+                    <label class="form-label fw-bold">미용실 부과 수수료율 <span class="text-danger">*</span>
+                        <span class="badge bg-warning text-dark ms-1">부가세 별도</span>
+                    </label>
                     <div class="input-group">
                         <input type="number" class="form-control" id="gs_merchant_fee"
-                            value="${(settings.merchant_fee_rate*100).toFixed(2)}" step="0.1" min="0" max="30">
+                            value="${(settings.merchant_fee_rate*100).toFixed(2)}" step="0.1" min="0" max="30"
+                            oninput="updateFeePreview()">
                         <span class="input-group-text">%</span>
                     </div>
-                    <small class="text-muted">미용실이 내는 총 수수료</small>
+                    <small class="text-muted d-block">미용실이 내는 총 수수료</small>
+                    <small class="text-primary fw-bold" id="gs_merchant_fee_vat">${fmtRateWithVat(settings.merchant_fee_rate)}</small>
                 </div>
                 <div class="col-md-4">
-                    <label class="form-label fw-bold">PG사 수수료율 <span class="text-danger">*</span></label>
+                    <label class="form-label fw-bold">PG사 수수료율 <span class="text-danger">*</span>
+                        <span class="badge bg-warning text-dark ms-1">부가세 별도</span>
+                    </label>
                     <div class="input-group">
                         <input type="number" class="form-control" id="gs_pg_fee"
-                            value="${(settings.pg_fee_rate*100).toFixed(2)}" step="0.1" min="0" max="30">
+                            value="${(settings.pg_fee_rate*100).toFixed(2)}" step="0.1" min="0" max="30"
+                            oninput="updateFeePreview()">
                         <span class="input-group-text">%</span>
                     </div>
-                    <small class="text-muted">PG사에 내는 실비용</small>
+                    <small class="text-muted d-block">PG사에 내는 실비용</small>
+                    <small class="text-primary fw-bold" id="gs_pg_fee_vat">${fmtRateWithVat(settings.pg_fee_rate)}</small>
                 </div>
                 <div class="col-md-4">
                     <label class="form-label fw-bold">영업 커미션율 <span class="text-danger">*</span></label>
@@ -1495,8 +1537,12 @@ async function loadAdminFeeSettings(c, t) {
                             oninput="updateFeePreview()">
                         <span class="input-group-text">%</span>
                     </div>
-                    <small class="text-muted">플랫폼 수익 중 영업관리자 몫</small>
+                    <small class="text-muted d-block">플랫폼 수익 중 영업관리자 몫</small>
+                    <small class="text-muted">부가세 미적용 (입력값 그대로 적용)</small>
                 </div>
+            </div>
+            <div class="alert alert-light border small mt-2 mb-0">
+                <i class="fas fa-info-circle text-primary me-1"></i>${VAT_NOTICE}
             </div>
             <!-- 자동계산 미리보기 -->
             <div class="row g-2 mt-2 align-items-center">
@@ -1514,10 +1560,16 @@ async function loadAdminFeeSettings(c, t) {
             </div>
             <!-- 시뮬레이션 -->
             <div class="mt-3 p-3 bg-light rounded">
-                <div class="fw-bold mb-2">💡 10,000원 결제 시뮬레이션</div>
+                <div class="fw-bold mb-2">💡 10,000원 결제 시뮬레이션
+                    <span class="badge bg-secondary ms-1">수수료 금액은 부가세 포함</span>
+                </div>
                 <div class="row g-2 text-center" id="gs_simulation">
                     ${_feeSimRow(sim)}
                 </div>
+                <small class="text-muted d-block mt-2">
+                    미용실 수수료 ${fmtRateWithVat(settings.merchant_fee_rate)}
+                    &nbsp;·&nbsp; PG 비용 ${fmtRateWithVat(settings.pg_fee_rate)}
+                </small>
             </div>
             <div class="mt-3">
                 <button class="btn btn-primary" onclick="saveGlobalFeeSettings()">
@@ -1534,13 +1586,17 @@ async function loadAdminFeeSettings(c, t) {
             <small class="text-muted">설정 없으면 전역값 사용</small>
         </div>
         <div class="card-body">
+            <div class="alert alert-light border small">
+                <i class="fas fa-percent text-warning me-1"></i>${VAT_NOTICE}
+            </div>
             <div class="table-responsive">
                 <table class="table table-sm align-middle">
                     <thead class="table-light">
                         <tr>
                             <th>가맹점</th>
-                            <th>미용실 수수료율</th>
-                            <th>PG 비용율</th>
+                            <th>미용실 수수료율 <small class="text-muted fw-normal">(부가세 별도)</small></th>
+                            <th>PG 비용율 <small class="text-muted fw-normal">(부가세 별도)</small></th>
+                            <th>실제 적용율</th>
                             <th>오버라이드 여부</th>
                             <th>작업</th>
                         </tr>
@@ -1552,7 +1608,8 @@ async function loadAdminFeeSettings(c, t) {
                                 <div class="input-group input-group-sm" style="width:120px">
                                     <input type="number" class="form-control" id="mfr_${m.id}"
                                         placeholder="전역 ${(settings.merchant_fee_rate*100).toFixed(1)}%"
-                                        step="0.1" min="0" max="30">
+                                        step="0.1" min="0" max="30"
+                                        oninput="updateMerchantFeeVatHint(${m.id})">
                                     <span class="input-group-text">%</span>
                                 </div>
                             </td>
@@ -1560,10 +1617,12 @@ async function loadAdminFeeSettings(c, t) {
                                 <div class="input-group input-group-sm" style="width:120px">
                                     <input type="number" class="form-control" id="pgr_${m.id}"
                                         placeholder="전역 ${(settings.pg_fee_rate*100).toFixed(1)}%"
-                                        step="0.1" min="0" max="30">
+                                        step="0.1" min="0" max="30"
+                                        oninput="updateMerchantFeeVatHint(${m.id})">
                                     <span class="input-group-text">%</span>
                                 </div>
                             </td>
+                            <td><small class="text-primary fw-bold" id="vat_hint_${m.id}">확인 중...</small></td>
                             <td><span class="badge bg-secondary" id="ovr_badge_${m.id}">확인 중...</span></td>
                             <td>
                                 <button class="btn btn-sm btn-primary me-1" onclick="saveMerchantFeeOverride(${m.id})">
@@ -1627,8 +1686,8 @@ async function loadAdminFeeSettings(c, t) {
 function _feeSimRow(sim) {
     const items = [
         { label: '결제액', val: sim.sample_amount, cls: 'text-dark' },
-        { label: '미용실 수수료', val: `-${sim.merchant_fee}`, cls: 'text-danger' },
-        { label: 'PG 비용', val: `-${sim.pg_cost}`, cls: 'text-warning' },
+        { label: '미용실 수수료 (VAT 포함)', val: `-${sim.merchant_fee}`, cls: 'text-danger' },
+        { label: 'PG 비용 (VAT 포함)', val: `-${sim.pg_cost}`, cls: 'text-warning' },
         { label: '플랫폼 수익', val: sim.platform_income, cls: 'text-primary' },
         { label: '영업 커미션', val: `-${sim.sales_commission}`, cls: 'text-secondary' },
         { label: '회사 순수익', val: sim.company_profit, cls: 'text-success fw-bold' },
@@ -1647,6 +1706,7 @@ function updateFeePreview() {
     const mfr = parseFloat(document.getElementById('gs_merchant_fee')?.value || 0) / 100;
     const pgr = parseFloat(document.getElementById('gs_pg_fee')?.value || 0) / 100;
     const scr = parseFloat(document.getElementById('gs_sales_comm')?.value || 0) / 100;
+    // 플랫폼/회사 수익률은 기존과 동일하게 부가세 별도 기준으로 표시한다.
     const platform = mfr - pgr;
     const company = platform - scr;
     const pEl = document.getElementById('gs_platform_rate');
@@ -1656,6 +1716,11 @@ function updateFeePreview() {
         cEl.textContent = (company * 100).toFixed(2) + '%';
         cEl.className = company < 0 ? 'badge bg-danger fs-6' : 'badge bg-success fs-6';
     }
+    // 부가세 별도 → 실제 적용율 미리보기
+    const mfrVatEl = document.getElementById('gs_merchant_fee_vat');
+    const pgrVatEl = document.getElementById('gs_pg_fee_vat');
+    if (mfrVatEl) mfrVatEl.textContent = fmtRateWithVat(mfr);
+    if (pgrVatEl) pgrVatEl.textContent = fmtRateWithVat(pgr);
 }
 
 async function saveGlobalFeeSettings() {
@@ -1672,9 +1737,29 @@ async function saveGlobalFeeSettings() {
         await apiPut('/api/admin/fee-settings', {
             merchant_fee_rate: mfr, pg_fee_rate: pgr, sales_commission_rate: scr,
         });
-        alert('전역 수수료 설정이 저장되었습니다.');
+        alert('전역 수수료 설정이 저장되었습니다.\n\n'
+            + `미용실 수수료: ${fmtRateWithVat(mfr)}\n`
+            + `PG 수수료: ${fmtRateWithVat(pgr)}\n`
+            + `영업 커미션: ${(scr*100).toFixed(2)}% (부가세 미적용)`);
         navigate('admin-fee-settings');
     } catch(e) { alert('저장 실패: ' + e.message); }
+}
+
+/** 가맹점별 오버라이드 행의 "실제 적용율" 힌트를 갱신한다 (입력값 × 1.1). */
+function updateMerchantFeeVatHint(mid, effective) {
+    const hint = document.getElementById(`vat_hint_${mid}`);
+    if (!hint) return;
+    const mfrVal = document.getElementById(`mfr_${mid}`)?.value;
+    const pgrVal = document.getElementById(`pgr_${mid}`)?.value;
+    // 입력값이 있으면 입력값 기준, 없으면 서버가 알려준 유효 수수료율(전역 포함) 기준
+    const mfr = mfrVal ? parseFloat(mfrVal) / 100 : effective?.merchant_fee_rate;
+    const pgr = pgrVal ? parseFloat(pgrVal) / 100 : effective?.pg_fee_rate;
+    if (mfr == null && pgr == null) { hint.textContent = '-'; return; }
+    const parts = [];
+    if (mfr != null) parts.push(`미용실 ${(applyVat(mfr)*100).toFixed(2)}%`);
+    if (pgr != null) parts.push(`PG ${(applyVat(pgr)*100).toFixed(2)}%`);
+    hint.textContent = parts.join(' / ');
+    hint.title = VAT_NOTICE;
 }
 
 async function _loadMerchantFeeOverride(mid) {
@@ -1693,6 +1778,11 @@ async function _loadMerchantFeeOverride(mid) {
             badge.className = 'badge bg-secondary';
             badge.textContent = '전역 사용';
         }
+        // 실제 적용율(부가세 포함) 힌트 — 입력값이 없으면 유효 수수료율 기준으로 표시
+        updateMerchantFeeVatHint(mid, {
+            merchant_fee_rate: data.effective_merchant_fee_rate,
+            pg_fee_rate: data.effective_pg_fee_rate,
+        });
     } catch(_) {}
 }
 
@@ -1704,8 +1794,12 @@ async function saveMerchantFeeOverride(mid) {
     if (pgrVal) body.pg_fee_rate = parseFloat(pgrVal) / 100;
     if (!Object.keys(body).length) { alert('변경할 수수료율을 입력해주세요.'); return; }
     try {
-        await apiPut(`/api/admin/merchants/${mid}/fee-override`, body);
-        alert('가맹점 수수료 오버라이드가 저장되었습니다.');
+        const res = await apiPut(`/api/admin/merchants/${mid}/fee-override`, body);
+        const applied = [
+            res.merchant_fee_rate != null ? `미용실 ${fmtRateWithVat(res.merchant_fee_rate)}` : null,
+            res.pg_fee_rate != null ? `PG ${fmtRateWithVat(res.pg_fee_rate)}` : null,
+        ].filter(Boolean).join('\n');
+        alert(`가맹점 수수료 오버라이드가 저장되었습니다.\n\n${applied}`);
         _loadMerchantFeeOverride(mid);
     } catch(e) { alert('저장 실패: ' + e.message); }
 }
@@ -1792,8 +1886,10 @@ async function loadAdminFeePolicies(c, t) {
                 <div class="fw-bold">${o.merchant_name}</div>
                 ${o.category ? `<small class="text-muted">${o.category}</small>` : ''}
             </td>
-            <td class="text-muted">${(o.pg_fee_rate_excl_vat_pct ?? (o.pg_fee_rate_pct / 1.1)).toFixed(2)}%</td>
-            <td class="fw-bold text-primary">${o.pg_fee_rate_pct}%</td>
+            <td class="text-muted">${(o.pg_fee_rate_excl_vat_pct ?? o.pg_fee_rate_pct).toFixed(2)}%
+                <small class="d-block text-muted">부가세 별도</small></td>
+            <td class="fw-bold text-primary">${(o.pg_fee_rate_with_vat_pct ?? applyVat(o.pg_fee_rate) * 100).toFixed(2)}%
+                <small class="d-block text-muted fw-normal">부가세 포함 (× 1.1)</small></td>
             <td>${salesBadge}</td>
             <td>
                 <div>10,000원 → <strong class="text-success">${o.sim_net.toLocaleString()}원</strong></div>
@@ -1802,11 +1898,13 @@ async function loadAdminFeePolicies(c, t) {
             <td>
                 <div class="d-flex gap-1">
                     <div class="input-group input-group-sm" style="width:150px">
-                        <input type="number" class="form-control" id="feeRate${o.merchant_id}" value="${o.pg_fee_rate_pct}" step="0.1" min="0" max="10">
+                        <input type="number" class="form-control" id="feeRate${o.merchant_id}" value="${o.pg_fee_rate_pct}"
+                            step="0.1" min="0" max="10" oninput="updateFeePolicyVatHint(${o.merchant_id})">
                         <span class="input-group-text">%</span>
                         <button class="btn btn-primary" onclick="saveFeePolicy(${o.merchant_id})" title="수수료 저장"><i class="fas fa-save"></i></button>
                     </div>
                 </div>
+                <small class="text-primary fw-bold" id="feeRateVat${o.merchant_id}">${fmtRateWithVat(o.pg_fee_rate)}</small>
             </td>
             <td>
                 ${o.has_sales_manager
@@ -1834,13 +1932,15 @@ async function loadAdminFeePolicies(c, t) {
             <div>
                 <h6 class="fw-bold mb-1">수수료 체계 안내</h6>
                 <ul class="mb-0 small">
-                    <li><strong>PG 수수료:</strong> 결제 금액 × 가맹점별 설정 수수료율 <strong>(VAT 포함)</strong></li>
+                    <li><strong>부가세(VAT 10%) 별도:</strong> ${VAT_NOTICE}
+                        <small class="text-muted">(예: 5.00% (부가세 별도) = 실제 5.50% 적용)</small></li>
+                    <li><strong>PG 수수료:</strong> 결제 금액 × 설정 수수료율 × 1.1 <strong>(부가세 포함 금액)</strong></li>
                     <li><strong>구성:</strong> PG 수수료 = <strong>영업 몫</strong> + <strong>뷰티포스 플랫폼 몫</strong>
-                        <small class="text-muted">(영업 몫 = 결제액 × 영업관리자 커미션율)</small></li>
+                        <small class="text-muted">(영업 몫 = 결제액 × 영업관리자 커미션율, 부가세 미적용)</small></li>
                     <li><strong>분배가능액:</strong> 결제액 − PG 수수료 → 원장 ↔ 디자이너 분배율(share_rate)로 분배</li>
-                    <li><strong>정산 예시:</strong> 10,000원 결제, PG 5% / 영업 1%
-                        → PG수수료 <strong>500원</strong>(영업 100원 + 뷰티포스 400원)
-                        → 분배가능액 <strong>9,500원</strong></li>
+                    <li><strong>정산 예시:</strong> 10,000원 결제, PG 5.00% (부가세 별도) / 영업 1%
+                        → 실제 적용 5.50% → PG수수료 <strong>550원</strong>(영업 100원 + 뷰티포스 450원)
+                        → 분배가능액 <strong>9,450원</strong></li>
                     <li><strong>영업관리자 수익:</strong> PG 수수료 내에서 배정 (이 페이지에서 직접 관리 가능)</li>
                 </ul>
             </div>
@@ -1890,11 +1990,11 @@ async function loadAdminFeePolicies(c, t) {
                         <tr>
                             <th>ID</th>
                             <th>가맹점</th>
-                            <th>수수료<br><small class="text-muted">(VAT 별도)</small></th>
-                            <th>PG 수수료<br><small class="text-muted">(VAT 포함)</small></th>
+                            <th>설정 수수료율<br><small class="text-muted">(부가세 별도)</small></th>
+                            <th>실제 적용 수수료율<br><small class="text-muted">(부가세 포함)</small></th>
                             <th>영업관리자</th>
-                            <th>정산 시뮬레이션<br><small class="text-muted">(1만원 기준)</small></th>
-                            <th>PG 수수료 변경<br><small class="text-muted">(VAT 포함)</small></th>
+                            <th>정산 시뮬레이션<br><small class="text-muted">(1만원 기준, 부가세 포함)</small></th>
+                            <th>PG 수수료 변경<br><small class="text-muted">(부가세 별도 입력)</small></th>
                             <th>영업관리자 커미션</th>
                         </tr>
                     </thead>
@@ -1941,12 +2041,22 @@ async function loadAdminFeePolicies(c, t) {
     </div>`;
 }
 
+/** 수수료 정책 페이지의 PG 수수료 입력 옆 "실제 적용율" 힌트 갱신 */
+function updateFeePolicyVatHint(merchantId) {
+    const el = document.getElementById(`feeRateVat${merchantId}`);
+    const input = document.getElementById(`feeRate${merchantId}`);
+    if (!el || !input) return;
+    const rate = parseFloat(input.value);
+    el.textContent = isNaN(rate) ? '-' : fmtRateWithVat(rate / 100);
+    el.title = VAT_NOTICE;
+}
+
 async function saveFeePolicy(merchantId) {
     try {
         const rate = parseFloat(document.getElementById(`feeRate${merchantId}`).value) / 100;
         if (rate < 0 || rate > 0.1) { alert('수수료율은 0~10% 범위에서 설정해주세요.'); return; }
         const result = await apiPost(`/api/admin/merchants/${merchantId}/fee-policy`, { pg_fee_rate: rate });
-        alert(`수수료 정책 저장 완료!\nPG 수수료(VAT 포함): ${(rate*100).toFixed(2)}%\n${result.example}`);
+        alert(`수수료 정책 저장 완료!\nPG 수수료: ${fmtRateWithVat(rate)}\n${result.example}`);
         navigate('admin-fee-policies');
     } catch (e) { alert('저장 실패: ' + e.message); }
 }
@@ -2812,9 +2922,12 @@ async function loadSalesStats(mid) {
     const commHtml = stats.show_commission
         ? ` | 커미션 <strong class="text-primary">${formatMoney(stats.commission_amount)}</strong>`
         : ' | <span class="text-muted"><i class="fas fa-eye-slash"></i> 커미션 비공개</span>';
+    const rateNote = stats.pg_fee_rate != null
+        ? `<br><span class="text-muted">PG수수료율 ${fmtRateExclVat(stats.pg_fee_rate)} → 실제 적용 ${(((stats.pg_fee_rate_with_vat ?? applyVat(stats.pg_fee_rate)))*100).toFixed(2)}%</span>`
+        : '';
     document.getElementById(`salesStats${mid}`).innerHTML = `<div class="bg-light rounded p-2 small">
         결제 <strong>${stats.transaction_count}건</strong> | 총매출 <strong>${formatMoney(stats.gross_amount)}</strong><br>
-        PG수수료 ${formatMoney(stats.pg_fee)}${commHtml}
+        PG수수료 ${formatMoney(stats.pg_fee)} <span class="text-muted">(부가세 포함)</span>${commHtml}${rateNote}
     </div>`;
 }
 
@@ -3028,8 +3141,25 @@ function rangeSelectHtml(id, current) {
     return `<select class="form-select form-select-sm" id="${id}" style="max-width:140px">${opts.map(([v,l])=>`<option value="${v}" ${v===current?'selected':''}>${l}</option>`).join('')}</select>`;
 }
 
+/**
+ * 정산 화면용 수수료율 안내 — 저장된 수수료율은 부가세 별도이고, 금액은 × 1.1 적용된 값이다.
+ * data 에 *_with_vat 필드가 없으면(구버전 응답) 별도 값에서 직접 환산한다.
+ */
+function feeRateVatNote(data) {
+    const mfr = data.merchant_fee_rate, pgr = data.pg_fee_rate;
+    if (mfr == null && pgr == null) return '';
+    const parts = [];
+    if (mfr != null) parts.push(`미용실 수수료 ${fmtRateExclVat(mfr)} → 실제 ${(((data.merchant_fee_rate_with_vat ?? applyVat(mfr)))*100).toFixed(2)}%`);
+    if (pgr != null) parts.push(`PG 수수료 ${fmtRateExclVat(pgr)} → 실제 ${(((data.pg_fee_rate_with_vat ?? applyVat(pgr)))*100).toFixed(2)}%`);
+    return `<div class="alert alert-light border small py-2 mb-3">
+        <i class="fas fa-percent text-warning me-1"></i>${parts.join(' &nbsp;·&nbsp; ')}
+        <span class="text-muted d-block mt-1">수수료 금액은 부가세(VAT 10%)가 포함된 실제 적용율 기준입니다.</span>
+    </div>`;
+}
+
 function renderSettlementBreakdown(data) {
     const showComm = data.show_sales_commission;
+    const feeRateNote = feeRateVatNote(data);
     const commRow = showComm
         ? `<div class="col-6 col-md-3"><div class="bg-warning bg-opacity-10 rounded-3 p-2 text-center"><div class="fw-bold text-warning">${formatMoney(data.sales_commission)}</div><small class="text-muted">영업수수료${data.sales_commission_rate!=null?` (${(data.sales_commission_rate*100).toFixed(1)}%)`:''}</small></div></div>`
         : '';
@@ -3056,17 +3186,19 @@ function renderSettlementBreakdown(data) {
     return `
     <div class="row g-2 mb-3">
         <div class="${colClass}"><div class="bg-light rounded-3 p-2 text-center"><div class="fw-bold">${formatMoney(data.gross)}</div><small class="text-muted">총 결제액</small></div></div>
-        <div class="${colClass}"><div class="bg-light rounded-3 p-2 text-center"><div class="fw-bold text-secondary">${formatMoney(data.pg_fee)}</div><small class="text-muted">PG 수수료</small></div></div>
+        <div class="${colClass}"><div class="bg-light rounded-3 p-2 text-center"><div class="fw-bold text-secondary">${formatMoney(data.pg_fee)}</div><small class="text-muted">PG 수수료 <span class="text-nowrap">(부가세 포함)</span></small></div></div>
         ${commRow}
         <div class="${colClass}"><div class="bg-primary bg-opacity-10 rounded-3 p-2 text-center"><div class="fw-bold text-primary">${formatMoney(data.distributable)}</div><small class="text-muted">분배가능액</small></div></div>
     </div>
+    ${feeRateNote}
     <div class="row g-2 mb-3">
         <div class="col-6"><div class="bg-primary bg-opacity-10 rounded-3 p-3 text-center"><div class="fs-5 fw-bold text-primary">${formatMoney(data.designer_total)}</div><small class="text-muted">디자이너 분배 합계</small></div></div>
         <div class="col-6"><div class="bg-success bg-opacity-10 rounded-3 p-3 text-center"><div class="fs-5 fw-bold text-success">${formatMoney(data.owner_amount)}</div><small class="text-muted">원장(사장님) 몫</small></div></div>
     </div>
     <div class="table-responsive"><table class="table table-sm table-hover align-middle">
         <thead class="table-light"><tr>
-            <th>디자이너</th><th>코드</th><th class="text-end">매출</th><th class="text-end">PG</th>
+            <th>디자이너</th><th>코드</th><th class="text-end">매출</th>
+            <th class="text-end">PG<br><small class="text-muted fw-normal">(부가세 포함)</small></th>
             ${showComm?'<th class="text-end">영업</th>':''}
             <th class="text-end">분배가능</th><th class="text-center">분배율</th>
             <th class="text-end">디자이너 몫</th><th class="text-end">원장 몫</th>
@@ -3112,7 +3244,8 @@ async function loadOwnerSettlements(c, t) {
     <div class="card-body">
         <div class="table-responsive"><table class="table table-hover table-sm align-middle">
             <thead class="table-light"><tr>
-                <th>정산기간</th><th class="text-end">총 결제액</th><th class="text-end">PG 수수료</th>
+                <th>정산기간</th><th class="text-end">총 결제액</th>
+                <th class="text-end">PG 수수료<br><small class="text-muted fw-normal">(부가세 포함)</small></th>
                 ${showComm ? '<th class="text-end">영업수수료</th>' : ''}
                 <th class="text-end">실지급액</th><th>확정일</th>
             </tr></thead>
@@ -3125,6 +3258,7 @@ async function loadOwnerSettlements(c, t) {
                 <td>${formatDate(r.created_at)}</td>
             </tr>`).join('') || `<tr><td colspan="${showComm ? 6 : 5}" class="text-center text-muted py-4">아직 확정된 정산이 없습니다. 최고관리자가 정산을 계산하면 이곳에 표시됩니다.</td></tr>`}</tbody>
         </table></div>
+        <small class="text-muted d-block"><i class="fas fa-percent me-1"></i>수수료 금액은 부가세(VAT 10%)가 포함된 실제 적용율 기준입니다. (설정된 수수료율은 부가세 별도)</small>
         ${!showComm ? '<small class="text-muted"><i class="fas fa-eye-slash me-1"></i>영업수수료 항목은 관리자 설정에 의해 표시되지 않습니다.</small>' : ''}
     </div></div>`;
 }
@@ -3195,10 +3329,11 @@ async function loadDesignerSettlement(c, t) {
             body.innerHTML = `
             <div class="row g-2 mb-3">
                 <div class="col-6 col-md-3"><div class="bg-light rounded-3 p-2 text-center"><div class="fw-bold">${formatMoney(d.gross)}</div><small class="text-muted">내 매출 (${d.count}건)</small></div></div>
-                <div class="col-6 col-md-3"><div class="bg-light rounded-3 p-2 text-center"><div class="fw-bold text-secondary">${formatMoney(d.pg_fee)}</div><small class="text-muted">PG 수수료</small></div></div>
+                <div class="col-6 col-md-3"><div class="bg-light rounded-3 p-2 text-center"><div class="fw-bold text-secondary">${formatMoney(d.pg_fee)}</div><small class="text-muted">PG 수수료 <span class="text-nowrap">(부가세 포함)</span></small></div></div>
                 ${showComm?`<div class="col-6 col-md-3"><div class="bg-warning bg-opacity-10 rounded-3 p-2 text-center"><div class="fw-bold text-warning">${formatMoney(d.sales_commission)}</div><small class="text-muted">영업수수료${d.sales_commission_rate!=null?` (${(d.sales_commission_rate*100).toFixed(1)}%)`:''}</small></div></div>`:''}
                 <div class="col-6 col-md-3"><div class="bg-primary bg-opacity-10 rounded-3 p-2 text-center"><div class="fw-bold text-primary">${formatMoney(d.distributable)}</div><small class="text-muted">분배가능액</small></div></div>
             </div>
+            ${feeRateVatNote(d)}
             <div class="row g-2">
                 <div class="col-6"><div class="bg-primary bg-opacity-10 rounded-3 p-3 text-center"><div class="fs-4 fw-bold text-primary">${formatMoney(d.designer_amount)}</div><small class="text-muted">내 몫 (분배율 ${Math.round((d.share_rate||0)*100)}%)</small></div></div>
                 <div class="col-6"><div class="bg-light rounded-3 p-3 text-center"><div class="fs-4 fw-bold text-success">${formatMoney(d.owner_amount)}</div><small class="text-muted">원장 몫</small></div></div>
