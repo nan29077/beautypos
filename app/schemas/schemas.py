@@ -239,3 +239,32 @@ class ReceiptReviewConfigUpdate(BaseModel):
 
 class AISettingsUpdate(BaseModel):
     api_key: str
+
+
+# ─── 플랜 관리 (Admin) ───────────────────────────────────────
+
+class PlanUpdate(BaseModel):
+    """플랜 수수료율/광고 목표 건수 수정. 전달된 필드만 반영한다."""
+    merchant_fee_rate: Optional[float] = Field(default=None, ge=0, le=100)  # 퍼센트 값 (5.5 = 5.5%)
+    blog_review_daily: Optional[int] = Field(default=None, ge=0)
+    blog_review_monthly: Optional[int] = Field(default=None, ge=0)
+    receipt_review_daily: Optional[int] = Field(default=None, ge=0)
+    receipt_review_monthly: Optional[int] = Field(default=None, ge=0)
+    place_traffic_daily: Optional[int] = Field(default=None, ge=0)
+    place_traffic_monthly: Optional[int] = Field(default=None, ge=0)
+    place_save_daily: Optional[int] = Field(default=None, ge=0)
+    place_save_monthly: Optional[int] = Field(default=None, ge=0)
+    shorts_daily: Optional[int] = Field(default=None, ge=0)
+    shorts_monthly: Optional[int] = Field(default=None, ge=0)
+
+
+class MerchantPlanAssign(BaseModel):
+    plan_id: int
+
+
+class AdExecutionCreate(BaseModel):
+    merchant_id: int
+    ad_type: str                       # blog_review | receipt_review | place_traffic | place_save | shorts
+    executed_count: int = Field(ge=0)
+    execution_date: Optional[date] = None  # 미지정 시 오늘
+    note: Optional[str] = None

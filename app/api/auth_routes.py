@@ -15,6 +15,7 @@ from app.auth.jwt_handler import (
 )
 from app.auth.dependencies import get_current_user
 from app.schemas.schemas import RegisterRequest, LoginRequest, TokenResponse, RefreshRequest
+from app.services import plan_service
 from app.config import get_settings
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -87,6 +88,9 @@ def register(req: RegisterRequest, db: Session = Depends(get_db)):
         )
         db.add(merchant)
         db.flush()  # merchant.id 확보
+
+        # 신규 가맹점은 베이직 플랜으로 시작
+        plan_service.ensure_default_plan(db, merchant.id)
 
         # 추천 코드로 영업관리자 자동 연결
         if req.sales_referral_code:

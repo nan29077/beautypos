@@ -590,6 +590,16 @@ def _collection_status(db: Session, merchant_id: int) -> dict:
     }
 
 
+def _actual_place_name(db: Session, merchant_id: int, place_url: str, fallback: str | None = None) -> str:
+    """플레이스 수집 결과에서 확인된 실제 매장명을 반환한다."""
+    snapshot = db.query(PlaceMetricSnapshot).filter(
+        PlaceMetricSnapshot.merchant_id == merchant_id,
+        PlaceMetricSnapshot.place_url == place_url,
+        PlaceMetricSnapshot.place_name.isnot(None),
+    ).order_by(PlaceMetricSnapshot.collected_at.desc()).first()
+    return (snapshot.place_name if snapshot and snapshot.place_name else None) or fallback or place_url
+
+
 @router.get("/ad/analysis")
 def ad_analysis(
     range: str = Query("all", pattern="^(day|week|month|all)$"),
@@ -615,6 +625,7 @@ def ad_analysis(
             ).order_by(AdMetric.date.desc()).all()
             my_metrics.append({
                 "place_url": p.place_url, "nickname": p.nickname,
+                "actual_name": _actual_place_name(db, merchant.id, p.place_url, p.nickname),
                 "analysis_keyword": p.analysis_keyword,
                 "daily_change": _daily_change(db, merchant.id, p.place_url),
                 "data": [{
@@ -634,6 +645,7 @@ def ad_analysis(
         ).order_by(AdMetric.date.desc()).all()
         comp_metrics.append({
             "place_url": c.competitor_place_url, "memo": c.memo,
+            "actual_name": _actual_place_name(db, merchant.id, c.competitor_place_url, c.memo),
             "daily_change": _daily_change(db, merchant.id, c.competitor_place_url),
             "data": [{
                 "date": str(m.date), "blog_review_count": m.blog_review_count,
@@ -647,9 +659,13 @@ def ad_analysis(
         "competitors": comp_metrics,
         "profiles": [{
             "id": p.id, "place_url": p.place_url, "nickname": p.nickname,
+            "actual_name": _actual_place_name(db, merchant.id, p.place_url, p.nickname) if p.place_url else p.nickname,
             "analysis_keyword": p.analysis_keyword,
         } for p in profiles],
-        "competitor_list": [{"id": c.id, "place_url": c.competitor_place_url, "memo": c.memo} for c in competitors],
+        "competitor_list": [{
+            "id": c.id, "place_url": c.competitor_place_url, "memo": c.memo,
+            "actual_name": _actual_place_name(db, merchant.id, c.competitor_place_url, c.memo),
+        } for c in competitors],
         "collection_status": _collection_status(db, merchant.id),
     }
 
@@ -703,10 +719,10 @@ def ad_analysis_history(
     competitors = db.query(AdCompetitor).filter(AdCompetitor.merchant_id == merchant.id).all()
 
     targets = [
-        {"kind": "my", "label": p.nickname or p.place_url, "place_url": p.place_url}
+        {"kind": "my", "label": _actual_place_name(db, merchant.id, p.place_url, p.nickname), "place_url": p.place_url}
         for p in profiles if p.place_url
     ] + [
-        {"kind": "competitor", "label": c.memo or c.competitor_place_url,
+        {"kind": "competitor", "label": _actual_place_name(db, merchant.id, c.competitor_place_url, c.memo),
          "place_url": c.competitor_place_url}
         for c in competitors
     ]
@@ -876,7 +892,7 @@ def ad_analysis_overview(
         snapshot = _metric_snapshot(db, merchant.id, profile.place_url, period)
         if snapshot["has_data"]:
             my_candidates.append({
-                "name": profile.nickname or profile.place_url,
+                "name": _actual_place_name(db, merchant.id, profile.place_url, profile.nickname),
                 "place_url": profile.place_url,
                 **snapshot,
             })
@@ -889,7 +905,7 @@ def ad_analysis_overview(
     comp_items = []
     for competitor in competitors:
         snapshot = _metric_snapshot(db, merchant.id, competitor.competitor_place_url, period)
-        name = competitor.memo or competitor.competitor_place_url
+        name = _actual_place_name(db, merchant.id, competitor.competitor_place_url, competitor.memo)
         if not snapshot["has_data"] or mine is None:
             comp_items.append({
                 "id": competitor.id, "name": name,

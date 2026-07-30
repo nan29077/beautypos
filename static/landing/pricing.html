@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>뷰티포스 - 요금제</title>
-    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <title>ADPAY - 요금제</title>
+    <link rel="icon" type="image/png" sizes="192x192" href="/static/favicon-192.png?v=2">
     <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
     <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
     <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
@@ -34,6 +34,12 @@
         .footer-dark { background: #070b14; }
         .footer-link { color: rgba(255,255,255,.5); text-decoration: none; transition: color .2s; }
         .footer-link:hover { color: #0ea5e9; }
+        .adpay-inline-brand{display:inline-flex;align-items:center;gap:9px;color:inherit}
+        .adpay-inline-brand img{width:34px;height:34px;border-radius:10px}
+        .adpay-inline-copy{display:flex;flex-direction:column;line-height:1}
+        .adpay-inline-copy strong{font-weight:900;letter-spacing:-.04em}
+        .adpay-inline-copy strong b{color:#20aeef}
+        .adpay-inline-copy small{margin-top:4px;color:#8eb2cb;font-size:.48rem;font-weight:700;letter-spacing:.04em}
         .fade-up { opacity: 0; transform: translateY(30px); transition: all 0.6s ease; }
         .fade-up.visible { opacity: 1; transform: translateY(0); }
     </style>
@@ -43,7 +49,7 @@
 <!-- Navbar -->
 <nav class="navbar navbar-expand-lg navbar-dark fixed-top navbar-adpay" id="mainNav">
     <div class="container">
-        <a class="navbar-brand fw-bold" href="/static/landing/index.html"><i class="fas fa-scissors me-2" style="color:#0ea5e9"></i>뷰티포스</a>
+        <a class="navbar-brand fw-bold" href="/static/landing/index.html"><span class="adpay-inline-brand"><span class="adpay-inline-copy"><strong><b>AD</b>PAY</strong><small>결제와 마케팅을 하나로</small></span></span></a>
         <button class="navbar-toggler border-0" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"><span class="navbar-toggler-icon"></span></button>
         <div class="collapse navbar-collapse" id="navbarNav">
             <ul class="navbar-nav ms-auto align-items-center">
@@ -221,7 +227,7 @@
             </div>
             <div class="accordion-item border-0 mb-2 shadow-sm rounded-3 overflow-hidden">
                 <h2 class="accordion-header"><button class="accordion-button collapsed fw-bold" data-bs-toggle="collapse" data-bs-target="#pf2">결제 수수료가 별도로 있나요?</button></h2>
-                <div id="pf2" class="accordion-collapse collapse" data-bs-parent="#pricingFaq"><div class="accordion-body text-muted">뷰티포스 자체 수수료는 없습니다. 결제 수수료는 연동한 PG사의 수수료 정책을 따릅니다. 뷰티포스에서는 PG 수수료율을 설정하면 자동으로 정산에 반영됩니다.</div></div>
+                <div id="pf2" class="accordion-collapse collapse" data-bs-parent="#pricingFaq"><div class="accordion-body text-muted">ADPAY 자체 수수료는 없습니다. 결제 수수료는 연동한 PG사의 수수료 정책을 따릅니다. ADPAY에서는 PG 수수료율을 설정하면 자동으로 정산에 반영됩니다.</div></div>
             </div>
             <div class="accordion-item border-0 mb-2 shadow-sm rounded-3 overflow-hidden">
                 <h2 class="accordion-header"><button class="accordion-button collapsed fw-bold" data-bs-toggle="collapse" data-bs-target="#pf3">무료 플랜에 사용 기간 제한이 있나요?</button></h2>
@@ -256,7 +262,7 @@
     <div class="container">
         <div class="row py-5">
             <div class="col-lg-4 mb-4 mb-lg-0">
-                <h5 class="fw-bold mb-3"><i class="fas fa-scissors me-2" style="color:#0ea5e9"></i>뷰티포스</h5>
+                <div class="adpay-inline-brand mb-3"><span class="adpay-inline-copy"><strong><b>AD</b>PAY</strong><small>결제와 마케팅을 하나로</small></span></div>
                 <p class="text-white-50 small">오프라인 매장을 위한 올인원 결제, 정산, 마케팅 플랫폼.</p>
             </div>
             <div class="col-lg-2 col-md-4 col-6">
@@ -273,7 +279,7 @@
             </div>
         </div>
         <div class="border-top border-secondary py-3">
-            <p class="mb-0 text-white-50 small text-center">&copy; 2026 BEAUTYPOS. All rights reserved.</p>
+            <p class="mb-0 text-white-50 small text-center">&copy; 2026 ADPAY. All rights reserved.</p>
         </div>
     </div>
 </footer>

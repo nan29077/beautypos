@@ -1,13 +1,20 @@
-<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" role="img" aria-label="ADPAY 결제와 마케팅 심볼">
   <defs>
-    <linearGradient id="beauty" x1="8" y1="6" x2="58" y2="60" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#0EA5E9"/>
-      <stop offset="1" stop-color="#1B3A5C"/>
+    <linearGradient id="adpayBlue" x1="24" y1="16" x2="168" y2="176" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#12B8ED"/>
+      <stop offset="1" stop-color="#2463D5"/>
+    </linearGradient>
+    <linearGradient id="growthBlue" x1="58" y1="121" x2="118" y2="73" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#20B9EF"/>
+      <stop offset="1" stop-color="#225BC7"/>
     </linearGradient>
   </defs>
-  <rect width="64" height="64" rx="17" fill="url(#beauty)"/>
-  <circle cx="21" cy="42" r="7" stroke="white" stroke-width="4"/>
-  <circle cx="43" cy="42" r="7" stroke="white" stroke-width="4"/>
-  <path d="M25.8 37L47 16M38.2 37L17 16" stroke="white" stroke-width="4" stroke-linecap="round"/>
-  <path d="M47 16L50.5 12.5M17 16L13.5 12.5" stroke="#F7DCE4" stroke-width="4" stroke-linecap="round"/>
+  <rect width="192" height="192" rx="46" fill="url(#adpayBlue)"/>
+  <rect x="34" y="47" width="124" height="99" rx="25" fill="#fff"/>
+  <path d="M34 72h124v15H34z" fill="#163454"/>
+  <rect x="55" y="110" width="14" height="18" rx="5" fill="#20B9EF"/>
+  <rect x="80" y="96" width="14" height="32" rx="5" fill="#168EDC"/>
+  <rect x="105" y="80" width="14" height="48" rx="5" fill="url(#growthBlue)"/>
+  <path d="m124 82 8-8 8 8" fill="none" stroke="#20B9EF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="140" cy="54" r="5" fill="#A7ECFF"/>
 </svg>

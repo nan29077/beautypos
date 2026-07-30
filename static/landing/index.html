@@ -4,23 +4,23 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="theme-color" content="#0f4c81">
-    <title>뷰티포스 | 뷰티샵 운영을 한곳에서</title>
-    <meta name="description" content="매장 포스 하나로 결제·고객관리부터 광고 집행과 경쟁업체 분석까지. 미용실·네일샵을 위한 올인원 뷰티 비즈니스 플랫폼, 뷰티포스.">
+    <title>ADPAY | 뷰티샵 운영을 한곳에서</title>
+    <meta name="description" content="매장 포스 하나로 결제·고객관리부터 광고 집행과 경쟁업체 분석까지. 미용실·네일샵을 위한 올인원 뷰티 비즈니스 플랫폼, ADPAY.">
     <meta property="og:type" content="website">
     <meta property="og:locale" content="ko_KR">
-    <meta property="og:site_name" content="뷰티포스">
-    <meta property="og:title" content="뷰티포스 | 매장 포스 하나로 운영부터 광고·분석까지">
+    <meta property="og:site_name" content="ADPAY">
+    <meta property="og:title" content="ADPAY | 매장 포스 하나로 운영부터 광고·분석까지">
     <meta property="og:description" content="결제·고객관리·직원정산·광고집행·경쟁업체 분석을 하나로 연결하는 뷰티샵 올인원 플랫폼">
-    <meta property="og:image" content="/static/img/beautypos-social-card.png">
+    <meta property="og:image" content="/static/img/adpay-social-card.png?v=2">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
     <meta property="og:image:type" content="image/png">
-    <meta property="og:image:alt" content="뷰티포스 - 매장 포스 하나로 운영부터 광고·분석까지 올인원">
+    <meta property="og:image:alt" content="ADPAY - 매장 포스 하나로 운영부터 광고·분석까지 올인원">
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="뷰티포스 | 운영부터 광고·분석까지 올인원">
+    <meta name="twitter:title" content="ADPAY | 운영부터 광고·분석까지 올인원">
     <meta name="twitter:description" content="미용실·네일샵 운영과 마케팅을 포스 하나로 연결하세요.">
-    <meta name="twitter:image" content="/static/img/beautypos-social-card.png">
-    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <meta name="twitter:image" content="/static/img/adpay-social-card.png?v=2">
+    <link rel="icon" type="image/png" sizes="192x192" href="/static/favicon-192.png?v=2">
     <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
     <link rel="preload" as="image" href="/static/img/landing-salon-background.jpg">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -57,9 +57,10 @@
         .nav-inner{width:min(1180px,calc(100% - 40px));margin:auto;display:flex;align-items:center;justify-content:space-between}
         .brand{display:inline-flex;align-items:center;gap:11px;color:var(--ink)}
         .brand-mark{width:43px;height:43px;border-radius:15px;display:inline-flex;align-items:center;justify-content:center;color:#fff;background:linear-gradient(145deg,#8f4860,#c6788e);box-shadow:0 10px 26px rgba(144,72,96,.22);transform:rotate(-3deg)}
-        .brand-mark i{transform:rotate(3deg)}
+        .brand-mark img{display:block;width:100%;height:100%;border-radius:inherit;object-fit:cover}
         .brand-copy{display:flex;flex-direction:column;line-height:1}
         .brand-copy strong{font-size:1.23rem;font-weight:900;letter-spacing:-.055em}
+        .adpay-prefix{color:#20aeef}
         .brand-copy small{margin-top:5px;color:#a07d88;font-size:.52rem;font-weight:800;letter-spacing:.14em}
         .nav-links{display:flex;align-items:center;gap:29px}
         .nav-links>a:not(.nav-cta){color:#60545a;font-size:.88rem;font-weight:700}
@@ -84,7 +85,7 @@
         .trust-row i{margin-right:5px;color:#a95670}
 
         .visual{position:relative;min-height:525px}
-        .visual::before{content:"BEAUTYPOS";position:absolute;right:28px;bottom:48px;color:rgba(255,255,255,.46);font-size:clamp(2.5rem,5vw,5rem);font-weight:900;letter-spacing:.08em;writing-mode:vertical-rl}
+        .visual::before{content:"ADPAY";position:absolute;right:28px;bottom:48px;color:rgba(255,255,255,.46);font-size:clamp(2.5rem,5vw,5rem);font-weight:900;letter-spacing:.08em;writing-mode:vertical-rl}
         .pos-card{position:absolute;right:48px;bottom:86px;width:280px;padding:22px;border:1px solid rgba(255,255,255,.72);border-radius:24px;background:rgba(48,39,43,.82);color:#fff;box-shadow:0 24px 70px rgba(35,20,26,.24);backdrop-filter:blur(18px)}
         .pos-card-top{display:flex;align-items:center;justify-content:space-between;color:rgba(255,255,255,.62);font-size:.68rem;font-weight:700}
         .pos-card-top i{color:#f1bdcb}
@@ -505,9 +506,8 @@
     <div class="landing-fixed-bg" aria-hidden="true"></div>
     <nav class="site-nav" id="siteNav" aria-label="주요 메뉴">
         <div class="nav-inner">
-            <a class="brand" href="/static/landing/index.html" aria-label="뷰티포스 홈">
-                <span class="brand-mark"><i class="fas fa-scissors"></i></span>
-                <span class="brand-copy"><strong>뷰티포스</strong><small>BEAUTY BUSINESS OS</small></span>
+            <a class="brand" href="/static/landing/index.html" aria-label="ADPAY 홈">
+                <span class="brand-copy"><strong><span class="adpay-prefix">AD</span>PAY</strong><small>결제와 마케팅을 하나로</small></span>
             </a>
             <button class="nav-toggle" id="navToggle" aria-label="메뉴 열기" aria-expanded="false"><i class="fas fa-bars"></i></button>
             <div class="nav-links" id="navLinks">
@@ -519,7 +519,7 @@
     </nav>
 
     <main>
-        <section class="hero hero-slider is-playing" id="heroSlider" aria-roledescription="carousel" aria-label="뷰티포스 서비스 소개">
+        <section class="hero hero-slider is-playing" id="heroSlider" aria-roledescription="carousel" aria-label="ADPAY 서비스 소개">
             <div class="hero-track" id="heroTrack">
                 <article class="hero-slide" data-slide="0" style="background-image:url('https://images.unsplash.com/photo-1560066984-138dadb4c035?w=1920&h=1100&fit=crop&q=90')" aria-label="1 / 3, 미용실 통합 관리">
                     <div class="hero-slide-inner">
@@ -527,7 +527,7 @@
                             <span class="eyebrow"><i class="fas fa-scissors"></i> BEAUTY SHOP ALL-IN-ONE</span>
                             <h1><span class="device-title-line">카드 단말기 하나로</span><span class="device-title-line"><em>광고 집행부터 경쟁업체 분석까지</em></span></h1>
                             <p class="hero-copy">결제·직원별 매출·정산에 광고 주문과 플레이스 경쟁 분석까지 연결한 뷰티 업종 전용 올인원 포스입니다.</p>
-                            <div class="hero-actions"><a class="btn-main auth-action" href="/static/login.html"><i class="fas fa-arrow-right"></i> 뷰티포스 시작하기</a><a class="btn-sub" href="#device"><i class="fas fa-cash-register"></i> 포스 살펴보기</a></div>
+                            <div class="hero-actions"><a class="btn-main auth-action" href="/static/login.html"><i class="fas fa-arrow-right"></i> ADPAY 시작하기</a><a class="btn-sub" href="#device"><i class="fas fa-cash-register"></i> 포스 살펴보기</a></div>
                             <div class="trust-row"><span><i class="fas fa-check-circle"></i>결제 포스 통합</span><span><i class="fas fa-check-circle"></i>광고 주문·관리</span><span><i class="fas fa-check-circle"></i>경쟁업체 분석</span></div>
                         </div>
                     </div>
@@ -576,13 +576,13 @@
         <section class="section device" id="device">
             <div class="section-inner device-grid">
                 <div class="device-visual reveal">
-                    <img src="/static/img/pos_p1_0.jpeg" alt="매장 테이블 위에 놓인 뷰티포스 올인원 POS 단말기" loading="lazy" width="1691" height="2392">
+                    <img src="/static/img/pos_p1_0.jpeg" alt="매장 테이블 위에 놓인 ADPAY 올인원 POS 단말기" loading="lazy" width="1691" height="2392">
                     <span class="device-badge">All-in-One POS · 광고 플랫폼 · 경쟁 분석</span>
                 </div>
                 <div class="device-copy reveal">
-                    <span class="section-kicker">BEAUTYPOS DEVICE</span>
+                    <span class="section-kicker">ADPAY DEVICE</span>
                     <h2><span class="device-title-line">카드 단말기 하나로</span><span class="device-title-line">광고 집행부터 경쟁업체 분석까지</span></h2>
-                    <p>결제·정산·직원 관리는 물론, 네이버 플레이스 순위 모니터링과 맞춤 광고 주문까지 — 뷰티포스 단말기 하나면 충분합니다.</p>
+                    <p>결제·정산·직원 관리는 물론, 네이버 플레이스 순위 모니터링과 맞춤 광고 주문까지 — ADPAY 단말기 하나면 충분합니다.</p>
                     <ul class="device-list">
                         <li><i class="far fa-credit-card"></i><span>카드결제·삼성페이·애플페이 모두 지원</span></li>
                         <li><i class="far fa-chart-bar"></i><span>경쟁업체 플레이스 순위 매일 자동 비교</span></li>
@@ -607,7 +607,7 @@
             </div>
         </section>
 
-        <section class="impact" aria-label="뷰티포스 통합 관리 범위">
+        <section class="impact" aria-label="ADPAY 통합 관리 범위">
             <div class="impact-grid reveal">
                 <div class="impact-copy"><small>CONNECTED BEAUTY BUSINESS</small><h2>따로 관리하던 업무를 하나로 연결</h2></div>
                 <div class="impact-item"><strong>POS + 5</strong><span>결제·고객·직원·정산·광고·분석 통합</span></div>
@@ -654,7 +654,7 @@
 
         <section class="section" id="benefits">
             <div class="section-inner">
-                <div class="section-head reveal"><span class="section-kicker">WHY BEAUTYPOS</span><h2>반복 업무는 줄이고<br>매장 판단은 더 빠르게</h2><p>기능을 많이 모으는 데서 끝나지 않습니다. 오늘 무엇을 확인하고 다음에 무엇을 해야 하는지 쉽게 이해할 수 있도록 설계했습니다.</p></div>
+                <div class="section-head reveal"><span class="section-kicker">WHY ADPAY</span><h2>반복 업무는 줄이고<br>매장 판단은 더 빠르게</h2><p>기능을 많이 모으는 데서 끝나지 않습니다. 오늘 무엇을 확인하고 다음에 무엇을 해야 하는지 쉽게 이해할 수 있도록 설계했습니다.</p></div>
                 <div class="outcome-grid">
                     <div class="outcome-intro reveal"><span class="section-kicker">A BETTER WORKDAY</span><h2>원장님의 하루가<br>한결 단순해집니다</h2><p>아침에는 오늘의 매장 현황을 확인하고, 영업 중에는 결제와 고객을 관리하고, 마감 후에는 정산과 광고 성과를 살펴보세요. 모든 업무가 같은 화면과 데이터로 이어집니다.</p></div>
                     <div class="outcome-list">
@@ -676,7 +676,7 @@
 
         <section class="section growth" id="faq">
             <div class="section-inner">
-                <div class="section-head reveal"><span class="section-kicker">FREQUENTLY ASKED</span><h2>뷰티포스, 이런 점이 궁금하셨죠?</h2><p>매장 운영 방식과 사용자 역할에 맞춰 필요한 기능을 단계적으로 활용할 수 있습니다.</p></div>
+                <div class="section-head reveal"><span class="section-kicker">FREQUENTLY ASKED</span><h2>ADPAY, 이런 점이 궁금하셨죠?</h2><p>매장 운영 방식과 사용자 역할에 맞춰 필요한 기능을 단계적으로 활용할 수 있습니다.</p></div>
                 <div class="faq-list">
                     <details class="faq-item reveal" open><summary>매장 포스와 광고 관리가 어떻게 연결되나요?</summary><p>결제와 매출을 확인하는 같은 관리자 화면에서 광고를 주문하고 진행 상태를 관리할 수 있습니다. 광고 분석 메뉴에서는 플레이스 순위와 리뷰 변화를 함께 확인합니다.</p></details>
                     <details class="faq-item reveal"><summary>원장님과 디자이너가 같은 화면을 사용하나요?</summary><p>아닙니다. 원장님은 매장 전체 매출, 직원, 정산, 고객과 광고 기능을 관리하고, 디자이너는 본인의 결제 내역과 월별 통계, 정산 정보를 중심으로 확인합니다.</p></details>
@@ -687,15 +687,14 @@
             </div>
         </section>
 
-        <section class="cta"><div class="cta-box reveal"><h2>포스 하나로 운영과 마케팅을 연결하세요</h2><p>결제부터 고객관리, 직원 정산, 광고 주문과 성과 분석까지 뷰티포스에서 시작됩니다.</p><a class="btn-main auth-action" href="/static/login.html"><i class="fas fa-arrow-right"></i> 지금 시작하기</a></div></section>
+        <section class="cta"><div class="cta-box reveal"><h2>포스 하나로 운영과 마케팅을 연결하세요</h2><p>결제부터 고객관리, 직원 정산, 광고 주문과 성과 분석까지 ADPAY에서 시작됩니다.</p><a class="btn-main auth-action" href="/static/login.html"><i class="fas fa-arrow-right"></i> 지금 시작하기</a></div></section>
     </main>
 
     <footer class="site-footer">
         <div class="footer-shell">
             <div class="footer-brand-block">
-                <a class="brand" href="/static/landing/index.html" aria-label="뷰티포스 홈">
-                    <span class="brand-mark"><i class="fas fa-scissors"></i></span>
-                    <span class="brand-copy"><strong>뷰티포스</strong><small>BEAUTY BUSINESS OS</small></span>
+                <a class="brand" href="/static/landing/index.html" aria-label="ADPAY 홈">
+                    <span class="brand-copy"><strong><span class="adpay-prefix">AD</span>PAY</strong><small>결제와 마케팅을 하나로</small></span>
                 </a>
                 <p>결제부터 고객·직원·정산, 광고 집행과 경쟁업체 분석까지 연결하는 뷰티 업종 전용 올인원 포스입니다.</p>
             </div>
@@ -717,7 +716,7 @@
                 </nav>
             </div>
             <div class="footer-bottom">
-                <span>© 2026 BEAUTYPOS. All rights reserved.</span>
+                <span>© 2026 ADPAY. All rights reserved.</span>
                 <span>뷰티 비즈니스의 더 나은 하루를 만듭니다.</span>
             </div>
         </div>

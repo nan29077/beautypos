@@ -3,7 +3,7 @@
 
 매일 한국시간 오후 2시에 모든 가맹점의 지표를 수집한다.
 - 외부 스케줄러 라이브러리 없이 asyncio 만 사용한다 (FastAPI lifespan 에 등록).
-- 당일 이미 수집된 대상은 건너뛴다 (fetch_all_for_merchant 의 캐시 로직 재사용).
+- 당일 수동 조회 기록이 있어도 오후 2시 시점의 최신 순위로 다시 갱신한다.
 - 화면의 '광고 분석하기' 수동 버튼과는 완전히 독립적으로 동작한다.
 """
 import asyncio
@@ -38,26 +38,8 @@ def _merchant_ids_with_targets(db) -> list:
     return sorted(ids)
 
 
-def _already_collected_today(db, merchant_id: int) -> bool:
-    """오늘 자동 수집분이 이미 있으면 True.
-
-    AdMetric 은 fetch_all_for_merchant 에서 UTC 날짜로 저장하므로
-    같은 기준으로 조회해야 스킵 판정이 어긋나지 않는다.
-    """
-    from sqlalchemy import func
-    from app.models.ad import AdMetric
-
-    today = datetime.utcnow().date()
-    count = db.query(func.count(AdMetric.id)).filter(
-        AdMetric.merchant_id == merchant_id,
-        AdMetric.date == today,
-        AdMetric.source == "api",
-    ).scalar() or 0
-    return count > 0
-
-
 async def collect_all_merchants() -> dict:
-    """모든 가맹점의 지표를 순차 수집한다. 당일 수집분이 있으면 건너뛴다."""
+    """등록된 모든 가맹점·플레이스의 오후 2시 최신 지표를 순차 수집한다."""
     from app.database import SessionLocal
     from app.services import naver_place
 
@@ -72,12 +54,11 @@ async def collect_all_merchants() -> dict:
     for index, merchant_id in enumerate(merchant_ids):
         db = SessionLocal()
         try:
-            if _already_collected_today(db, merchant_id):
-                skipped += 1
-                logger.info("자동 수집 건너뜀 (가맹점 %s): 오늘 데이터가 이미 있습니다", merchant_id)
-                continue
-            result = await naver_place.fetch_all_for_merchant(merchant_id, db=db, force=False)
+            # 오전 또는 오후 2시 이전에 수동 조회했더라도 예약 시점의 실제 순위로
+            # 당일 스냅샷을 갱신해야 하므로 캐시를 사용하지 않는다.
+            result = await naver_place.fetch_all_for_merchant(merchant_id, db=db, force=True)
             collected += result.get("collected", 0)
+            skipped += result.get("skipped", 0)
             failed += result.get("failed", 0)
             logger.info(
                 "자동 수집 완료 (가맹점 %s): 저장 %s건, 실패 %s건, %.1f초",
