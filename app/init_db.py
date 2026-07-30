@@ -7,7 +7,7 @@ import sys
 from sqlalchemy import inspect, text
 from app.database import engine, Base, SessionLocal
 from app.models import *  # noqa: F401, F403 — import all models to register them
-from app.seed import run_seed, seed_crm_demo
+from app.seed import run_seed, seed_crm_demo, seed_plans
 from app.config import get_settings
 
 
@@ -178,6 +178,15 @@ def init_db():
     _remove_retired_features()
     _ensure_columns()
     print("✅ Tables created")
+
+    # 플랜은 데모 데이터가 아니라 운영에도 필요한 기준 데이터이므로 DEV_MODE 와 무관하게 보강한다.
+    db = SessionLocal()
+    try:
+        seed_plans(db)
+    except Exception as e:
+        print(f"   ⚠️ Plan seed skipped: {e}")
+    finally:
+        db.close()
 
     settings = get_settings()
     if not settings.DEV_MODE:

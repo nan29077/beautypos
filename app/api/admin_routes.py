@@ -4,7 +4,7 @@ Covers: merchants CRUD, PG config, transactions, payout requests,
         ad orders management, metrics, fee policies, sales assignments, landing stats.
 """
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date as date_type
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -45,7 +45,13 @@ from app.schemas.schemas import (
     FeePolicyUpdate, GlobalFeeSettingsUpdate, MerchantFeeOverrideUpdate, SalesCommissionOverrideUpdate,
     SalesAssignmentCreate, SalesAssignmentUpdate,
     CommissionVisibilityUpdate, StaffShareRateUpdate, AISettingsUpdate,
+    PlanUpdate, MerchantPlanAssign, AdExecutionCreate,
 )
+from app.models.plan import (
+    Plan, MerchantPlan, AdExecution,
+    AD_EXECUTION_TYPE_CODES, AD_EXECUTION_TYPE_LABELS,
+)
+from app.services import plan_service
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -108,6 +114,8 @@ def create_merchant(req: MerchantCreate, db: Session = Depends(get_db), _=Depend
         business_no=req.business_no, address=req.address, phone=req.phone,
     )
     db.add(m)
+    db.flush()
+    plan_service.ensure_default_plan(db, m.id)  # 신규 가맹점은 베이직 플랜으로 시작
     db.commit()
     db.refresh(m)
     return {"id": m.id, "name": m.name}
@@ -1879,3 +1887,224 @@ async def test_ai_connection(db: Session = Depends(get_db), _=Depends(require_ad
         return {"configured": False, "ok": False, "detail": "등록된 API 키가 없습니다."}
     result = await ai_service.test_connection(key)
     return {"configured": True, **result}
+
+
+# ═══════════════════════════════════════════════════════════
+# 플랜 관리 (베이직 / 스탠다드 / 프리미엄)
+# ═══════════════════════════════════════════════════════════
+
+_PLAN_ORDER = {"basic": 0, "standard": 1, "premium": 2}
+
+
+@router.get("/plans")
+def list_plans(db: Session = Depends(get_db), _=Depends(require_admin)):
+    """전체 플랜 목록 (베이직 → 스탠다드 → 프리미엄 순)."""
+    plans = db.query(Plan).all()
+    plans.sort(key=lambda p: _PLAN_ORDER.get(p.code, 99))
+    return [plan_service.plan_payload(p) for p in plans]
+
+
+@router.put("/plans/{plan_id}")
+def update_plan(
+    plan_id: int,
+    req: PlanUpdate,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin),
+):
+    """플랜 수수료율 / 광고 목표 건수 수정. 전달된 필드만 갱신한다."""
+    plan = db.query(Plan).filter(Plan.id == plan_id).first()
+    if not plan:
+        raise HTTPException(status_code=404, detail="플랜을 찾을 수 없습니다")
+
+    changes = req.model_dump(exclude_unset=True, exclude_none=True)
+    if not changes:
+        raise HTTPException(status_code=400, detail="변경할 값이 없습니다")
+    for field, value in changes.items():
+        setattr(plan, field, value)
+
+    db.commit()
+    db.refresh(plan)
+    return plan_service.plan_payload(plan)
+
+
+@router.get("/merchants/{merchant_id}/plan")
+def get_merchant_plan(merchant_id: int, db: Session = Depends(get_db), _=Depends(require_admin)):
+    """가맹점의 현재 플랜과 배정 정보."""
+    merchant = db.query(Merchant).filter(Merchant.id == merchant_id).first()
+    if not merchant:
+        raise HTTPException(status_code=404, detail="가맹점을 찾을 수 없습니다")
+
+    assignment = plan_service.current_assignment(db, merchant_id)
+    if not assignment:
+        return {
+            "merchant_id": merchant.id, "merchant_name": merchant.name,
+            "plan": None, "assigned_at": None, "assigned_by": None, "assigned_by_name": None,
+        }
+    return {
+        "merchant_id": merchant.id,
+        "merchant_name": merchant.name,
+        "plan": plan_service.plan_payload(assignment.plan),
+        "assigned_at": str(assignment.assigned_at),
+        "assigned_by": assignment.assigned_by,
+        "assigned_by_name": assignment.assigner.name if assignment.assigner else None,
+    }
+
+
+@router.put("/merchants/{merchant_id}/plan")
+def change_merchant_plan(
+    merchant_id: int,
+    req: MerchantPlanAssign,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """가맹점 플랜 변경 (배정 이력이 한 건 추가된다)."""
+    merchant = db.query(Merchant).filter(Merchant.id == merchant_id).first()
+    if not merchant:
+        raise HTTPException(status_code=404, detail="가맹점을 찾을 수 없습니다")
+    plan = db.query(Plan).filter(Plan.id == req.plan_id).first()
+    if not plan:
+        raise HTTPException(status_code=404, detail="플랜을 찾을 수 없습니다")
+
+    plan_service.assign_plan(db, merchant_id, plan.id, assigned_by=admin.id)
+    db.commit()
+    return {
+        "ok": True, "merchant_id": merchant.id, "merchant_name": merchant.name,
+        "plan": plan_service.plan_payload(plan),
+    }
+
+
+# ═══════════════════════════════════════════════════════════
+# 광고 집행 기록
+# ═══════════════════════════════════════════════════════════
+
+def _parse_date(value: Optional[str], field: str = "date") -> date_type:
+    if not value:
+        return date_type.today()
+    try:
+        return date_type.fromisoformat(value)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"{field} 형식이 올바르지 않습니다 (YYYY-MM-DD)")
+
+
+@router.post("/ad-executions")
+def create_ad_execution(
+    req: AdExecutionCreate,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """집행 건수 입력. 같은 가맹점·광고종류·날짜가 이미 있으면 값을 덮어쓴다."""
+    if req.ad_type not in AD_EXECUTION_TYPE_CODES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"광고 종류가 올바르지 않습니다 ({', '.join(AD_EXECUTION_TYPE_CODES)})",
+        )
+    merchant = db.query(Merchant).filter(Merchant.id == req.merchant_id).first()
+    if not merchant:
+        raise HTTPException(status_code=404, detail="가맹점을 찾을 수 없습니다")
+
+    exec_date = req.execution_date or date_type.today()
+    row = (
+        db.query(AdExecution)
+        .filter(
+            AdExecution.merchant_id == req.merchant_id,
+            AdExecution.ad_type == req.ad_type,
+            AdExecution.execution_date == exec_date,
+        )
+        .first()
+    )
+    if row:
+        row.executed_count = req.executed_count
+        if req.note is not None:
+            row.note = req.note
+        row.created_by = admin.id
+    else:
+        row = AdExecution(
+            merchant_id=req.merchant_id,
+            ad_type=req.ad_type,
+            executed_count=req.executed_count,
+            execution_date=exec_date,
+            note=req.note,
+            created_by=admin.id,
+        )
+        db.add(row)
+    db.commit()
+    db.refresh(row)
+
+    summary = plan_service.build_summary(db, exec_date, [merchant])
+    return {
+        "ok": True,
+        "id": row.id,
+        "merchant_id": row.merchant_id,
+        "ad_type": row.ad_type,
+        "executed_count": row.executed_count,
+        "execution_date": str(row.execution_date),
+        "summary": summary[0] if summary else None,
+    }
+
+
+@router.get("/ad-executions/summary")
+def ad_execution_summary(
+    date: Optional[str] = Query(default=None, description="기준일 (YYYY-MM-DD, 기본 오늘)"),
+    merchant_id: Optional[int] = Query(default=None),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin),
+):
+    """가맹점별 × 광고종류별 오늘집행 / 월누적 / 일목표 / 월목표 / 잔여건수."""
+    target = _parse_date(date)
+    q = db.query(Merchant).filter(Merchant.is_active == True)  # noqa: E712
+    if merchant_id:
+        q = q.filter(Merchant.id == merchant_id)
+    merchants = q.order_by(Merchant.name.asc()).all()
+
+    month_start, month_end = plan_service.month_bounds(target)
+    return {
+        "date": str(target),
+        "month_start": str(month_start),
+        "month_end": str(month_end),
+        "ad_types": [{"code": c, "label": l} for c, l in AD_EXECUTION_TYPE_LABELS.items()],
+        "merchants": plan_service.build_summary(db, target, merchants),
+    }
+
+
+@router.get("/ad-executions")
+def list_ad_executions(
+    date: Optional[str] = Query(default=None, description="특정 일자 (YYYY-MM-DD)"),
+    date_from: Optional[str] = Query(default=None),
+    date_to: Optional[str] = Query(default=None),
+    merchant_id: Optional[int] = Query(default=None),
+    ad_type: Optional[str] = Query(default=None),
+    limit: int = Query(default=200, le=1000),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin),
+):
+    """집행 기록 목록 (날짜별 필터)."""
+    q = db.query(AdExecution)
+    if date:
+        q = q.filter(AdExecution.execution_date == _parse_date(date))
+    else:
+        if date_from:
+            q = q.filter(AdExecution.execution_date >= _parse_date(date_from, "date_from"))
+        if date_to:
+            q = q.filter(AdExecution.execution_date <= _parse_date(date_to, "date_to"))
+    if merchant_id:
+        q = q.filter(AdExecution.merchant_id == merchant_id)
+    if ad_type:
+        q = q.filter(AdExecution.ad_type == ad_type)
+
+    rows = q.order_by(AdExecution.execution_date.desc(), AdExecution.id.desc()).limit(limit).all()
+    merchant_names = {m.id: m.name for m in db.query(Merchant).all()}
+    return [
+        {
+            "id": r.id,
+            "merchant_id": r.merchant_id,
+            "merchant_name": merchant_names.get(r.merchant_id, "-"),
+            "ad_type": r.ad_type,
+            "ad_type_label": AD_EXECUTION_TYPE_LABELS.get(r.ad_type, r.ad_type),
+            "executed_count": r.executed_count,
+            "execution_date": str(r.execution_date),
+            "note": r.note,
+            "created_by": r.created_by,
+            "created_at": str(r.created_at),
+        }
+        for r in rows
+    ]

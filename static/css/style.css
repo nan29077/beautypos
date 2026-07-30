@@ -1,4 +1,4 @@
-/* 뷰티포스 Dashboard — Global Styles */
+/* ADPAY Dashboard — Global Styles */
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap');
 
 :root {
@@ -12,6 +12,79 @@
 
 * { font-family: 'Noto Sans KR', sans-serif; box-sizing: border-box; }
 body { background: #f0f2f5; margin: 0; min-height: 100vh; -webkit-font-smoothing: antialiased; }
+
+/* ─── Text-only ADPAY loading screen ─────────────────────── */
+.app-boot-loader { display: none; }
+body.app-booting { overflow: hidden; }
+body.app-booting > :not(.app-boot-loader):not(script) { visibility: hidden !important; }
+body.app-booting > .app-boot-loader {
+    position: fixed;
+    z-index: 99999;
+    inset: 0;
+    display: flex;
+    visibility: visible !important;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(circle at 50% 42%, rgba(32,174,239,.12), transparent 230px), #f7f9fc;
+}
+.adpay-loading {
+    min-height: 132px;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 26px 16px;
+}
+.page-content > .adpay-loading {
+    position: fixed;
+    z-index: 1020;
+    inset: 0;
+    min-height: 100vh;
+    min-height: 100dvh;
+    margin: 0;
+    padding: 0;
+    background: radial-gradient(circle at center, rgba(32,174,239,.075), transparent 190px), rgba(247,249,252,.96);
+}
+.adpay-loading-logo {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    transform-origin: center;
+    animation: adpay-heartbeat 1.35s ease-in-out infinite;
+    filter: drop-shadow(0 9px 18px rgba(15,76,129,.12));
+}
+.adpay-loading-logo strong {
+    color: #163454;
+    font-size: 1.18rem;
+    font-weight: 900;
+    letter-spacing: -.055em;
+}
+.adpay-loading-logo strong span { color: #20aeef; }
+.adpay-loading-logo small {
+    margin-top: 6px;
+    color: #74869a;
+    font-size: .52rem;
+    font-weight: 700;
+    letter-spacing: -.02em;
+}
+.adpay-loading-message {
+    margin: 14px 0 0;
+    color: #74869a;
+    font-size: .76rem;
+    text-align: center;
+}
+@keyframes adpay-heartbeat {
+    0%, 100% { transform: scale(.96); opacity: .78; }
+    18% { transform: scale(1.055); opacity: 1; }
+    34% { transform: scale(.985); opacity: .9; }
+    48% { transform: scale(1.025); opacity: 1; }
+    72% { transform: scale(.96); opacity: .78; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .adpay-loading-logo { animation: none; }
+}
 
 /* ─── Sidebar ─── */
 .sidebar {
@@ -187,6 +260,9 @@ body { background: #f0f2f5; margin: 0; min-height: 100vh; -webkit-font-smoothing
     padding: .6rem 1rem; display: flex; align-items: center; gap: .8rem;
 }
 .mobile-header .brand-mobile { font-weight: 800; font-size: 1rem; color: var(--primary); }
+.brand-mobile-copy { display: flex; flex-direction: column; line-height: 1; }
+.brand-mobile-copy strong { font-weight: 900; }
+.brand-mobile-copy small { margin-top: 3px; color: #718096; font-size: .48rem; font-weight: 700; }
 
 /* ─── Clean workspace components ─────────────────────────── */
 .workspace-hero {
@@ -206,7 +282,7 @@ body { background: #f0f2f5; margin: 0; min-height: 100vh; -webkit-font-smoothing
 }
 
 /* ═══════════════════════════════════════════════════════════
-   BEAUTYPOS 2026 — unified beauty admin visual system
+   ADPAY 2026 — unified beauty admin visual system
    ═══════════════════════════════════════════════════════════ */
 :root {
     --primary: #9f596d;
@@ -343,6 +419,8 @@ body {
 .beauty-brand-mark i { color: inherit !important; font-size: 1rem; transform: none; }
 .beauty-brand-copy { min-width: 0; display: flex; flex-direction: column; line-height: 1.05; }
 .beauty-brand-copy strong { font-size: 1.22rem; font-weight: 900; letter-spacing: -.055em; }
+.adpay-prefix { color: #21b4ef; }
+.adpay-suffix { color: inherit; }
 .beauty-brand-copy small {
     margin-top: 6px;
     color: rgba(255,255,255,.48);
@@ -863,6 +941,72 @@ body[data-page="owner-analysis"] #analysisCompare .fw-bold {
 }
 .analysis-notice-icon { font-size: 1rem; line-height: 1.35; }
 .analysis-notice strong { color: #14406a; }
+.analysis-notice > span:not(.analysis-notice-icon) { display: flex; flex-direction: column; gap: 2px; }
+.analysis-notice small { color: #58748d; font-size: .72rem; line-height: 1.5; }
+.rank-update-copy-mobile { display: none !important; }
+
+.rank-refresh-guide {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin: 0 0 12px;
+    padding: 9px 11px;
+    border: 1px solid #cfe6f4;
+    border-radius: 11px;
+    color: #164e72;
+    background: #f0f8fd;
+    text-align: left;
+}
+.rank-refresh-guide > i {
+    display: grid;
+    width: 30px;
+    height: 30px;
+    flex: 0 0 30px;
+    place-items: center;
+    border-radius: 9px;
+    color: #0f6cbd;
+    background: #fff;
+}
+.rank-refresh-guide span,
+.rank-refresh-guide strong,
+.rank-refresh-guide small { display: block; }
+.rank-refresh-guide strong { font-size: .72rem; }
+.rank-refresh-guide small { margin-top: 2px; color: #668197; font-size: .66rem; line-height: 1.4; }
+.rank-refresh-guide small b { color: #0f6cbd; }
+.rank-refresh-guide.is-compact {
+    justify-content: center;
+    gap: 6px;
+    margin: 9px 0 0;
+    padding: 7px 8px;
+}
+.rank-refresh-guide.is-compact > i {
+    width: 25px;
+    height: 25px;
+    flex-basis: 25px;
+    font-size: .68rem;
+}
+.rank-refresh-guide.is-compact strong { font-size: .64rem; }
+.rank-refresh-guide.is-compact small { font-size: .59rem; }
+
+@media (max-width: 767.98px) {
+    body.role-mobile-ui[data-page="owner-analysis"] .rank-update-copy-desktop {
+        display: none !important;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .rank-update-copy-mobile {
+        display: block !important;
+        white-space: nowrap;
+        letter-spacing: -.04em;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-notice small {
+        font-size: .59rem;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .rank-refresh-guide small {
+        font-size: .58rem;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .rank-refresh-guide.is-compact small {
+        font-size: .56rem;
+    }
+}
 
 /* ─── 경쟁업체 비교표 (데스크톱) ─── */
 .cmp-table { border-color: #dde3ea; }
@@ -2074,7 +2218,7 @@ body[data-page="owner-analysis"] #analysisCompare .fw-bold {
     body.role-mobile-ui .crm-recent-list button { min-height: 70px; padding: 11px 13px; }
 }
 
-/* Final cascade: preserve the BeautyPOS palette over legacy component rules. */
+/* Final cascade: preserve the ADPAY palette over legacy component rules. */
 .workspace-hero,
 .crm-welcome {
     border-color: transparent !important;
@@ -2121,7 +2265,7 @@ body[data-page="owner-analysis"] #analysisCompare .fw-bold {
     body.role-mobile-ui .mobile-card-table td { border-color: #f1e8eb; }
 }
 
-/* Classic BeautyPOS palette — original navy and sky-blue colorway. */
+/* Classic ADPAY palette — original navy and sky-blue colorway. */
 :root {
     --primary: #1b3a5c;
     --primary-light: #2c5f8a;
@@ -3390,6 +3534,26 @@ body[data-page="admin-metrics"] .card[style*="linear-gradient"] { background: li
 
 /* 전역 모바일 모달 규칙 뒤에서 광고 분석설정 버텀시트의 세부 디자인을 고정한다. */
 @media (max-width: 767.98px) {
+    body.role-mobile-ui .analysis-settings-modal .modal-dialog,
+    .analysis-settings-modal .modal-dialog {
+        width: 100% !important;
+        height: 70vh !important;
+        height: 70dvh !important;
+        min-height: 0 !important;
+        max-height: 70vh !important;
+        max-height: 70dvh !important;
+        margin: 0 !important;
+    }
+
+    body.role-mobile-ui .analysis-settings-modal .modal-content,
+    .analysis-settings-modal .modal-content {
+        height: 70vh !important;
+        height: 70dvh !important;
+        min-height: 0 !important;
+        max-height: 70vh !important;
+        max-height: 70dvh !important;
+    }
+
     .analysis-settings-modal .modal-header::before {
         display: none !important;
         content: none !important;
@@ -3410,5 +3574,46 @@ body[data-page="admin-metrics"] .card[style*="linear-gradient"] { background: li
     .analysis-settings-modal .modal-footer .btn {
         height: 46px !important;
         font-size: .86rem !important;
+    }
+}
+
+/* ─── 광고 실행 현황 (어드민) ───────────────────────────── */
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+}
+
+/* 미달성(일 목표 미달 또는 월 잔여 음수) 행 · 항목 */
+tr.ad-exec-behind > td {
+    background: #fff5f5;
+    animation: blink 1s infinite;
+}
+
+.ad-exec-item {
+    border: 1px solid #f3f4f6;
+    border-radius: .6rem;
+    padding: .7rem .8rem;
+    margin-bottom: .6rem;
+}
+
+.ad-exec-item:last-child {
+    margin-bottom: 0;
+}
+
+.ad-exec-item.ad-exec-behind {
+    border: 2px solid #dc3545;
+    background: #fff5f5;
+    animation: blink 1s infinite;
+}
+
+.ad-exec-input {
+    max-width: 180px;
+}
+
+/* 깜빡임을 원치 않는 사용자는 정적 강조만 본다 */
+@media (prefers-reduced-motion: reduce) {
+    tr.ad-exec-behind > td,
+    .ad-exec-item.ad-exec-behind {
+        animation: none;
     }
 }
