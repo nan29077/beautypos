@@ -7,14 +7,18 @@
       │     ├─ PG 실비용(pg_cost) = gross × pg_fee_rate
       │     ├─ 플랫폼 수익(platform_income) = merchant_fee - pg_cost
       │     │     ├─ 영업 커미션(sales_commission) = gross × sales_commission_rate
+      │     │     │     (영업담당자 미배정 가맹점은 0원)
       │     │     └─ 회사 순수익(company_profit) = platform_income - sales_commission
+      │     │           (영업담당자 미배정 시 platform_income 전액)
       └─ 미용실 실수령액(net_payout) = gross - merchant_fee
            ├─ 디자이너 몫 = net_payout × staff.share_rate
            └─ 원장 몫    = net_payout × (1 - staff.share_rate)
 
 수수료율 우선순위:
     merchant_fee_rate / pg_fee_rate: 가맹점 오버라이드 → 전역 기본값 → 하드코딩 기본값
-    sales_commission_rate: 영업관리자 오버라이드 → 전역 기본값 → 하드코딩 기본값
+    sales_commission_rate:
+        활성 영업배정이 없는 가맹점 → 0% (플랫폼 수익 전액이 회사 순수익)
+        배정이 있으면 영업관리자 오버라이드 → 전역 기본값 → 배정값 → 하드코딩 기본값
 
 부가세(VAT) 처리:
     DB에 저장되는 merchant_fee_rate / pg_fee_rate 는 **부가세 별도** 기준이다.
@@ -35,7 +39,11 @@ from app.models.staff import Staff
 # 하드코딩 기본값 (DB에 전역 설정이 없을 때 사용) — 모두 부가세 별도 기준
 DEFAULT_MERCHANT_FEE_RATE = 0.05   # 5%
 DEFAULT_PG_FEE_RATE = 0.03         # 3%
-DEFAULT_SALES_COMMISSION_RATE = 0.01  # 1%
+DEFAULT_SALES_COMMISSION_RATE = 0.01  # 1% (영업배정이 있을 때만 폴백으로 사용)
+
+# 활성 영업배정이 없는 가맹점의 커미션율 — 0%.
+# 이 경우 플랫폼 수익(merchant_fee_rate - pg_fee_rate) 전액이 회사 순수익이 된다.
+NO_SALES_COMMISSION_RATE = 0.0
 
 # 부가세 — 저장된 수수료율(부가세 별도)에 곱해서 실제 적용 수수료율을 얻는다.
 VAT_RATE = 0.1
@@ -73,7 +81,11 @@ def get_effective_fee_rates(
 
     merchant_fee_rate: 가맹점 오버라이드 → 전역 기본값 → DEFAULT_MERCHANT_FEE_RATE
     pg_fee_rate:       가맹점 오버라이드 → 전역 기본값 → DEFAULT_PG_FEE_RATE
-    sales_commission_rate: 영업관리자 오버라이드 → 전역 기본값 → DEFAULT_SALES_COMMISSION_RATE
+    sales_commission_rate:
+        활성 MerchantSalesAssignment 가 없는 가맹점 → NO_SALES_COMMISSION_RATE(0%).
+        전역 SalesCommissionPolicy 가 있어도 배정이 없으면 적용하지 않는다.
+        배정이 있으면 영업관리자 오버라이드 → 전역 정책 → 배정값 → DEFAULT_SALES_COMMISSION_RATE.
+        merchant_id 가 None 인 전역 기본값 조회에는 0% 규칙을 적용하지 않는다.
 
     반환되는 merchant_fee_rate / pg_fee_rate 는 **저장값 그대로(부가세 별도)** 이다.
     실제 적용율이 필요하면 get_effective_fee_rates_with_vat() 를 사용한다.
@@ -94,7 +106,18 @@ def get_effective_fee_rates(
     merchant_fee_rate = _fp_rate("merchant_fee_rate", DEFAULT_MERCHANT_FEE_RATE)
     pg_fee_rate = _fp_rate("pg_fee_rate", DEFAULT_PG_FEE_RATE)
 
-    # 영업관리자 커미션: SalesCommissionPolicy 오버라이드 → 전역 → 배정의 commission_rate → 기본값
+    # 영업 커미션율 — 활성 영업배정이 없는 가맹점은 커미션 0%.
+    # 이 경우 플랫폼 수익 전액이 회사 순수익이 된다 (전역 정책·기본값을 적용하지 않는다).
+    # merchant_id 가 None 인 전역 기본값 조회에는 이 규칙을 적용하지 않는다.
+    assign = db.query(MerchantSalesAssignment).filter(
+        MerchantSalesAssignment.merchant_id == merchant_id,
+        MerchantSalesAssignment.is_active == True,  # noqa: E712
+    ).first() if merchant_id else None
+
+    if merchant_id and assign is None:
+        return merchant_fee_rate, pg_fee_rate, NO_SALES_COMMISSION_RATE
+
+    # 배정이 있는 경우: SalesCommissionPolicy 오버라이드 → 전역 → 배정의 commission_rate → 기본값
     scp = None
     if sales_manager_user_id:
         scp = db.query(SalesCommissionPolicy).filter(
@@ -109,10 +132,6 @@ def get_effective_fee_rates(
         commission_rate = float(scp.commission_rate)
     else:
         # SalesCommissionPolicy 없으면 MerchantSalesAssignment.commission_rate 폴백
-        assign = db.query(MerchantSalesAssignment).filter(
-            MerchantSalesAssignment.merchant_id == merchant_id,
-            MerchantSalesAssignment.is_active == True,  # noqa: E712
-        ).first()
         commission_rate = float(assign.commission_rate) if assign else DEFAULT_SALES_COMMISSION_RATE
 
     return merchant_fee_rate, pg_fee_rate, commission_rate
@@ -133,11 +152,14 @@ def get_effective_fee_rates_with_vat(
     return apply_vat(mfr), apply_vat(pgr), comm
 
 
-# 하위 호환용 — 기존 코드에서 사용 중
+# 하위 호환용 — 현재 호출처 없음
 def get_fee_rates(db: Session, merchant_id: int):
-    """(pg_fee_rate, vat_inclusive_rate) 반환 (하위 호환용)."""
+    """(pg_fee_rate, 부가세 포함 pg_fee_rate) 반환 (하위 호환용).
+
+    VAT 배수를 직접 쓰지 않고 apply_vat() 를 경유해 다른 경로와 어긋나지 않게 한다.
+    """
     merchant_fee_rate, pg_fee_rate, _ = get_effective_fee_rates(db, merchant_id)
-    return pg_fee_rate, round(pg_fee_rate * 1.1, 4)
+    return pg_fee_rate, round(apply_vat(pg_fee_rate), 4)
 
 
 def get_sales_commission_rate(db: Session, merchant_id: int) -> float:

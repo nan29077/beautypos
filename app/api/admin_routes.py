@@ -1443,9 +1443,9 @@ def _validate_merchant_commission_fit(
     (merchant_fee_rate - pg_fee_rate)을 초과하면 400.
     검증 없이 저장하면 이후 정산 계산에서 ValueError → 500 이 된다.
 
-    활성 배정이 없어도 전역 SalesCommissionPolicy / 기본값이 커미션율로 적용되므로
-    (compute_fee_distribution 은 배정 여부와 무관하게 검증한다) 이 경우에도
-    유효 커미션율을 구해서 검증한다.
+    배정 여부와 무관하게 get_effective_fee_rates() 로 유효 커미션율을 구해 검증한다.
+    영업담당자 미배정 가맹점은 커미션 0% 이므로 플랫폼 수익률이 음수
+    (merchant_fee_rate < pg_fee_rate)인 경우만 걸러진다.
     """
     assign = db.query(MerchantSalesAssignment).filter(
         MerchantSalesAssignment.merchant_id == merchant_id,

@@ -1542,6 +1542,11 @@ async function loadAdminFeeSettings(c, t) {
             </div>
             <div class="alert alert-light border small mt-2 mb-0">
                 <i class="fas fa-info-circle text-primary me-1"></i>${VAT_NOTICE}
+                <div class="mt-1">
+                    <i class="fas fa-user-slash text-secondary me-1"></i>영업관리자가 배정되지 않은 가맹점은
+                    <strong>영업 커미션 0%</strong>가 적용되며, 플랫폼 수익 전액이 회사 순수익이 됩니다.
+                    <span class="text-muted">(위 영업 커미션율은 배정된 가맹점에만 적용)</span>
+                </div>
             </div>
             <!-- 자동계산 미리보기 -->
             <div class="row g-2 mt-2 align-items-center">
