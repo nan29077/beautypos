@@ -10,6 +10,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import Optional
 
+from app.utils.kst import today_kst, kst_day_start_utc, fmt_kst, now_kst
+
 from app.database import get_db
 from app.models.user import User, UserRole
 from app.models.merchant import Merchant
@@ -37,7 +39,7 @@ from app.services.settlement_service import (
     compute_distribution, get_effective_fee_rates, compute_fee_distribution,
     DEFAULT_MERCHANT_FEE_RATE, DEFAULT_PG_FEE_RATE, DEFAULT_SALES_COMMISSION_RATE,
     apply_vat, format_rate_excl_vat, format_rate_with_vat,
-    VAT_RATE, VAT_NOTICE,
+    VAT_RATE, VAT_NOTICE, get_available_payout,
 )
 from app.schemas.schemas import (
     MerchantCreate, MerchantUpdate, PGConfigCreate,
@@ -316,10 +318,13 @@ def list_payout_requests(db: Session = Depends(get_db), _=Depends(require_admin)
     results = []
     for r in reqs:
         user = db.query(User).filter(User.id == r.requester_user_id).first()
+        # 이 요청 자체는 차감에서 빼서, amount 와 바로 비교할 수 있는 잔액을 보여준다.
+        available = get_available_payout(db, r.requester_user_id, r.role, exclude_payout_id=r.id)
         results.append({
             "id": r.id, "requester_user_id": r.requester_user_id,
             "requester_name": user.name if user else None,
             "role": r.role, "amount": float(r.amount),
+            "available_balance": float(available),
             "bank_info": r.bank_info, "memo": r.memo,
             "status": r.status.value if r.status else None,
             "created_at": str(r.created_at),
@@ -908,10 +913,11 @@ def landing_stats(db: Session = Depends(get_db), _=Depends(require_admin)):
     total_volume = db.query(func.coalesce(func.sum(Transaction.amount), 0)).scalar()
     total_users = db.query(func.count(User.id)).scalar() or 0
 
-    now = datetime.utcnow()
-    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    month_start = today_start.replace(day=1)
-    yesterday_start = today_start - timedelta(days=1)
+    # KST 기준 오늘/이번 달 경계 → naive UTC datetime 으로 변환하여 DB 필터에 사용
+    _kst_today = today_kst()
+    today_start = kst_day_start_utc(_kst_today)
+    month_start = kst_day_start_utc(_kst_today.replace(day=1))
+    yesterday_start = kst_day_start_utc(_kst_today - timedelta(days=1))
 
     today_sales = db.query(func.coalesce(func.sum(Transaction.amount), 0)).filter(
         Transaction.created_at >= today_start).scalar()
@@ -930,18 +936,19 @@ def landing_stats(db: Session = Depends(get_db), _=Depends(require_admin)):
         AdOrder.status.in_([AdOrderStatus.REQUESTED, AdOrderStatus.REVIEWING])
     ).scalar() or 0
 
-    # Weekly data
+    # Weekly data (KST 날짜 기준으로 7일간)
     weekly_data = []
     for i in range(6, -1, -1):
-        day_start = today_start - timedelta(days=i)
-        day_end = day_start + timedelta(days=1)
+        kst_day = _kst_today - timedelta(days=i)
+        day_start = kst_day_start_utc(kst_day)
+        day_end = kst_day_start_utc(kst_day + timedelta(days=1))
         day_sales = db.query(func.coalesce(func.sum(Transaction.amount), 0)).filter(
             Transaction.created_at >= day_start, Transaction.created_at < day_end).scalar()
         day_count = db.query(func.count(Transaction.id)).filter(
             Transaction.created_at >= day_start, Transaction.created_at < day_end).scalar()
         weekly_data.append({
-            "date": day_start.strftime("%m/%d"),
-            "day": ["월","화","수","목","금","토","일"][day_start.weekday()],
+            "date": kst_day.strftime("%m/%d"),
+            "day": ["월","화","수","목","금","토","일"][kst_day.weekday()],
             "sales": float(day_sales), "count": day_count,
         })
 
@@ -1181,9 +1188,9 @@ def delete_affiliate_mall(
 @router.get("/stats/enhanced")
 def enhanced_admin_stats(db: Session = Depends(get_db), _=Depends(require_admin)):
     """Enhanced dashboard stats with more data for admin dashboard."""
-    now = datetime.utcnow()
-    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    month_start = today_start.replace(day=1)
+    _kst_today2 = today_kst()
+    today_start = kst_day_start_utc(_kst_today2)
+    month_start = kst_day_start_utc(_kst_today2.replace(day=1))
 
     # Recent activities (last 20 actions)
     recent_activities = []
@@ -1358,7 +1365,7 @@ def execute_ad_order(
     order.status = AdOrderStatus(status)
     order.assigned_admin_id = admin.id
     if admin_memo:
-        order.admin_memo = (order.admin_memo or "") + f"\n[{datetime.utcnow().strftime('%Y-%m-%d %H:%M')}] {admin_memo}"
+        order.admin_memo = (order.admin_memo or "") + f"\n[{now_kst().strftime('%Y-%m-%d %H:%M')} KST] {admin_memo}"
     order.updated_at = datetime.utcnow()
     db.commit()
 
@@ -2001,7 +2008,7 @@ def change_merchant_plan(
 
 def _parse_date(value: Optional[str], field: str = "date") -> date_type:
     if not value:
-        return date_type.today()
+        return today_kst()
     try:
         return date_type.fromisoformat(value)
     except ValueError:
@@ -2024,7 +2031,7 @@ def create_ad_execution(
     if not merchant:
         raise HTTPException(status_code=404, detail="가맹점을 찾을 수 없습니다")
 
-    exec_date = req.execution_date or date_type.today()
+    exec_date = req.execution_date or today_kst()
     row = (
         db.query(AdExecution)
         .filter(

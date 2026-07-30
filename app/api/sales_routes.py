@@ -2,12 +2,14 @@
 Sales Manager (영업관리자) API routes.
 """
 from datetime import datetime, timedelta
+from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import Optional
 
 from app.database import get_db
+from app.utils.kst import today_kst, kst_day_start_utc
 from app.models.user import User, UserRole
 from app.models.merchant import Merchant
 from app.models.transaction import Transaction
@@ -17,6 +19,7 @@ from app.models.settlement import (
 from app.auth.dependencies import get_current_user, require_roles
 from app.services.settlement_service import (
     compute_distribution, get_effective_fee_rates, apply_vat, VAT_RATE,
+    get_available_payout,
 )
 from app.services.visibility import commission_visible_for
 from app.schemas.schemas import PayoutRequestCreate
@@ -27,15 +30,15 @@ require_sales = require_roles([UserRole.ADMIN, UserRole.SALES])
 
 
 def _date_range(range_str: str):
-    now = datetime.utcnow()
+    now_utc = datetime.utcnow()
     if range_str == "day":
-        return now - timedelta(days=1), now
+        return now_utc - timedelta(days=1), now_utc
     elif range_str == "week":
-        return now - timedelta(weeks=1), now
+        return now_utc - timedelta(weeks=1), now_utc
     elif range_str == "month":
-        return now - timedelta(days=30), now
+        return now_utc - timedelta(days=30), now_utc
     else:
-        return datetime(2000, 1, 1), now
+        return datetime(2000, 1, 1), now_utc
 
 
 @router.get("/merchants")
@@ -181,6 +184,9 @@ def list_my_payout_requests(db: Session = Depends(get_db), user: User = Depends(
 
 @router.post("/payout-requests")
 def create_payout_request(req: PayoutRequestCreate, db: Session = Depends(get_db), user: User = Depends(require_sales)):
+    available = get_available_payout(db, user.id, user.role)
+    if Decimal(str(req.amount)) > available:
+        raise HTTPException(status_code=400, detail=f"출금 가능 금액({available:,.0f}원)을 초과했습니다")
     pr = PayoutRequest(
         requester_user_id=user.id,
         role=user.role.value if isinstance(user.role, UserRole) else user.role,
@@ -204,8 +210,9 @@ def sales_dashboard_stats(db: Session = Depends(get_db), user: User = Depends(re
     ).all()
     merchant_ids = [a.merchant_id for a in assigns]
 
-    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-    month_start = today_start.replace(day=1)
+    _kst_today = today_kst()
+    today_start = kst_day_start_utc(_kst_today)
+    month_start = kst_day_start_utc(_kst_today.replace(day=1))
 
     today_sales = db.query(func.coalesce(func.sum(Transaction.amount), 0)).filter(
         Transaction.merchant_id.in_(merchant_ids),
@@ -222,7 +229,12 @@ def sales_dashboard_stats(db: Session = Depends(get_db), user: User = Depends(re
         gross = db.query(func.coalesce(func.sum(Transaction.amount), 0)).filter(
             Transaction.merchant_id == a.merchant_id,
         ).scalar()
-        total_commission += float(gross) * float(a.commission_rate)
+        # 커미션율은 배정값이 아니라 SalesCommissionPolicy(개인 오버라이드 → 전역)를
+        # 반영한 유효율을 써야 정산 로직과 값이 일치한다.
+        _, _, commission_rate = get_effective_fee_rates(
+            db, a.merchant_id, a.sales_manager_user_id
+        )
+        total_commission += float(gross) * float(commission_rate)
 
     pending_payouts = db.query(func.count(PayoutRequest.id)).filter(
         PayoutRequest.requester_user_id == user.id,

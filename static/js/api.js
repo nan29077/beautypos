@@ -86,7 +86,11 @@ function formatMoney(v) {
 
 function formatDate(d) {
     if (!d || d === 'None') return '-';
-    return new Date(d).toLocaleString('ko-KR');
+    // DB 는 naive UTC 문자열로 반환한다. 공백을 T 로 교체하고 Z 접미사를 붙여
+    // JS Date 가 UTC 로 파싱하도록 강제한 뒤 KST(Asia/Seoul)로 표시한다.
+    const s = String(d).replace(' ', 'T');
+    const iso = /[Zz]$|[+-]\d{2}:\d{2}$/.test(s) ? s : s + 'Z';
+    return new Date(iso).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
 }
 
 function statusBadge(status) {

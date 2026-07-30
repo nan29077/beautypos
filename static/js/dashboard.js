@@ -2192,10 +2192,12 @@ async function loadAdminPayouts(c, t) {
         </div>
     </div><div class="card-body">
         <div class="table-responsive"><table class="table table-hover table-sm" id="payoutTable">
-            <thead><tr><th>ID</th><th>요청자</th><th>역할</th><th>금액</th><th>은행정보</th><th>메모</th><th>상태</th><th>요청일</th><th>액션</th></tr></thead>
+            <thead><tr><th>ID</th><th>요청자</th><th>역할</th><th>금액</th><th>가용잔액</th><th>은행정보</th><th>메모</th><th>상태</th><th>요청일</th><th>액션</th></tr></thead>
             <tbody>${payouts.map(p => `<tr data-status="${p.status}">
                 <td>${p.id}</td><td class="fw-bold">${p.requester_name || '-'}</td><td><span class="badge bg-${p.role==='sales'?'info':p.role==='owner'?'primary':'secondary'}">${roleLabel(p.role)}</span></td>
-                <td class="fw-bold">${formatMoney(p.amount)}</td><td style="font-size:.82rem">${p.bank_info||'-'}</td><td style="font-size:.82rem">${p.memo||'-'}</td>
+                <td class="fw-bold">${formatMoney(p.amount)}</td>
+                <td class="${(p.available_balance ?? 0) < p.amount ? 'text-danger fw-bold' : 'text-muted'}" style="font-size:.85rem">${formatMoney(p.available_balance ?? 0)}</td>
+                <td style="font-size:.82rem">${p.bank_info||'-'}</td><td style="font-size:.82rem">${p.memo||'-'}</td>
                 <td>${statusBadge(p.status)}</td><td>${formatDate(p.created_at)}</td>
                 <td>${p.status==='pending'?`<button class="btn btn-sm btn-success me-1" onclick="handlePayout(${p.id},'approve')"><i class="fas fa-check"></i></button><button class="btn btn-sm btn-danger" onclick="handlePayout(${p.id},'reject')"><i class="fas fa-times"></i></button>`:'-'}</td>
             </tr>`).join('')}</tbody>
@@ -4848,6 +4850,7 @@ async function loadOwnerAdOrders(c, t) {
         <div><span>3</span><strong>집행</strong></div><i class="fas fa-chevron-right"></i>
         <div><span>4</span><strong>완료</strong></div>
     </div>
+    <div id="ownerAdExecBody" class="mb-3">${adpayLoadingMarkup()}</div>
     <div class="card data-card"><div class="card-header d-flex justify-content-between align-items-center">
         <h5 class="mb-0">광고 주문 목록</h5>
         <button class="btn btn-primary btn-sm" onclick="navigate('owner-adorder-new')"><i class="fas fa-plus me-1"></i>새 주문</button>
@@ -4861,6 +4864,58 @@ async function loadOwnerAdOrders(c, t) {
                 return `<tr><td>${o.id}</td><td><span class="badge bg-${o.type==='blog'?'info':'secondary'}">${o.type==='blog'?'블로그':'플레이스'}</span></td><td>${statusBadge(o.status)}</td><td>${escapeHtml(summary)}</td><td>${escapeHtml(o.admin_memo||'-')}</td><td>${formatDate(o.created_at)}</td></tr>`;
             }).join('') || '<tr><td colspan="6" class="text-center text-muted py-5"><i class="fas fa-inbox d-block fs-3 mb-2 opacity-50"></i>광고 주문이 없습니다.</td></tr>'}</tbody>
         </table></div></div></div>`;
+    loadOwnerAdExecutions();   // 집행 현황은 실패해도 주문 목록에 영향 없다
+}
+
+// 원장용 광고 집행 현황 — 광고 종류를 합산한 이번 달 종합 진행률 하나만 보여준다.
+// (어드민 화면 _adExecCards 는 종류별 세부 항목이 필요하므로 그대로 둔다)
+async function loadOwnerAdExecutions() {
+    const body = document.getElementById('ownerAdExecBody');
+    if (!body) return;
+    try {
+        const s = await apiGet('/api/owner/ad/executions/summary');
+        const m = s.merchant;
+        if (!m) { body.innerHTML = ''; return; }
+
+        const items = m.items || [];
+        const target = items.reduce((sum, it) => sum + (it.monthly_target || 0), 0);
+        const done = items.reduce((sum, it) => sum + (it.month_total || 0), 0);
+
+        if (target <= 0) {
+            body.innerHTML = `<div class="alert alert-light border mb-0 small">
+                <i class="fas fa-info-circle me-1"></i>플랜 집행 정보 없음
+            </div>`;
+            return;
+        }
+
+        const pct = Math.round(done / target * 100);
+        const barPct = Math.min(pct, 100);
+        const barColor = pct >= 100 ? 'bg-success' : pct >= 60 ? 'bg-primary' : 'bg-warning';
+
+        body.innerHTML = `
+        <div class="card data-card">
+            <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <h5 class="mb-0"><i class="fas fa-tasks me-2 text-warning"></i>이번 달 광고 집행</h5>
+                <span class="badge bg-${PLAN_ACCENTS[m.plan_code] || 'light text-dark'}">${escapeHtml(m.plan_name)}</span>
+            </div>
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-end mb-1">
+                    <span class="fw-bold" style="font-size:1.4rem;">${pct}%</span>
+                    <span class="text-muted small">${s.month_start} ~ ${s.month_end}</span>
+                </div>
+                <div class="progress mb-2" style="height:14px;border-radius:8px;">
+                    <div class="progress-bar ${barColor}" role="progressbar" style="width:${barPct}%"
+                         aria-valuenow="${barPct}" aria-valuemin="0" aria-valuemax="100"></div>
+                </div>
+                <div class="text-muted small">
+                    이번 달 목표 대비 <strong class="text-dark">${pct}%</strong> 집행
+                    (${done.toLocaleString()}건 / ${target.toLocaleString()}건)
+                </div>
+            </div>
+        </div>`;
+    } catch (e) {
+        body.innerHTML = `<div class="alert alert-light border mb-0 small"><i class="fas fa-info-circle me-1"></i>광고 집행 현황을 불러올 수 없습니다: ${escapeHtml(e.message)}</div>`;
+    }
 }
 
 async function loadOwnerAdOrderNew(c, t) {

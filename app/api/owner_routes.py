@@ -8,8 +8,10 @@ import logging
 import uuid
 import base64
 import io
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, date as date_type
+from decimal import Decimal
 from urllib.parse import urlsplit, urlunsplit
+from app.utils.kst import today_kst, kst_day_start_utc, fmt_kst, now_kst, KST
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
@@ -28,6 +30,7 @@ from app.models.ad import (
     AdOrderPlaceTrafficDetail,
     AdPlaceProfile, AdCompetitor, AdMetric, PlaceMetricSnapshot,
 )
+from app.models.plan import AD_EXECUTION_TYPES
 from app.models.receipt_review import ReceiptReviewConfig, ReceiptReview
 from app.models.affiliate_mall import AffiliateMall
 from app.models.system_config import (
@@ -37,10 +40,11 @@ from app.models.system_config import (
     AD_PLACE_TRAFFIC_ENABLED,
 )
 from app.auth.dependencies import get_current_user, require_roles
-from app.services.settlement_service import compute_distribution
+from app.services.settlement_service import compute_distribution, get_available_payout
 from app.services.visibility import commission_visible_for
 from app.services import naver_place
 from app.services import ai_service
+from app.services import plan_service
 from app.schemas.schemas import (
     StaffCreate, StaffUpdate, DesignerCreate, DesignerUpdate,
     AdBlogOrderCreate, AdPlaceTrafficOrderCreate,
@@ -66,15 +70,15 @@ def _get_owner_merchant(user: User, db: Session) -> Merchant:
 
 
 def _date_range(range_str: str):
-    now = datetime.utcnow()
+    now_utc = datetime.utcnow()
     if range_str == "day":
-        return now - timedelta(days=1), now
+        return now_utc - timedelta(days=1), now_utc
     elif range_str == "week":
-        return now - timedelta(weeks=1), now
+        return now_utc - timedelta(weeks=1), now_utc
     elif range_str == "month":
-        return now - timedelta(days=30), now
+        return now_utc - timedelta(days=30), now_utc
     else:  # all
-        return datetime(2000, 1, 1), now
+        return datetime(2000, 1, 1), now_utc
 
 
 def _normalize_place_url(value: str) -> str:
@@ -99,6 +103,31 @@ def _require_ad_order_feature(db: Session, type_key: str) -> None:
         raise HTTPException(status_code=403, detail="광고 주문 기능이 현재 비활성화되어 있습니다")
     if not _ad_feature_enabled(db, type_key):
         raise HTTPException(status_code=403, detail="선택한 광고 상품이 현재 비활성화되어 있습니다")
+
+
+def _require_plan_ad_quota(db: Session, merchant_id: int, order_type: AdOrderType, ad_type: str) -> None:
+    """이번 달 광고 주문 건수가 배정 플랜의 월 한도를 넘지 않는지 검증한다.
+
+    플랜이 배정되지 않았거나 해당 광고의 월 목표가 0이면 무제한으로 본다.
+    """
+    plan = plan_service.get_current_plan(db, merchant_id)
+    if not plan:
+        return
+    limit = plan.target(ad_type, "monthly")
+    if limit <= 0:
+        return
+
+    # KST 기준 이번 달 경계를 UTC naive datetime 으로 변환하여 DB 필터에 사용
+    month_start, month_end = plan_service.month_bounds(today_kst())
+    used = db.query(func.count(AdOrder.id)).filter(
+        AdOrder.merchant_id == merchant_id,
+        AdOrder.type == order_type,
+        AdOrder.status != AdOrderStatus.REJECTED,  # 반려된 주문은 한도에서 제외
+        AdOrder.created_at >= kst_day_start_utc(month_start),
+        AdOrder.created_at < kst_day_start_utc(month_end + timedelta(days=1)),
+    ).scalar() or 0
+    if used >= limit:
+        raise HTTPException(status_code=403, detail="플랜 한도를 초과했습니다")
 
 
 # ─── Transactions ────────────────────────────────────────────
@@ -495,6 +524,9 @@ def create_owner_payout_request(
 ):
     """정산금 출금을 신청한다. 최고관리자가 승인/거절한다."""
     _get_owner_merchant(user, db)  # 가맹점이 없는 계정은 신청할 수 없다
+    available = get_available_payout(db, user.id, user.role)
+    if Decimal(str(req.amount)) > available:
+        raise HTTPException(status_code=400, detail=f"출금 가능 금액({available:,.0f}원)을 초과했습니다")
     pr = PayoutRequest(
         requester_user_id=user.id,
         role=user.role.value if isinstance(user.role, UserRole) else user.role,
@@ -519,7 +551,7 @@ def _delta(today_value, yesterday_value):
 
 def _daily_change(db: Session, merchant_id: int, place_url: str) -> dict:
     """오늘/어제 지표와 증감을 계산한다 (순위는 값이 작아질수록 상승)."""
-    today = datetime.utcnow().date()
+    today = today_kst()
     yesterday = today - timedelta(days=1)
     rows = {
         m.date: m for m in db.query(AdMetric).filter(
@@ -573,7 +605,7 @@ def _to_kst_str(dt: datetime) -> str:
 
 def _collection_status(db: Session, merchant_id: int) -> dict:
     """마지막 자동 수집 시각과 오늘 수집 여부. 수집 시각은 KST로 반환."""
-    today = datetime.utcnow().date()
+    today = today_kst()
     last = db.query(PlaceMetricSnapshot).filter(
         PlaceMetricSnapshot.merchant_id == merchant_id,
     ).order_by(PlaceMetricSnapshot.collected_at.desc()).first()
@@ -712,7 +744,7 @@ def ad_analysis_history(
 ):
     """일별 히스토리(블로그/방문자 리뷰 수, 순위)를 대상별로 반환한다."""
     merchant = _get_owner_merchant(user, db)
-    today = datetime.utcnow().date()
+    today = today_kst()
     start = today - timedelta(days=days - 1)
 
     profiles = db.query(AdPlaceProfile).filter(AdPlaceProfile.merchant_id == merchant.id).all()
@@ -1148,7 +1180,7 @@ def ad_analysis_summary(
         }
         for target in all_targets if not target["metrics"]
     ]
-    stale_cutoff = (datetime.utcnow().date() - timedelta(days=14))
+    stale_cutoff = (today_kst() - timedelta(days=14))
     stale_targets = [
         {
             "type": "my" if target in my_summaries else "competitor",
@@ -1356,6 +1388,7 @@ def list_owner_ad_orders(db: Session = Depends(get_db), user: User = Depends(req
 def create_blog_order(req: AdBlogOrderCreate, db: Session = Depends(get_db), user: User = Depends(require_owner)):
     merchant = _get_owner_merchant(user, db)
     _require_ad_order_feature(db, AD_BLOG_ENABLED)
+    _require_plan_ad_quota(db, merchant.id, AdOrderType.BLOG, "blog_review")
     keywords = [item.strip() for item in req.main_keywords if item.strip()]
     if not keywords:
         raise HTTPException(status_code=400, detail="메인 키워드를 1개 이상 입력해주세요")
@@ -1387,6 +1420,7 @@ def create_blog_order(req: AdBlogOrderCreate, db: Session = Depends(get_db), use
 def create_place_traffic_order(req: AdPlaceTrafficOrderCreate, db: Session = Depends(get_db), user: User = Depends(require_owner)):
     merchant = _get_owner_merchant(user, db)
     _require_ad_order_feature(db, AD_PLACE_TRAFFIC_ENABLED)
+    _require_plan_ad_quota(db, merchant.id, AdOrderType.PLACE_TRAFFIC, "place_traffic")
     keywords = [item.strip() for item in req.search_keywords if item.strip()]
     if not keywords:
         raise HTTPException(status_code=400, detail="검색 키워드를 1개 이상 입력해주세요")
@@ -1408,13 +1442,43 @@ def create_place_traffic_order(req: AdPlaceTrafficOrderCreate, db: Session = Dep
     return {"id": order.id, "status": order.status.value}
 
 
+# ─── Ad Executions (원장 조회 전용) ──────────────────────────
+
+@router.get("/ad/executions/summary")
+def owner_ad_execution_summary(
+    date: Optional[str] = Query(default=None, description="기준일 (YYYY-MM-DD, 기본 오늘)"),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_owner),
+):
+    """내 가맹점의 현재 플랜 + 광고 집행 현황 (어드민 집계를 본인 가맹점으로 제한)."""
+    merchant = _get_owner_merchant(user, db)
+    if date:
+        try:
+            target = date_type.fromisoformat(date)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="date 형식이 올바르지 않습니다 (YYYY-MM-DD)")
+    else:
+        target = today_kst()
+
+    month_start, month_end = plan_service.month_bounds(target)
+    summary = plan_service.build_summary(db, target, [merchant])
+    return {
+        "date": str(target),
+        "month_start": str(month_start),
+        "month_end": str(month_end),
+        "ad_types": [{"code": code, "label": label} for code, label in AD_EXECUTION_TYPES],
+        "merchant": summary[0] if summary else None,
+    }
+
+
 # ─── Dashboard Stats ────────────────────────────────────────
 
 @router.get("/dashboard-stats")
 def owner_dashboard_stats(db: Session = Depends(get_db), user: User = Depends(require_owner)):
     merchant = _get_owner_merchant(user, db)
-    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-    month_start = today_start.replace(day=1)
+    _kst_today = today_kst()
+    today_start = kst_day_start_utc(_kst_today)
+    month_start = kst_day_start_utc(_kst_today.replace(day=1))
 
     today_sales = db.query(func.coalesce(func.sum(Transaction.amount), 0)).filter(
         Transaction.merchant_id == merchant.id,
@@ -1426,8 +1490,8 @@ def owner_dashboard_stats(db: Session = Depends(get_db), user: User = Depends(re
         Transaction.created_at >= month_start,
     ).scalar()
 
-    # 이번 주 (월요일 0시 ~ 현재)
-    week_start = today_start - timedelta(days=today_start.weekday())
+    # 이번 주 (KST 기준 이번 주 월요일 0시)
+    week_start = kst_day_start_utc(_kst_today - timedelta(days=_kst_today.weekday()))
     week_sales = db.query(func.coalesce(func.sum(Transaction.amount), 0)).filter(
         Transaction.merchant_id == merchant.id,
         Transaction.created_at >= week_start,

@@ -33,8 +33,13 @@
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
+from sqlalchemy import func, and_, or_
 
-from app.models.settlement import FeePolicy, SalesCommissionPolicy, MerchantSalesAssignment
+from app.models.settlement import (
+    FeePolicy, SalesCommissionPolicy, MerchantSalesAssignment,
+    Settlement, PayoutRequest, PayoutStatus,
+)
+from app.models.merchant import Merchant
 from app.models.plan import MerchantPlan
 from app.models.staff import Staff
 
@@ -438,3 +443,58 @@ def compute_distribution(db: Session, merchant_id: int, txns) -> dict:
         "designers": sorted(designers, key=lambda d: d["gross"], reverse=True),
         "unassigned": un_row,
     }
+
+
+# ─── 출금 가능 잔액 ───────────────────────────────────────────
+
+# 아직 지급되지 않았지만 잔액에서 이미 빠져나간 것으로 봐야 하는 출금 상태
+PAYOUT_RESERVED_STATUSES = (PayoutStatus.PENDING, PayoutStatus.APPROVED)
+
+
+def get_available_payout(db: Session, user_id: int, role, exclude_payout_id: int = None) -> Decimal:
+    """해당 사용자가 지금 출금 신청할 수 있는 금액.
+
+    정산 누계(OWNER: Settlement.net_amount / SALES: Settlement.commission_amount)에서
+    이미 신청한 출금(대기·승인) 금액을 차감한 값. 음수가 되면 0으로 본다.
+
+    exclude_payout_id 를 주면 그 출금요청은 차감에서 제외한다 —
+    어드민 승인 화면에서 "이 요청을 빼고 얼마가 남아 있었는지"를 보여줄 때 사용.
+    """
+    role_str = (getattr(role, "value", role) or "").lower()
+
+    if role_str == "owner":
+        merchant_ids = [row[0] for row in db.query(Merchant.id).filter(
+            Merchant.owner_user_id == user_id
+        ).all()]
+        if not merchant_ids:
+            return Decimal("0")
+        earned = db.query(func.sum(Settlement.net_amount)).filter(
+            Settlement.merchant_id.in_(merchant_ids)
+        ).scalar()
+    elif role_str == "sales":
+        # 정산 시점 스냅샷이 우선. 스냅샷이 없는 과거 정산은 현재 배정 가맹점 기준으로 본다.
+        assigned_ids = [row[0] for row in db.query(MerchantSalesAssignment.merchant_id).filter(
+            MerchantSalesAssignment.sales_manager_user_id == user_id,
+            MerchantSalesAssignment.is_active == True,  # noqa: E712
+        ).all()]
+        cond = Settlement.sales_manager_user_id == user_id
+        if assigned_ids:
+            cond = or_(cond, and_(
+                Settlement.sales_manager_user_id.is_(None),
+                Settlement.merchant_id.in_(assigned_ids),
+            ))
+        earned = db.query(func.sum(Settlement.commission_amount)).filter(cond).scalar()
+    else:
+        # ADMIN/DESIGNER 등은 이 경로로 출금하지 않는다.
+        return Decimal("0")
+
+    q = db.query(func.sum(PayoutRequest.amount)).filter(
+        PayoutRequest.requester_user_id == user_id,
+        PayoutRequest.status.in_(PAYOUT_RESERVED_STATUSES),
+    )
+    if exclude_payout_id is not None:
+        q = q.filter(PayoutRequest.id != exclude_payout_id)
+    reserved = q.scalar()
+
+    available = Decimal(earned or 0) - Decimal(reserved or 0)
+    return available if available > 0 else Decimal("0")

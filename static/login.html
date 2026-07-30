@@ -36,8 +36,6 @@
         .form-control { border-radius: 10px; padding: 10px 14px; border: 1.5px solid #e5e7eb; font-size: 0.9rem; }
         .form-control:focus { border-color: #0ea5e9; box-shadow: 0 0 0 3px rgba(14,165,233,.15); }
         .btn-login { border-radius: 50px; padding: 10px; font-weight: 700; font-size: 0.95rem; }
-        .oauth-btn { border-radius: 10px; padding: 8px; font-weight: 600; font-size: 0.82rem; transition: all .2s; }
-        .oauth-btn:hover { transform: translateY(-1px); }
         .test-card { background: rgba(255,255,255,.06); border-radius: 1rem; border: 1.5px dashed rgba(255,255,255,.15); margin-top: .8rem; padding: 1rem !important; }
         .test-btn { border-radius: 8px; padding: 8px; font-weight: 600; font-size: 0.82rem; transition: all .2s; border-width: 2px; }
         .test-btn:hover { transform: translateY(-1px); }
@@ -57,11 +55,9 @@
             .login-card { border-radius: 1rem; }
             .form-control { min-height: 46px; padding: 9px 12px; font-size: 16px; }
             .btn-login { padding: 9px; font-size: .9rem; }
-            .oauth-btn { padding: 7px; font-size: .78rem; }
             .test-card { padding: .8rem !important; margin-top: .6rem; }
             .test-btn { padding: 7px; font-size: .78rem; }
-            .test-btn, .btn-login, .oauth-btn { min-height: 44px; }
-            .divider { margin: .8rem 0; }
+            .test-btn, .btn-login { min-height: 44px; }
             .back-link { top: 10px; left: 10px; font-size: .8rem; }
         }
         @media (max-height: 700px) {
@@ -128,6 +124,29 @@
                             <label class="form-label fw-bold small mb-1">비밀번호</label>
                             <input type="password" class="form-control" id="regPassword" placeholder="6자 이상">
                         </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small mb-1">가입 유형</label>
+                            <select class="form-select form-control" id="regRole" onchange="onRegRoleChange()">
+                                <option value="OWNER" selected>원장 (매장 운영)</option>
+                                <option value="SALES">영업관리자</option>
+                            </select>
+                        </div>
+                        <!-- OWNER 전용 -->
+                        <div id="regOwnerFields">
+                            <div class="mb-3">
+                                <label class="form-label fw-bold small mb-1">매장명</label>
+                                <input type="text" class="form-control" id="regShopName" placeholder="예) 애드페이 헤어살롱">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label fw-bold small mb-1">추천 코드 <span class="text-muted fw-normal">(선택)</span></label>
+                                <input type="text" class="form-control" id="regReferralCode" placeholder="영업관리자 추천코드(선택)">
+                            </div>
+                        </div>
+                        <!-- SALES 전용 -->
+                        <div id="regSalesNotice" class="alert alert-info py-2 mb-3" style="display:none;border-radius:10px;font-size:.82rem;">
+                            <i class="fas fa-info-circle me-1"></i>영업관리자는 가입 후 <strong>추천 코드가 자동으로 생성</strong>됩니다.
+                            생성된 코드를 원장님께 전달하면 가맹점이 자동으로 연결됩니다.
+                        </div>
                         <button class="btn btn-success btn-login w-100" onclick="doRegister()">
                             <i class="fas fa-user-plus me-2"></i>회원가입
                         </button>
@@ -135,20 +154,6 @@
 
                     <!-- Alert -->
                     <div id="authAlert" class="alert mt-2 d-none" style="border-radius:10px;font-size:.85rem;"></div>
-
-                    <!-- OAuth -->
-                    <div class="divider"><span class="text-muted small">OR</span></div>
-                    <div class="d-flex gap-2">
-                        <button class="oauth-btn btn btn-outline-warning flex-grow-1" onclick="oauthLogin('kakao')">
-                            <i class="fas fa-comment me-1"></i>카카오
-                        </button>
-                        <button class="oauth-btn btn btn-outline-success flex-grow-1" onclick="oauthLogin('naver')">
-                            <strong class="me-1">N</strong>네이버
-                        </button>
-                        <button class="oauth-btn btn btn-outline-danger flex-grow-1" onclick="oauthLogin('google')">
-                            <i class="fab fa-google me-1"></i>구글
-                        </button>
-                    </div>
                 </div>
             </div>
 
@@ -213,16 +218,33 @@
             } catch (e) { showAlert('서버 연결 오류', 'danger'); }
         }
 
+        function onRegRoleChange() {
+            const role = document.getElementById('regRole').value;
+            document.getElementById('regOwnerFields').style.display = role === 'OWNER' ? '' : 'none';
+            document.getElementById('regSalesNotice').style.display = role === 'SALES' ? '' : 'none';
+        }
+
         async function doRegister() {
             const name = document.getElementById('regName').value;
             const email = document.getElementById('regEmail').value;
             const password = document.getElementById('regPassword').value;
+            const role = document.getElementById('regRole').value;
             if (!name || !email || !password) { showAlert('모든 필드를 입력하세요', 'warning'); return; }
+
+            const payload = {name, email, password, role};
+            if (role === 'OWNER') {
+                const shopName = document.getElementById('regShopName').value.trim();
+                const referral = document.getElementById('regReferralCode').value.trim();
+                if (!shopName) { showAlert('매장명을 입력하세요', 'warning'); return; }
+                payload.shop_name = shopName;
+                if (referral) payload.sales_referral_code = referral;
+            }
+
             try {
                 const res = await fetch(API + '/api/auth/register', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({name, email, password})
+                    body: JSON.stringify(payload)
                 });
                 const data = await res.json();
                 if (!res.ok) { showAlert(data.detail || '가입 실패', 'danger'); return; }
@@ -238,11 +260,6 @@
                 if (!res.ok) { showAlert(data.detail || '테스트 로그인 실패', 'danger'); return; }
                 handleAuthSuccess(data);
             } catch (e) { showAlert('서버 연결 오류', 'danger'); }
-        }
-
-        async function oauthLogin(provider) {
-            const names = {kakao: '카카오', naver: '네이버', google: '구글'};
-            showAlert(`${names[provider] || provider} 소셜 로그인은 현재 준비중입니다.`, 'warning');
         }
 
         // Enter key support

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from app.database import get_db
+from app.utils.kst import today_kst, kst_day_start_utc
 from app.models.user import User, UserRole
 from app.models.staff import Staff
 from app.models.transaction import Transaction
@@ -22,15 +23,15 @@ require_designer = require_roles([UserRole.ADMIN, UserRole.DESIGNER])
 
 
 def _date_range(range_str: str):
-    now = datetime.utcnow()
+    now_utc = datetime.utcnow()
     if range_str == "day":
-        return now - timedelta(days=1), now
+        return now_utc - timedelta(days=1), now_utc
     elif range_str == "week":
-        return now - timedelta(weeks=1), now
+        return now_utc - timedelta(weeks=1), now_utc
     elif range_str == "month":
-        return now - timedelta(days=30), now
+        return now_utc - timedelta(days=30), now_utc
     else:
-        return datetime(2000, 1, 1), now
+        return datetime(2000, 1, 1), now_utc
 
 
 def _get_staff(user: User, db: Session) -> Staff:
@@ -71,8 +72,9 @@ def designer_dashboard_stats(
     user: User = Depends(require_designer),
 ):
     staff = _get_staff(user, db)
-    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-    month_start = today_start.replace(day=1)
+    _kst_today = today_kst()
+    today_start = kst_day_start_utc(_kst_today)
+    month_start = kst_day_start_utc(_kst_today.replace(day=1))
 
     today_sales = db.query(func.coalesce(func.sum(Transaction.amount), 0)).filter(
         Transaction.staff_id == staff.id,

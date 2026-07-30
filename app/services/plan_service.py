@@ -11,6 +11,7 @@ from app.models.plan import (
     AD_EXECUTION_TYPES, AD_EXECUTION_TYPE_CODES, AD_EXECUTION_TYPE_LABELS,
 )
 from app.services.settlement_service import VAT_NOTICE, VAT_RATE
+from app.utils.kst import today_kst
 
 DEFAULT_PLAN_CODE = "basic"
 
@@ -98,7 +99,7 @@ def daily_target_description(monthly_target: int, target_date: date) -> str:
 
 def plan_payload(plan: Plan, target_date: Optional[date] = None) -> dict:
     """Plan → JSON 직렬화 가능한 dict."""
-    target_date = target_date or date.today()
+    target_date = target_date or today_kst()
     fee_exclusive = float(plan.merchant_fee_rate or 0)
     data = {
         "id": plan.id,
@@ -193,7 +194,8 @@ def build_summary(db: Session, target_date: date, merchants: list) -> list[dict]
                 "pace_remaining": pace_remaining,
                 "monthly_remaining": monthly_remaining,
                 # 오늘 한 건이 없는 저빈도 플랜도 월 누적 진도로 정확히 미달 여부를 판단한다.
-                "is_behind": pace_remaining > 0 or monthly_remaining < 0,
+                # 목표 초과 달성은 미달이 아니다 (is_over 로 별도 표시).
+                "is_behind": pace_remaining > 0,
                 "is_over": monthly_remaining < 0,
             })
         results.append({
@@ -205,3 +207,5 @@ def build_summary(db: Session, target_date: date, merchants: list) -> list[dict]
             "items": items,
         })
     return results
+
+# KST import (appended to avoid circular import issues at module top)
