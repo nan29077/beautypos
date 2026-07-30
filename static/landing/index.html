@@ -466,6 +466,18 @@
         }
         .site-nav .nav-links>a:not(.nav-cta):hover{color:#fff}
         .site-nav .nav-links>a:not(.nav-cta):hover::after{transform:scaleX(1)}
+        @media(min-width:768px){
+            .site-nav .nav-links>a:not(.nav-cta){
+                padding:9px 0 12px;
+                line-height:1.2;
+            }
+            .site-nav .nav-links>a:not(.nav-cta)::after{
+                right:3px;
+                bottom:2px;
+                left:3px;
+            }
+            .site-nav .nav-links>a:not(.nav-cta):focus-visible::after{transform:scaleX(1)}
+        }
         .site-nav .nav-cta{
             color:#fff;
             background:linear-gradient(135deg,#0ea5e9,#2363ad);
