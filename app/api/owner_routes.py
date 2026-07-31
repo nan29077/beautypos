@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone, date as date_type
 from decimal import Decimal
 from urllib.parse import urlsplit, urlunsplit
 from app.utils.kst import today_kst, kst_day_start_utc, fmt_kst, now_kst, KST
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -75,15 +75,15 @@ def _get_owner_merchant(user: User, db: Session) -> Merchant:
 
 
 def _date_range(range_str: str):
-    now_utc = datetime.utcnow()
+    now = now_kst().astimezone(timezone.utc).replace(tzinfo=None)
     if range_str == "day":
-        return now_utc - timedelta(days=1), now_utc
+        return now - timedelta(days=1), now
     elif range_str == "week":
-        return now_utc - timedelta(weeks=1), now_utc
+        return now - timedelta(weeks=1), now
     elif range_str == "month":
-        return now_utc - timedelta(days=30), now_utc
+        return now - timedelta(days=30), now
     else:  # all
-        return datetime(2000, 1, 1), now_utc
+        return datetime(2000, 1, 1), now
 
 
 def _normalize_place_url(value: str) -> str:
@@ -147,6 +147,12 @@ def _require_plan_ad_quota(
         used = db.query(
             func.coalesce(func.sum(AdOrderPlaceTrafficDetail.order_count), 0)
         ).join(AdOrder, AdOrder.id == AdOrderPlaceTrafficDetail.order_id).filter(
+            *base_filters
+        ).scalar() or 0
+    elif order_type == AdOrderType.SHORTS:
+        used = db.query(
+            func.coalesce(func.sum(AdOrderShortsDetail.distribution_count), 0)
+        ).join(AdOrder, AdOrder.id == AdOrderShortsDetail.order_id).filter(
             *base_filters
         ).scalar() or 0
     else:
@@ -1441,11 +1447,15 @@ def get_owner_ad_pricing(
 def create_blog_order(req: AdBlogOrderCreate, db: Session = Depends(get_db), user: User = Depends(require_owner)):
     merchant = _get_owner_merchant(user, db)
     _require_ad_order_feature(db, AD_BLOG_ENABLED)
+    if req.order_count < 10:
+        raise HTTPException(status_code=400, detail="블로그 배포 최소 주문 수량은 10건입니다")
     _require_plan_ad_quota(
         db, merchant.id, AdOrderType.BLOG, "blog_review", req.order_count
     )
     pricing = ad_pricing.get_ad_pricing(db)
     unit_price = pricing["blog_unit_price"]
+    if unit_price == 0:
+        raise HTTPException(status_code=400, detail="광고 단가가 0원으로 설정되어 있어 주문할 수 없습니다. 관리자에게 문의하세요")
     total_cost = unit_price * req.order_count
     keywords = [item.strip() for item in req.main_keywords if item.strip()]
     if not keywords:
@@ -1489,11 +1499,15 @@ def create_blog_order(req: AdBlogOrderCreate, db: Session = Depends(get_db), use
 def create_place_traffic_order(req: AdPlaceTrafficOrderCreate, db: Session = Depends(get_db), user: User = Depends(require_owner)):
     merchant = _get_owner_merchant(user, db)
     _require_ad_order_feature(db, AD_PLACE_TRAFFIC_ENABLED)
+    if req.order_count < 100:
+        raise HTTPException(status_code=400, detail="플레이스 유입 최소 주문 수량은 100건입니다")
     _require_plan_ad_quota(
         db, merchant.id, AdOrderType.PLACE_TRAFFIC, "place_traffic", req.order_count
     )
     pricing = ad_pricing.get_ad_pricing(db)
     unit_price = pricing["place_traffic_unit_price"]
+    if unit_price == 0:
+        raise HTTPException(status_code=400, detail="광고 단가가 0원으로 설정되어 있어 주문할 수 없습니다. 관리자에게 문의하세요")
     total_cost = unit_price * req.order_count
     keywords = [item.strip() for item in req.search_keywords if item.strip()]
     if not keywords:
@@ -1608,6 +1622,8 @@ def create_shorts_order(req: AdShortsOrderCreate, db: Session = Depends(get_db),
         req.video_production_count,
         duration_tier,
     )
+    if est["total_cost"] == 0 and (uses["distribution"] or uses["production"]):
+        raise HTTPException(status_code=400, detail="광고 단가가 0원으로 설정되어 있어 주문할 수 없습니다. 관리자에게 문의하세요")
 
     categories = {
         code: (req.brief_categories or {}).get(code, "").strip()

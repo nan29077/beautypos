@@ -3,7 +3,7 @@ Terminal transaction ingest API.
 Authenticates via terminal API key in X-Terminal-Key header.
 """
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
@@ -19,9 +19,26 @@ router = APIRouter(prefix="/api/terminal", tags=["terminal"])
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
-def _auth_terminal(api_key: str, db: Session) -> TerminalDevice:
-    """Authenticate terminal by API key."""
-    # For MVP, we check against all active terminals
+def _auth_terminal(api_key: str, db: Session, serial: str = None) -> TerminalDevice:
+    """Authenticate terminal by API key.
+
+    M-6: serial 이 있으면 해당 단말기만 bcrypt 검증 (불필요한 해시 연산 방지).
+    serial 이 없으면 기존처럼 활성 단말기 전체를 순회한다.
+    """
+    if serial:
+        t = db.query(TerminalDevice).filter(
+            TerminalDevice.terminal_serial == serial,
+            TerminalDevice.is_active == True,
+        ).first()
+        if t:
+            try:
+                if t.api_key_hash and pwd_context.verify(api_key, t.api_key_hash):
+                    return t
+            except ValueError:
+                pass
+        raise HTTPException(status_code=401, detail="Invalid terminal API key")
+
+    # serial 미제공: 전체 활성 단말기를 순회 (하위 호환)
     terminals = db.query(TerminalDevice).filter(TerminalDevice.is_active == True).all()
     for t in terminals:
         # 해시 형식이 깨진 행이 하나라도 있으면 verify 가 예외를 던져 전체 인증이 500 이 된다.
@@ -46,12 +63,15 @@ def ingest_transaction(
     - If staff_code is valid for the merchant, assigns to that staff.
     - Otherwise assigns to the merchant owner.
     """
-    terminal = _auth_terminal(x_terminal_key, db)
+    terminal = _auth_terminal(x_terminal_key, db, serial=req.terminal_id)
 
     # Validate merchant
     merchant = db.query(Merchant).filter(Merchant.id == req.merchant_id).first()
     if not merchant:
         raise HTTPException(status_code=400, detail="Merchant not found")
+    # M-6: 비활성 가맹점 차단
+    if not merchant.is_active:
+        raise HTTPException(status_code=403, detail="비활성화된 가맹점입니다")
 
     # Ensure terminal belongs to merchant
     if terminal.merchant_id != merchant.id:
@@ -85,7 +105,7 @@ def ingest_transaction(
         card_brand=req.card_brand,
         approval_code=req.approval_code,
         staff_code_input=req.staff_code,
-        approved_at=req.approved_at or datetime.utcnow(),
+        approved_at=req.approved_at or datetime.now(timezone.utc).replace(tzinfo=None),
         raw_payload_json=json.dumps(req.model_dump(), default=str),
     )
     db.add(txn)

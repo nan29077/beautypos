@@ -73,6 +73,7 @@ def register(req: RegisterRequest, db: Session = Depends(get_db)):
     db.flush()  # user.id 확보
 
     # OWNER 가입: shop_name 있으면 Merchant 자동 생성
+    merchant = None
     if role == UserRole.OWNER and req.shop_name:
         merchant = Merchant(
             name=req.shop_name,
@@ -87,19 +88,19 @@ def register(req: RegisterRequest, db: Session = Depends(get_db)):
         # 신규 가맹점은 베이직 플랜으로 시작
         plan_service.ensure_default_plan(db, merchant.id)
 
-        # 추천 코드로 영업관리자 자동 연결
-        if req.sales_referral_code:
-            sales_user = db.query(User).filter(
-                User.referral_code == req.sales_referral_code,
-                User.role == UserRole.SALES,
-                User.is_active == True,  # noqa: E712
-            ).first()
-            if sales_user:
-                assignment = MerchantSalesAssignment(
-                    merchant_id=merchant.id,
-                    sales_manager_user_id=sales_user.id,
-                )
-                db.add(assignment)
+    # L-2: 추천 코드 처리 — shop_name 없이 가입해도 가맹점이 생성된 경우 연결한다
+    if role == UserRole.OWNER and req.sales_referral_code and merchant:
+        sales_user = db.query(User).filter(
+            User.referral_code == req.sales_referral_code,
+            User.role == UserRole.SALES,
+            User.is_active == True,  # noqa: E712
+        ).first()
+        if sales_user:
+            assignment = MerchantSalesAssignment(
+                merchant_id=merchant.id,
+                sales_manager_user_id=sales_user.id,
+            )
+            db.add(assignment)
 
     db.commit()
     db.refresh(user)

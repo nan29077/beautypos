@@ -6,6 +6,7 @@ Covers: merchants CRUD, PG config, transactions, payout requests,
 import json
 import secrets
 from datetime import datetime, timedelta, date as date_type
+from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -279,9 +280,6 @@ def list_all_transactions(
     if date_to:
         q = q.filter(Transaction.created_at <= datetime.fromisoformat(date_to) + timedelta(days=1))
     total_count = q.count()
-    total_amount = db.query(func.coalesce(func.sum(Transaction.amount), 0)).filter(
-        *[c for c in q.whereclause.clauses] if hasattr(q, 'whereclause') and q.whereclause is not None else []
-    ).scalar() if False else 0
     # Calculate total from filtered query
     amount_q = db.query(func.coalesce(func.sum(Transaction.amount), 0))
     if merchant_id:
@@ -344,8 +342,13 @@ def approve_payout(pid: int, db: Session = Depends(get_db), admin: User = Depend
         raise HTTPException(status_code=404)
     if pr.status != PayoutStatus.PENDING:
         raise HTTPException(status_code=400, detail="이미 처리된 페이아웃 요청입니다.")
+    # M-3: 승인 시점 잔액 재검증 (다른 요청이 먼저 처리됐을 수 있음)
+    available = get_available_payout(db, pr.requester_user_id, pr.role, exclude_payout_id=pr.id)
+    from decimal import Decimal
+    if Decimal(str(pr.amount)) > available:
+        raise HTTPException(status_code=400, detail=f"출금 가능 잔액({available:,.0f}원)이 부족해 승인할 수 없습니다")
     pr.status = PayoutStatus.APPROVED
-    pr.reviewed_at = datetime.utcnow()
+    pr.reviewed_at = now_kst().replace(tzinfo=None)
     pr.reviewed_by = admin.id
     db.commit()
     return {"ok": True, "status": "approved"}
@@ -359,7 +362,7 @@ def reject_payout(pid: int, db: Session = Depends(get_db), admin: User = Depends
     if pr.status != PayoutStatus.PENDING:
         raise HTTPException(status_code=400, detail="이미 처리된 페이아웃 요청입니다.")
     pr.status = PayoutStatus.REJECTED
-    pr.reviewed_at = datetime.utcnow()
+    pr.reviewed_at = now_kst().replace(tzinfo=None)
     pr.reviewed_by = admin.id
     db.commit()
     return {"ok": True, "status": "rejected"}
@@ -373,7 +376,12 @@ _SHORTS_TIER_LABELS = {code: label for code, label, _ in SHORTS_DURATION_TIERS}
 def _shorts_detail_payload(detail: AdOrderShortsDetail) -> dict:
     """쇼츠 주문 상세를 API 응답 형태로 직렬화한다."""
     def _load(raw, fallback):
-        return json.loads(raw) if raw else fallback
+        if not raw:
+            return fallback
+        try:
+            return json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return fallback
 
     return {
         "campaign_name": detail.campaign_name,
@@ -442,13 +450,19 @@ def list_ad_orders(db: Session = Depends(get_db), _=Depends(require_admin)):
         if o.type.value == "blog":
             detail = db.query(AdOrderBlogDetail).filter(AdOrderBlogDetail.order_id == o.id).first()
             if detail:
+                try:
+                    links_val = json.loads(detail.links_json) if detail.links_json else []
+                    kw_val = json.loads(detail.main_keywords_json) if detail.main_keywords_json else []
+                    tags_val = json.loads(detail.hashtags_json) if detail.hashtags_json else []
+                except (json.JSONDecodeError, TypeError):
+                    links_val, kw_val, tags_val = [], [], []
                 item["blog_detail"] = {
                     "campaign_name": detail.campaign_name,
                     "address": detail.address,
                     "contact": detail.contact,
-                    "links": json.loads(detail.links_json) if detail.links_json else [],
-                    "main_keywords": json.loads(detail.main_keywords_json) if detail.main_keywords_json else [],
-                    "hashtags": json.loads(detail.hashtags_json) if detail.hashtags_json else [],
+                    "links": links_val,
+                    "main_keywords": kw_val,
+                    "hashtags": tags_val,
                     "description": detail.description,
                     "order_count": detail.order_count,
                     "unit_price": str(detail.unit_price or 0),
@@ -457,9 +471,13 @@ def list_ad_orders(db: Session = Depends(get_db), _=Depends(require_admin)):
         elif o.type.value == "place_traffic":
             detail = db.query(AdOrderPlaceTrafficDetail).filter(AdOrderPlaceTrafficDetail.order_id == o.id).first()
             if detail:
+                try:
+                    sk_val = json.loads(detail.search_keywords_json) if detail.search_keywords_json else []
+                except (json.JSONDecodeError, TypeError):
+                    sk_val = []
                 item["place_traffic_detail"] = {
                     "place_name_or_id": detail.place_name_or_id,
-                    "search_keywords": json.loads(detail.search_keywords_json) if detail.search_keywords_json else [],
+                    "search_keywords": sk_val,
                     "order_count": detail.order_count,
                     "unit_price": str(detail.unit_price or 0),
                     "est_total_cost": str(detail.est_total_cost or 0),
@@ -882,6 +900,15 @@ def update_sales_assignment(aid: int, req: SalesAssignmentUpdate, db: Session = 
     if req.memo is not None:
         a.memo = req.memo
     if req.is_active is not None:
+        if req.is_active and not a.is_active:
+            # M-2: 재활성화 시 동일 가맹점에 이미 활성 배정이 있으면 중복 방지
+            duplicate = db.query(MerchantSalesAssignment).filter(
+                MerchantSalesAssignment.merchant_id == a.merchant_id,
+                MerchantSalesAssignment.is_active == True,
+                MerchantSalesAssignment.id != a.id,
+            ).first()
+            if duplicate:
+                raise HTTPException(status_code=409, detail="해당 가맹점에 이미 활성화된 영업 배정이 있습니다")
         a.is_active = req.is_active
     db.commit()
     return {"ok": True}
@@ -943,15 +970,20 @@ def list_all_users(
     return results
 
 
+class _CreateSalesRequest(BaseModel):
+    name: str
+    email: str
+    password: str
+
+
 @router.post("/users/create-sales")
 def create_sales_user(
-    name: str = Query(..., description="영업관리자 이름"),
-    email: str = Query(..., description="이메일"),
-    password: str = Query(..., description="초기 비밀번호"),
+    req_body: _CreateSalesRequest,
     db: Session = Depends(get_db),
     _=Depends(require_admin),
 ):
     """최고관리자가 영업관리자 계정을 직접 생성한다. 고유 추천 코드가 자동 발급된다."""
+    name, email, password = req_body.name, req_body.email, req_body.password
     if db.query(User).filter(User.email == email).first():
         raise HTTPException(status_code=400, detail="이미 사용 중인 이메일입니다")
 
@@ -1128,8 +1160,13 @@ def calculate_settlement(
     if not merchant:
         raise HTTPException(status_code=404, detail="가맹점을 찾을 수 없습니다")
 
-    start = dt.fromisoformat(period_start)
-    end = dt.fromisoformat(period_end)
+    try:
+        start = dt.fromisoformat(period_start)
+        end = dt.fromisoformat(period_end)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="날짜 형식이 올바르지 않습니다 (ISO 8601: YYYY-MM-DD 또는 YYYY-MM-DDTHH:MM:SS)")
+    if start > end:
+        raise HTTPException(status_code=400, detail="시작일이 종료일보다 늦을 수 없습니다")
     if end.hour == 0 and end.minute == 0 and end.second == 0:
         end = end + timedelta(days=1) - timedelta(microseconds=1)
 
@@ -1427,13 +1464,19 @@ def get_ad_order_detail(oid: int, db: Session = Depends(get_db), _=Depends(requi
         detail = db.query(AdOrderBlogDetail).filter(AdOrderBlogDetail.order_id == order.id).first()
         if detail:
             images = db.query(AdOrderBlogImage).filter(AdOrderBlogImage.order_id == order.id).all()
+            try:
+                links_val = json.loads(detail.links_json) if detail.links_json else []
+                kw_val = json.loads(detail.main_keywords_json) if detail.main_keywords_json else []
+                tags_val = json.loads(detail.hashtags_json) if detail.hashtags_json else []
+            except (json.JSONDecodeError, TypeError):
+                links_val, kw_val, tags_val = [], [], []
             item["blog_detail"] = {
                 "campaign_name": detail.campaign_name,
                 "address": detail.address,
                 "contact": detail.contact,
-                "links": json.loads(detail.links_json) if detail.links_json else [],
-                "main_keywords": json.loads(detail.main_keywords_json) if detail.main_keywords_json else [],
-                "hashtags": json.loads(detail.hashtags_json) if detail.hashtags_json else [],
+                "links": links_val,
+                "main_keywords": kw_val,
+                "hashtags": tags_val,
                 "description": detail.description,
                 "images": [{"id": img.id, "file_path": img.file_path} for img in images],
                 "order_count": detail.order_count,
@@ -1443,9 +1486,13 @@ def get_ad_order_detail(oid: int, db: Session = Depends(get_db), _=Depends(requi
     elif order.type.value == "place_traffic":
         detail = db.query(AdOrderPlaceTrafficDetail).filter(AdOrderPlaceTrafficDetail.order_id == order.id).first()
         if detail:
+            try:
+                sk_val = json.loads(detail.search_keywords_json) if detail.search_keywords_json else []
+            except (json.JSONDecodeError, TypeError):
+                sk_val = []
             item["place_traffic_detail"] = {
                 "place_name_or_id": detail.place_name_or_id,
-                "search_keywords": json.loads(detail.search_keywords_json) if detail.search_keywords_json else [],
+                "search_keywords": sk_val,
                 "order_count": detail.order_count,
                 "unit_price": str(detail.unit_price or 0),
                 "est_total_cost": str(detail.est_total_cost or 0),

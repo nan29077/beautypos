@@ -1,9 +1,9 @@
 """
 Pydantic schemas for request/response validation.
 """
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional, List, Dict
-from datetime import datetime, date
+from datetime import datetime, date, timezone, timedelta
 from enum import Enum
 
 
@@ -107,12 +107,25 @@ class DesignerUpdate(BaseModel):
 class TerminalTransactionCreate(BaseModel):
     merchant_id: int
     terminal_id: Optional[str] = None  # terminal_serial
-    amount: float
-    installment_months: int = 0
+    amount: float = Field(..., gt=0, description="결제 금액 (0보다 커야 함)")
+    installment_months: int = Field(0, ge=0, le=60, description="할부 개월수 (0~60)")
     staff_code: Optional[str] = None
     card_brand: Optional[str] = None
     approval_code: Optional[str] = None
     approved_at: Optional[datetime] = None
+
+    @field_validator("approved_at")
+    @classmethod
+    def validate_approved_at(cls, v: Optional[datetime]) -> Optional[datetime]:
+        """승인 시각이 현재 시각 기준 ±24시간 이내인지 검증한다."""
+        if v is None:
+            return v
+        now = datetime.now(timezone.utc)
+        dt = v if v.tzinfo else v.replace(tzinfo=timezone.utc)
+        diff = abs((dt - now).total_seconds())
+        if diff > 86400:
+            raise ValueError("approved_at은 현재 시각 기준 ±24시간 이내여야 합니다")
+        return v
 
 
 # ─── Payout ──────────────────────────────────────────────────

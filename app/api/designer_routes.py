@@ -1,13 +1,13 @@
 """
 Designer (디자이너) API routes.
 """
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from app.database import get_db
-from app.utils.kst import today_kst, kst_day_start_utc
+from app.utils.kst import today_kst, kst_day_start_utc, now_kst
 from app.models.user import User, UserRole
 from app.models.staff import Staff
 from app.models.transaction import Transaction
@@ -23,15 +23,15 @@ require_designer = require_roles([UserRole.ADMIN, UserRole.DESIGNER])
 
 
 def _date_range(range_str: str):
-    now_utc = datetime.utcnow()
+    now = now_kst().astimezone(timezone.utc).replace(tzinfo=None)
     if range_str == "day":
-        return now_utc - timedelta(days=1), now_utc
+        return now - timedelta(days=1), now
     elif range_str == "week":
-        return now_utc - timedelta(weeks=1), now_utc
+        return now - timedelta(weeks=1), now
     elif range_str == "month":
-        return now_utc - timedelta(days=30), now_utc
+        return now - timedelta(days=30), now
     else:
-        return datetime(2000, 1, 1), now_utc
+        return datetime(2000, 1, 1), now
 
 
 def _get_staff(user: User, db: Session) -> Staff:
