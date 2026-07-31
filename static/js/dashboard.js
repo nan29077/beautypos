@@ -176,6 +176,43 @@ function resetFormModalFooter(showSave = true) {
     return save;
 }
 
+function showChangePasswordModal() {
+    // 모바일 메뉴 시트에서 열었을 수 있으므로 먼저 닫는다.
+    if (typeof closeMobileMenu === 'function') closeMobileMenu();
+    document.getElementById('formModalTitle').textContent = '비밀번호 변경';
+    document.getElementById('formModalBody').innerHTML = `
+        <div class="mb-3">
+            <label class="form-label">현재 비밀번호</label>
+            <input type="password" class="form-control" id="pwCurrent" autocomplete="current-password">
+        </div>
+        <div class="mb-3">
+            <label class="form-label">새 비밀번호</label>
+            <input type="password" class="form-control" id="pwNew" placeholder="6자 이상" autocomplete="new-password">
+        </div>
+        <div class="mb-0">
+            <label class="form-label">새 비밀번호 확인</label>
+            <input type="password" class="form-control" id="pwNewConfirm" autocomplete="new-password">
+        </div>`;
+    const save = resetFormModalFooter();
+    save.textContent = '변경';
+    save.onclick = async () => {
+        const current = document.getElementById('pwCurrent').value;
+        const next = document.getElementById('pwNew').value;
+        const nextConfirm = document.getElementById('pwNewConfirm').value;
+        if (!current || !next) { alert('현재 비밀번호와 새 비밀번호를 입력하세요'); return; }
+        if (next.length < 6) { alert('새 비밀번호는 6자 이상이어야 합니다'); return; }
+        if (next !== nextConfirm) { alert('새 비밀번호가 서로 일치하지 않습니다'); return; }
+        try {
+            await apiPost('/api/auth/change-password', { current_password: current, new_password: next });
+            bootstrap.Modal.getInstance(document.getElementById('formModal')).hide();
+            alert('비밀번호가 변경되었습니다. 다음 로그인부터 새 비밀번호를 사용하세요.');
+        } catch (e) {
+            alert(e.message);
+        }
+    };
+    new bootstrap.Modal(document.getElementById('formModal')).show();
+}
+
 function adStatusOptions(allowedStatuses, includePlaceholder = true) {
     const labels = {
         requested: '요청됨',

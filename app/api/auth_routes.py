@@ -13,7 +13,9 @@ from app.auth.jwt_handler import (
     create_access_token, create_refresh_token, decode_token,
 )
 from app.auth.dependencies import get_current_user
-from app.schemas.schemas import RegisterRequest, LoginRequest, TokenResponse, RefreshRequest
+from app.schemas.schemas import (
+    RegisterRequest, LoginRequest, TokenResponse, RefreshRequest, ChangePasswordRequest,
+)
 from app.services import plan_service
 from app.config import get_settings
 
@@ -202,3 +204,20 @@ def oauth_callback(provider: str, code: str = "", db: Session = Depends(get_db))
 @router.get("/me", summary="Get current user info")
 def get_me(current_user: User = Depends(get_current_user)):
     return _user_dict(current_user)
+
+
+@router.post("/change-password")
+def change_password(
+    req: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if not current_user.password_hash:
+        raise HTTPException(status_code=400, detail="소셜 로그인 계정은 비밀번호를 변경할 수 없습니다")
+    if not verify_password(req.current_password, current_user.password_hash):
+        raise HTTPException(status_code=400, detail="현재 비밀번호가 일치하지 않습니다")
+    if req.current_password == req.new_password:
+        raise HTTPException(status_code=400, detail="새 비밀번호가 현재 비밀번호와 같습니다")
+    current_user.password_hash = hash_password(req.new_password)
+    db.commit()
+    return {"ok": True, "message": "비밀번호가 변경되었습니다"}
