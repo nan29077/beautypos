@@ -65,6 +65,13 @@ def _ensure_columns():
         ("settlements", "company_profit_amount", "NUMERIC(14,2)", "0"),
         ("settlements", "sales_manager_user_id", "INTEGER", "NULL"),
         ("users", "referral_code", "VARCHAR(50)", "NULL"),
+        # 광고 주문 수량·단가 스냅샷
+        ("ad_order_blog_details", "order_count", "INTEGER", "1"),
+        ("ad_order_blog_details", "unit_price", "NUMERIC(12,2)", "0"),
+        ("ad_order_blog_details", "est_total_cost", "NUMERIC(14,2)", "0"),
+        ("ad_order_place_traffic_details", "order_count", "INTEGER", "1"),
+        ("ad_order_place_traffic_details", "unit_price", "NUMERIC(12,2)", "0"),
+        ("ad_order_place_traffic_details", "est_total_cost", "NUMERIC(14,2)", "0"),
     ]
     with engine.connect() as conn:
         for table, column, ddl_type, default in pending:

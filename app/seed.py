@@ -94,7 +94,8 @@ def run_seed(db: Session):
     db.add(pg_config)
 
     # ─── 7. Fee Policy ──────────────────────────────────────
-    fee = FeePolicy(merchant_id=merchant.id, pg_fee_rate=0.033)
+    # 저장값은 부가세 별도 3.0%, 실제 적용은 VAT 포함 3.3%.
+    fee = FeePolicy(merchant_id=merchant.id, pg_fee_rate=0.03, vat_inclusive_rate=0.033)
     db.add(fee)
 
     # ─── 8. Sales Assignment ────────────────────────────────

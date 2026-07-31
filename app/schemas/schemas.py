@@ -129,11 +129,18 @@ class AdBlogOrderCreate(BaseModel):
     hashtags: List[str] = Field(default_factory=list, max_length=5)
     description: Optional[str] = None
     extra_image_link: Optional[str] = None
-
-
+    order_count: int = Field(default=1, ge=1, le=10000)
 class AdPlaceTrafficOrderCreate(BaseModel):
     place_name_or_id: str = Field(min_length=2, max_length=300)
     search_keywords: List[str] = Field(default_factory=list, min_length=1, max_length=3)
+    order_count: int = Field(default=1, ge=1, le=10000)
+
+
+class AdPricingUpdate(BaseModel):
+    blog_unit_price: int = Field(ge=0, le=100000000)
+    place_traffic_unit_price: int = Field(ge=0, le=100000000)
+    shorts_distribution_unit_price: int = Field(ge=0, le=100000000)
+    shorts_duration_prices: Dict[str, int] = Field(default_factory=dict)
 
 
 class AdShortsOrderCreate(BaseModel):
@@ -225,7 +232,7 @@ class AdCompetitorCreate(BaseModel):
 # ─── Fee Policy ──────────────────────────────────────────────
 
 class FeePolicyUpdate(BaseModel):
-    pg_fee_rate: float = 0.035  # 3.5% (VAT 별도, 하위 호환)
+    pg_fee_rate: float = 0.03  # 3.0% (VAT 별도, 실제 적용 3.3%, 하위 호환)
 
 
 class GlobalFeeSettingsUpdate(BaseModel):

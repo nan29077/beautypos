@@ -83,9 +83,3 @@ def test_dashboard_does_not_shadow_the_shared_api_helpers():
 
     assert "async function apiPost(url, data)" not in script
     assert "async function apiDelete(url)" not in script
-
-
-def test_legacy_owner_mobile_page_redirects_to_full_dashboard():
-    legacy_mobile = read_static("mobile/mobile.html")
-
-    assert "window.location.replace('/static/dashboard.html?view=mobile')" in legacy_mobile

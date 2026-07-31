@@ -36,7 +36,7 @@ from app.models.system_config import (
     AD_SHORTS_ENABLED,
     COMMISSION_VISIBLE_TO_SALES, COMMISSION_VISIBLE_TO_OWNER, COMMISSION_VISIBLE_TO_DESIGNER,
 )
-from app.services import ai_service
+from app.services import ad_pricing, ai_service
 from app.services.encryption import encrypt_value, decrypt_value, mask_value
 from app.services.pg_service import get_pg_provider
 from app.services.settlement_service import (
@@ -47,7 +47,7 @@ from app.services.settlement_service import (
 )
 from app.schemas.schemas import (
     MerchantCreate, MerchantUpdate, PGConfigCreate,
-    AdMetricCreate, AdOrderStatusUpdate,
+    AdMetricCreate, AdOrderStatusUpdate, AdPricingUpdate,
     FeePolicyUpdate, GlobalFeeSettingsUpdate, MerchantFeeOverrideUpdate, SalesCommissionOverrideUpdate,
     SalesAssignmentCreate, SalesAssignmentUpdate,
     CommissionVisibilityUpdate, StaffShareRateUpdate, AISettingsUpdate,
@@ -450,6 +450,9 @@ def list_ad_orders(db: Session = Depends(get_db), _=Depends(require_admin)):
                     "main_keywords": json.loads(detail.main_keywords_json) if detail.main_keywords_json else [],
                     "hashtags": json.loads(detail.hashtags_json) if detail.hashtags_json else [],
                     "description": detail.description,
+                    "order_count": detail.order_count,
+                    "unit_price": str(detail.unit_price or 0),
+                    "est_total_cost": str(detail.est_total_cost or 0),
                 }
         elif o.type.value == "place_traffic":
             detail = db.query(AdOrderPlaceTrafficDetail).filter(AdOrderPlaceTrafficDetail.order_id == o.id).first()
@@ -457,6 +460,9 @@ def list_ad_orders(db: Session = Depends(get_db), _=Depends(require_admin)):
                 item["place_traffic_detail"] = {
                     "place_name_or_id": detail.place_name_or_id,
                     "search_keywords": json.loads(detail.search_keywords_json) if detail.search_keywords_json else [],
+                    "order_count": detail.order_count,
+                    "unit_price": str(detail.unit_price or 0),
+                    "est_total_cost": str(detail.est_total_cost or 0),
                 }
         elif o.type.value == "shorts":
             detail = db.query(AdOrderShortsDetail).filter(AdOrderShortsDetail.order_id == o.id).first()
@@ -1430,6 +1436,9 @@ def get_ad_order_detail(oid: int, db: Session = Depends(get_db), _=Depends(requi
                 "hashtags": json.loads(detail.hashtags_json) if detail.hashtags_json else [],
                 "description": detail.description,
                 "images": [{"id": img.id, "file_path": img.file_path} for img in images],
+                "order_count": detail.order_count,
+                "unit_price": str(detail.unit_price or 0),
+                "est_total_cost": str(detail.est_total_cost or 0),
             }
     elif order.type.value == "place_traffic":
         detail = db.query(AdOrderPlaceTrafficDetail).filter(AdOrderPlaceTrafficDetail.order_id == order.id).first()
@@ -1437,6 +1446,9 @@ def get_ad_order_detail(oid: int, db: Session = Depends(get_db), _=Depends(requi
             item["place_traffic_detail"] = {
                 "place_name_or_id": detail.place_name_or_id,
                 "search_keywords": json.loads(detail.search_keywords_json) if detail.search_keywords_json else [],
+                "order_count": detail.order_count,
+                "unit_price": str(detail.unit_price or 0),
+                "est_total_cost": str(detail.est_total_cost or 0),
             }
     elif order.type.value == "shorts":
         detail = db.query(AdOrderShortsDetail).filter(AdOrderShortsDetail.order_id == order.id).first()
@@ -1539,6 +1551,32 @@ def update_ad_feature_flags(
         result["ad_shorts_enabled"] = ad_shorts_enabled
     db.commit()
     return {"ok": True, **result}
+
+
+@router.get("/ad-pricing")
+def get_ad_pricing(db: Session = Depends(get_db), _=Depends(require_admin)):
+    """최고관리자 광고 단가 설정 조회."""
+    return ad_pricing.get_ad_pricing(db)
+
+
+@router.put("/ad-pricing")
+def update_ad_pricing(
+    req: AdPricingUpdate,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin),
+):
+    """최고관리자 광고 단가 설정 저장."""
+    valid_tiers = {code for code, _, _ in SHORTS_DURATION_TIERS}
+    unknown_tiers = set(req.shorts_duration_prices) - valid_tiers
+    if unknown_tiers:
+        raise HTTPException(
+            status_code=400,
+            detail=f"지원하지 않는 쇼츠 영상 길이입니다: {', '.join(sorted(unknown_tiers))}",
+        )
+    return {
+        "ok": True,
+        **ad_pricing.save_ad_pricing(db, req.model_dump()),
+    }
 
 
 # ═══════════════════════════════════════════════════════════

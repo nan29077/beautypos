@@ -107,10 +107,24 @@ def test_settlement_rejects_unknown_merchant(client):
     assert response.status_code == 404
 
 
-def test_sales_views_use_the_shared_default_fee_rate(client):
-    """영업 화면의 PG 수수료가 정산 로직과 같은 기준(3.5%)이어야 한다."""
+def test_sales_views_use_the_admin_global_fee_rate(client):
+    """최고관리자가 정한 전역 PG 수수료가 영업 화면 계산에도 동일하게 적용된다."""
     from app.database import SessionLocal
     from app.models.settlement import FeePolicy
+
+    admin = _auth(client, "admin")
+    configured_pg_rate = 0.027
+    configured_pg_rate_with_vat = configured_pg_rate * 1.1
+    saved = client.put(
+        "/api/admin/fee-settings",
+        headers=admin,
+        json={
+            "merchant_fee_rate": 0.05,
+            "pg_fee_rate": configured_pg_rate,
+            "sales_commission_rate": 0.01,
+        },
+    )
+    assert saved.status_code == 200
 
     sales = _auth(client, "sales")
     merchants = client.get("/api/sales/merchants", headers=sales).json()
@@ -131,8 +145,12 @@ def test_sales_views_use_the_shared_default_fee_rate(client):
         f"/api/sales/merchants/{merchant_id}/breakdown?range=all", headers=sales
     ).json()
 
-    assert breakdown["pg_fee_rate"] == 0.035
-    assert stats["pg_fee"] == pytest.approx(stats["gross_amount"] * 0.035, abs=1.0)
+    assert breakdown["pg_fee_rate"] == configured_pg_rate
+    assert breakdown["pg_fee_rate_with_vat"] == pytest.approx(configured_pg_rate_with_vat)
+    assert stats["pg_fee"] == pytest.approx(
+        stats["gross_amount"] * configured_pg_rate_with_vat,
+        abs=1.0,
+    )
 
 
 def test_deactivated_sales_assignment_revokes_access(client):

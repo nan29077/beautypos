@@ -1,7 +1,6 @@
 """
 Authentication routes: register, login, OAuth stubs, test-login, /me
 """
-import secrets
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 
@@ -51,7 +50,7 @@ def register(req: RegisterRequest, db: Session = Depends(get_db)):
     if role_str not in _ALLOWED_REGISTER_ROLES:
         raise HTTPException(
             status_code=400,
-            detail=f"가입 가능한 역할: {sorted(_ALLOWED_REGISTER_ROLES)} (admin 가입 불가)",
+            detail="공개 회원가입은 원장님 계정만 가능합니다. 관리자·영업관리자 계정은 최고관리자가 추가합니다.",
         )
 
     existing = db.query(User).filter(User.email == req.email).first()
@@ -60,20 +59,13 @@ def register(req: RegisterRequest, db: Session = Depends(get_db)):
 
     role = UserRole(role_str)
 
-    # SALES 가입: 고유 추천 코드 자동 생성
-    referral_code = None
-    if role == UserRole.SALES:
-        referral_code = f"SALES-{secrets.token_hex(4).upper()}"
-        while db.query(User).filter(User.referral_code == referral_code).first():
-            referral_code = f"SALES-{secrets.token_hex(4).upper()}"
-
     user = User(
         email=req.email,
         password_hash=hash_password(req.password),
         name=req.name,
         phone=req.phone,
         role=role,
-        referral_code=referral_code,
+        referral_code=None,
     )
     db.add(user)
     db.flush()  # user.id 확보

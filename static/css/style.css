@@ -584,6 +584,44 @@ body {
     color: #8e4c61;
     background: #fbf0f3;
 }
+.ad-order-tabs {
+    display: flex;
+    flex-wrap: nowrap;
+    width: 100%;
+    gap: 10px;
+}
+.ad-order-tabs .nav-item {
+    flex: 1 1 0;
+    min-width: 0;
+}
+.ad-order-tabs .nav-link {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    gap: 7px;
+    white-space: nowrap;
+}
+.ad-budget-summary {
+    padding: 16px 18px;
+    border: 1px solid #cfe5f3;
+    border-radius: 16px;
+    background: linear-gradient(135deg, #f7fcff, #edf7fd);
+    box-shadow: 0 10px 24px rgba(15, 108, 189, .07);
+}
+.ad-budget-line {
+    color: #64748b;
+    font-size: .88rem;
+}
+.ad-budget-total {
+    color: #0f6cbd;
+    font-size: 1.3rem;
+}
+.ad-pricing-card .input-group-text {
+    min-width: 42px;
+    justify-content: center;
+}
+.ad-feature-mobile-copy { display: none; }
 .alert { border: 1px solid transparent; border-radius: 15px; }
 .empty-state { border-color: #ddcdd2; border-radius: 20px; background: #fdfafb; }
 .empty-state > i { color: #c594a3; }
@@ -1721,6 +1759,34 @@ body[data-page="owner-analysis"] #analysisCompare .fw-bold {
 }
 
 @media (max-width: 767.98px) {
+    .ad-order-tabs {
+        gap: 6px;
+        margin-bottom: 1.15rem !important;
+    }
+    .ad-order-tabs .nav-link {
+        min-height: 48px;
+        padding: 9px 5px;
+        gap: 5px;
+        border-radius: 12px !important;
+        font-size: clamp(.72rem, 3.25vw, .84rem);
+        letter-spacing: -.035em;
+    }
+    .ad-order-tabs .nav-link i {
+        flex: 0 0 auto;
+        font-size: .92em;
+    }
+    .ad-budget-summary {
+        padding: 14px;
+        border-radius: 14px;
+    }
+    .ad-budget-total {
+        font-size: 1.16rem;
+    }
+    .ad-pricing-card .card-header,
+    .ad-pricing-card .card-body {
+        padding-left: 14px;
+        padding-right: 14px;
+    }
     body.role-mobile-ui {
         --mobile-accent: #0f6cbd;
         --mobile-accent-dark: #0f4c81;
@@ -2401,8 +2467,193 @@ body[data-page="admin-metrics"] .card[style*="linear-gradient"] { background: li
         border-radius: 9px !important;
     }
     body.admin-mobile-ui .form-check-input[role="switch"] {
-        width: 52px !important;
-        height: 30px !important;
+        width: 42px !important;
+        min-width: 42px !important;
+        height: 22px !important;
+        min-height: 22px !important;
+        margin-top: 0 !important;
+        padding: 0 !important;
+    }
+
+    /* ── 광고주문 관리: 모바일 전용 정보 밀도와 조작 크기 ── */
+    body.admin-mobile-ui[data-page="admin-adorders"] .page-content {
+        padding-left: 11px;
+        padding-right: 11px;
+    }
+    body.admin-mobile-ui[data-page="admin-adorders"] .ad-feature-control-card,
+    body.admin-mobile-ui[data-page="admin-adorders"] .ad-pricing-card,
+    body.admin-mobile-ui[data-page="admin-adorders"] .ad-order-list-card {
+        margin-bottom: 14px !important;
+        border-radius: 15px !important;
+    }
+    body.admin-mobile-ui[data-page="admin-adorders"] .ad-feature-control-card > .card-header {
+        padding: 10px 13px !important;
+    }
+    body.admin-mobile-ui[data-page="admin-adorders"] .ad-feature-control-card > .card-body {
+        padding: 11px !important;
+    }
+    body.admin-mobile-ui[data-page="admin-adorders"] .ad-feature-header-note {
+        display: none;
+    }
+    body.admin-mobile-ui[data-page="admin-adorders"] .ad-feature-switch-row {
+        min-height: 62px;
+        padding: 10px !important;
+        gap: 8px;
+        flex-wrap: nowrap !important;
+    }
+    body.admin-mobile-ui[data-page="admin-adorders"] .ad-feature-switch-row > .d-flex {
+        min-width: 0;
+        flex: 1 1 auto;
+        gap: 9px !important;
+        flex-wrap: nowrap !important;
+    }
+    body.admin-mobile-ui[data-page="admin-adorders"] .ad-feature-switch-row .form-switch {
+        flex: 0 0 42px;
+        width: 42px;
+    }
+    body.admin-mobile-ui[data-page="admin-adorders"] .ad-feature-switch-icon {
+        width: 34px !important;
+        min-width: 34px;
+        height: 34px !important;
+        border-radius: 10px !important;
+        box-shadow: none !important;
+    }
+    body.admin-mobile-ui[data-page="admin-adorders"] .ad-feature-switch-icon i {
+        font-size: .82rem !important;
+    }
+    body.admin-mobile-ui[data-page="admin-adorders"] .ad-feature-switch-row .fw-bold {
+        font-size: .86rem !important;
+        line-height: 1.25;
+    }
+    body.admin-mobile-ui[data-page="admin-adorders"] .ad-feature-description {
+        margin-top: 2px;
+        font-size: .68rem !important;
+        line-height: 1.35;
+    }
+    body.admin-mobile-ui[data-page="admin-adorders"] .ad-feature-desktop-copy { display: none; }
+    body.admin-mobile-ui[data-page="admin-adorders"] .ad-feature-mobile-copy { display: inline; }
+    body.admin-mobile-ui[data-page="admin-adorders"] .ad-feature-subintro {
+        margin: 0 2px 8px !important;
+        font-size: .68rem !important;
+        line-height: 1.4;
+    }
+    body.admin-mobile-ui[data-page="admin-adorders"] .ad-feature-grid {
+        --bs-gutter-y: 7px;
+    }
+    body.admin-mobile-ui[data-page="admin-adorders"] .ad-feature-master-row {
+        margin-bottom: 10px !important;
+    }
+    body.admin-mobile-ui[data-page="admin-adorders"] .ad-pricing-card .card-header {
+        padding: 12px 13px !important;
+    }
+    body.admin-mobile-ui[data-page="admin-adorders"] .ad-pricing-card .card-header small {
+        display: block;
+        margin-top: 3px;
+        font-size: .68rem;
+        line-height: 1.35;
+    }
+    body.admin-mobile-ui[data-page="admin-adorders"] .ad-pricing-card .card-body {
+        padding: 12px !important;
+    }
+    body.admin-mobile-ui[data-page="admin-adorders"] .ad-pricing-card .row {
+        --bs-gutter-x: 8px;
+        --bs-gutter-y: 11px;
+    }
+    body.admin-mobile-ui[data-page="admin-adorders"] .ad-pricing-card .form-label {
+        margin-bottom: 5px;
+        font-size: .72rem;
+        line-height: 1.25;
+    }
+    body.admin-mobile-ui[data-page="admin-adorders"] .ad-pricing-card .input-group {
+        flex-wrap: nowrap;
+        gap: 0;
+    }
+    body.admin-mobile-ui[data-page="admin-adorders"] .ad-pricing-card .input-group > .form-control {
+        min-width: 0;
+        padding: 8px !important;
+        border-radius: 9px 0 0 9px !important;
+        text-align: right;
+    }
+    body.admin-mobile-ui[data-page="admin-adorders"] .ad-pricing-card .input-group > .input-group-text {
+        min-width: 36px;
+        padding: 7px !important;
+        border-radius: 0 9px 9px 0 !important;
+        font-size: .72rem;
+    }
+    body.admin-mobile-ui[data-page="admin-adorders"] .ad-pricing-card #saveAdPricingBtn {
+        width: 100%;
+    }
+    body.admin-mobile-ui[data-page="admin-adorders"] .ad-order-stats {
+        --bs-gutter-x: 8px;
+        --bs-gutter-y: 8px;
+    }
+    body.admin-mobile-ui[data-page="admin-adorders"] .ad-order-stats > div {
+        width: 50%;
+    }
+    body.admin-mobile-ui[data-page="admin-adorders"] .ad-order-stat-card .card-body {
+        padding: 10px 7px !important;
+    }
+    body.admin-mobile-ui[data-page="admin-adorders"] .ad-order-stat-card .fs-4 {
+        font-size: 1.12rem !important;
+        line-height: 1.15;
+    }
+    body.admin-mobile-ui[data-page="admin-adorders"] .ad-order-stat-card small {
+        font-size: .68rem;
+    }
+    body.admin-mobile-ui[data-page="admin-adorders"] .ad-order-list-header {
+        padding: 12px !important;
+    }
+    body.admin-mobile-ui[data-page="admin-adorders"] .ad-order-list-header h5 {
+        width: 100%;
+        font-size: .94rem;
+    }
+    body.admin-mobile-ui[data-page="admin-adorders"] .ad-order-filters {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        width: 100%;
+        gap: 5px;
+    }
+    body.admin-mobile-ui[data-page="admin-adorders"] .ad-order-filters .btn {
+        min-height: 36px;
+        padding: 6px 3px !important;
+        font-size: .7rem !important;
+    }
+    body.admin-mobile-ui[data-page="admin-adorders"] .ad-order-list-card > .card-body {
+        padding: 10px !important;
+    }
+    body.admin-mobile-ui[data-page="admin-adorders"] #adOrdersTable td[data-label="ID"] {
+        display: none !important;
+    }
+    body.admin-mobile-ui[data-page="admin-adorders"] #adOrdersTable td[data-label="요청자"],
+    body.admin-mobile-ui[data-page="admin-adorders"] #adOrdersTable td[data-label="관리메모"] {
+        display: none !important;
+    }
+    body.admin-mobile-ui[data-page="admin-adorders"] #adOrdersTable tr {
+        padding: 8px 11px;
+    }
+    body.admin-mobile-ui[data-page="admin-adorders"] #adOrdersTable td {
+        min-height: 34px;
+        padding: 6px 0 !important;
+        font-size: .78rem !important;
+    }
+    body.admin-mobile-ui[data-page="admin-adorders"] .ad-order-actions {
+        display: grid;
+        grid-template-columns: 40px minmax(0, 1fr) 40px;
+        align-items: center;
+        gap: 6px;
+        width: 100%;
+    }
+    body.admin-mobile-ui[data-page="admin-adorders"] .ad-order-actions .btn {
+        width: 40px;
+        min-width: 40px;
+        min-height: 40px;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+    body.admin-mobile-ui[data-page="admin-adorders"] .ad-order-actions .form-select {
+        min-height: 40px;
+        padding: 7px 28px 7px 9px !important;
+        font-size: 14px !important;
     }
 
     /* ── 입력: iOS 자동 확대(16px 미만)를 막는다 ── */
@@ -3028,6 +3279,337 @@ body[data-page="admin-metrics"] .card[style*="linear-gradient"] { background: li
     }
 }
 
+/* ─── 최고관리자 전체 화면: 모바일 정보 구조 및 조작 최적화 ─── */
+@media (max-width: 767.98px) {
+    body.admin-mobile-ui {
+        overflow-x: hidden;
+        background: #f3f6fa;
+    }
+    body.admin-mobile-ui .desktop-role-mobile-header {
+        display: grid !important;
+        grid-template-columns: 44px minmax(0, 1fr) auto;
+        align-items: center;
+        column-gap: 10px;
+    }
+    body.admin-mobile-ui .admin-mobile-heading {
+        display: flex;
+        min-width: 0;
+        flex-direction: column;
+        line-height: 1.2;
+    }
+    body.admin-mobile-ui .admin-mobile-heading span {
+        margin-bottom: 2px;
+        color: #7b8da3;
+        font-size: .61rem;
+        font-weight: 700;
+    }
+    body.admin-mobile-ui .admin-mobile-heading strong {
+        overflow: hidden;
+        color: #17263a;
+        font-size: .94rem;
+        font-weight: 800;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    body.admin-mobile-ui .brand-mobile {
+        min-width: 50px;
+        text-align: right;
+        text-decoration: none;
+    }
+    body.admin-mobile-ui .brand-mobile-copy {
+        align-items: flex-end;
+    }
+    body.admin-mobile-ui .brand-mobile-copy strong {
+        color: #142a43;
+        font-size: .82rem;
+        letter-spacing: -.04em;
+    }
+    body.admin-mobile-ui .brand-mobile-copy small {
+        display: none;
+    }
+
+    body.admin-mobile-ui .admin-mobile-content {
+        max-width: 100%;
+        overflow-x: hidden;
+    }
+    body.admin-mobile-ui .admin-mobile-content > * {
+        max-width: 100%;
+    }
+    body.admin-mobile-ui .admin-mobile-content > .row,
+    body.admin-mobile-ui .admin-mobile-content .card-body > .row {
+        --bs-gutter-x: 10px;
+        --bs-gutter-y: 10px;
+    }
+    body.admin-mobile-ui .admin-mobile-card {
+        border: 1px solid #e4ebf3 !important;
+        border-radius: 15px !important;
+        box-shadow: 0 3px 12px rgba(20, 42, 67, .055) !important;
+    }
+    body.admin-mobile-ui .admin-mobile-card:not(:last-child) {
+        margin-bottom: 12px;
+    }
+    body.admin-mobile-ui .admin-mobile-card-header {
+        min-height: 48px;
+        padding: 11px 13px !important;
+    }
+    body.admin-mobile-ui .admin-mobile-card-header h5,
+    body.admin-mobile-ui .admin-mobile-card-header h6 {
+        min-width: 0;
+        margin-bottom: 0 !important;
+        font-size: .9rem !important;
+        line-height: 1.35;
+    }
+    body.admin-mobile-ui .admin-mobile-card > .card-body {
+        padding: 12px !important;
+    }
+    body.admin-mobile-ui .admin-mobile-card-header > .badge,
+    body.admin-mobile-ui .admin-mobile-card-header .badge {
+        max-width: 100%;
+        overflow: hidden;
+        padding: 6px 8px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    body.admin-mobile-ui .admin-mobile-summary-grid {
+        display: grid !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px !important;
+        margin-right: 0;
+        margin-left: 0;
+    }
+    body.admin-mobile-ui .admin-mobile-summary-grid > [class*="col-"] {
+        width: auto !important;
+        max-width: none !important;
+        padding: 0 !important;
+    }
+    body.admin-mobile-ui .admin-mobile-summary-grid .card {
+        height: 100%;
+        margin: 0 !important;
+    }
+    body.admin-mobile-ui .admin-mobile-summary-grid .card-body {
+        min-height: 75px;
+        padding: 11px 7px !important;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+    }
+    body.admin-mobile-ui .admin-mobile-summary-grid .fs-3,
+    body.admin-mobile-ui .admin-mobile-summary-grid .fs-4,
+    body.admin-mobile-ui .admin-mobile-summary-grid .fs-5 {
+        font-size: 1.1rem !important;
+        line-height: 1.2;
+    }
+    body.admin-mobile-ui .admin-mobile-summary-grid small {
+        margin-top: 3px;
+        font-size: .66rem;
+        line-height: 1.25;
+    }
+
+    body.admin-mobile-ui:not([data-page="admin-adorders"]) .admin-mobile-filter-grid {
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 10px !important;
+    }
+    body.admin-mobile-ui:not([data-page="admin-adorders"]) .admin-mobile-filter-grid > [class*="col-"] {
+        width: 100% !important;
+        max-width: none !important;
+        padding: 0 !important;
+    }
+    body.admin-mobile-ui .form-label {
+        margin-bottom: 5px;
+        color: #52657d;
+        font-size: .72rem;
+        font-weight: 700;
+    }
+    body.admin-mobile-ui .form-check.form-switch {
+        width: 42px;
+        min-width: 42px;
+        min-height: 22px;
+        margin: 0;
+        padding-left: 0;
+    }
+    body.admin-mobile-ui .form-check.form-switch .form-check-input {
+        width: 42px !important;
+        min-width: 42px !important;
+        height: 22px !important;
+        min-height: 22px !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+    body.admin-mobile-ui .form-text,
+    body.admin-mobile-ui small.text-muted {
+        line-height: 1.4;
+    }
+    body.admin-mobile-ui:not([data-page="admin-adorders"]) .input-group {
+        flex-wrap: nowrap;
+        gap: 0;
+    }
+    body.admin-mobile-ui:not([data-page="admin-adorders"]) .input-group > * {
+        border-radius: 0 !important;
+    }
+    body.admin-mobile-ui:not([data-page="admin-adorders"]) .input-group > :first-child {
+        border-radius: 9px 0 0 9px !important;
+    }
+    body.admin-mobile-ui:not([data-page="admin-adorders"]) .input-group > :last-child {
+        border-radius: 0 9px 9px 0 !important;
+    }
+    body.admin-mobile-ui .admin-mobile-action-group {
+        width: 100%;
+        align-items: stretch !important;
+        gap: 6px !important;
+    }
+    body.admin-mobile-ui .admin-mobile-action-group > .btn {
+        margin: 0 !important;
+        flex: 1 1 auto;
+    }
+    body.admin-mobile-ui .admin-mobile-action-group > select,
+    body.admin-mobile-ui .admin-mobile-action-group > input {
+        min-width: 0;
+        flex: 1 1 130px;
+    }
+
+    body.admin-mobile-ui .admin-mobile-tabs {
+        width: 100%;
+        max-width: 100%;
+        overflow-x: auto;
+        flex-wrap: nowrap;
+        scrollbar-width: none;
+        -webkit-overflow-scrolling: touch;
+    }
+    body.admin-mobile-ui .admin-mobile-tabs::-webkit-scrollbar {
+        display: none;
+    }
+    body.admin-mobile-ui .admin-mobile-tabs .nav-link {
+        min-height: 42px;
+        padding: 8px 12px;
+        font-size: .76rem;
+        white-space: nowrap;
+    }
+    body.admin-mobile-ui .alert {
+        padding: 11px 12px;
+        font-size: .75rem;
+        line-height: 1.55;
+    }
+    body.admin-mobile-ui .alert h6 {
+        font-size: .82rem;
+    }
+    body.admin-mobile-ui .alert .fs-5 {
+        font-size: .95rem !important;
+    }
+    body.admin-mobile-ui .alert .me-3 {
+        margin-right: 9px !important;
+    }
+    body.admin-mobile-ui code {
+        max-width: 100%;
+        overflow-wrap: anywhere;
+        white-space: normal;
+    }
+
+    body.admin-mobile-ui .mobile-card-table .admin-mobile-id-cell {
+        display: none !important;
+    }
+    body.admin-mobile-ui .mobile-card-table .admin-mobile-row-detail {
+        display: none;
+    }
+    body.admin-mobile-ui .mobile-card-table .admin-mobile-detail-open .admin-mobile-row-detail {
+        display: flex;
+    }
+    body.admin-mobile-ui .mobile-card-table .admin-mobile-detail-toggle-cell {
+        display: block;
+        min-height: 0;
+        padding: 7px 0 1px !important;
+        border: 0;
+    }
+    body.admin-mobile-ui .mobile-card-table .admin-mobile-detail-toggle-cell::before {
+        display: none;
+    }
+    body.admin-mobile-ui .admin-mobile-detail-toggle {
+        width: 100%;
+        min-height: 36px !important;
+        border: 0;
+        border-radius: 9px;
+        background: #eef5fb;
+        color: #23628f;
+        font-size: .72rem;
+        font-weight: 800;
+    }
+    body.admin-mobile-ui .admin-mobile-detail-toggle i {
+        margin-left: 6px;
+        transition: transform .2s ease;
+    }
+    body.admin-mobile-ui .admin-mobile-detail-open .admin-mobile-detail-toggle i {
+        transform: rotate(180deg);
+    }
+    body.admin-mobile-ui .mobile-card-table td[data-label="액션"],
+    body.admin-mobile-ui .mobile-card-table td[data-label="관리"],
+    body.admin-mobile-ui .mobile-card-table td[data-label="작업"] {
+        align-items: stretch;
+        flex-direction: column;
+    }
+    body.admin-mobile-ui .mobile-card-table td[data-label="액션"]::before,
+    body.admin-mobile-ui .mobile-card-table td[data-label="관리"]::before,
+    body.admin-mobile-ui .mobile-card-table td[data-label="작업"]::before {
+        flex-basis: auto;
+    }
+    body.admin-mobile-ui .mobile-card-table td[data-label="액션"] > .btn,
+    body.admin-mobile-ui .mobile-card-table td[data-label="관리"] > .btn,
+    body.admin-mobile-ui .mobile-card-table td[data-label="작업"] > .btn {
+        width: 100%;
+    }
+
+    body.admin-mobile-ui .modal-content {
+        max-height: 88dvh;
+    }
+    body.admin-mobile-ui .modal-header {
+        padding: 13px 15px;
+    }
+    body.admin-mobile-ui .modal-title {
+        font-size: .94rem;
+    }
+    body.admin-mobile-ui .modal-footer {
+        padding: 10px 13px calc(10px + env(safe-area-inset-bottom));
+    }
+
+    body.admin-mobile-ui[data-page="admin-plans"] .card-body .row > [class*="col-md-"],
+    body.admin-mobile-ui[data-page="admin-ai-settings"] .card-body .row > [class*="col-md-"],
+    body.admin-mobile-ui[data-page="admin-metrics"] .card-body .row > [class*="col-md-"] {
+        width: 100%;
+    }
+    body.admin-mobile-ui[data-page="admin-commission-visibility"] .card-body > .d-flex {
+        display: flex;
+        min-height: 62px;
+        gap: 12px;
+        align-items: center;
+        justify-content: space-between;
+    }
+    body.admin-mobile-ui[data-page="admin-commission-visibility"] .card-body > .d-flex > div:first-child {
+        min-width: 0;
+    }
+    body.admin-mobile-ui[data-page="admin-commission-visibility"] .card-body > .d-flex .fw-bold {
+        font-size: .82rem;
+    }
+    body.admin-mobile-ui[data-page="admin-commission-visibility"] .card-body > .d-flex small {
+        display: block;
+        margin-top: 2px;
+        font-size: .67rem;
+    }
+}
+
+@media (max-width: 374.98px) {
+    body.admin-mobile-ui .page-content {
+        padding-right: 9px !important;
+        padding-left: 9px !important;
+    }
+    body.admin-mobile-ui .admin-mobile-heading strong {
+        font-size: .86rem;
+    }
+    body.admin-mobile-ui .brand-mobile {
+        min-width: 44px;
+    }
+}
+
 /* ══════════════════════════════════════════════════════════
    CRM 미용실 관리 — 모바일 반응형 추가 최적화
    (기존 스타일 변경 없음 — 추가만)
@@ -3192,7 +3774,7 @@ body[data-page="admin-metrics"] .card[style*="linear-gradient"] { background: li
 /* === CRM 모바일 Bottom Sheet & UI v2 === */
 
 /* ── 1. Bottom Sheet Modal (≤768px) ─────────────────────── */
-@media (max-width: 768px) {
+@media (max-width: 767.98px) {
     /* 모달 컨테이너: 하단 정렬 */
     .modal {
         align-items: flex-end !important;

@@ -123,6 +123,9 @@ class AdOrderBlogDetail(Base):
     hashtags_json = Column(Text, nullable=True)         # JSON array max 5
     description = Column(Text, nullable=True)
     extra_image_link = Column(Text, nullable=True)
+    order_count = Column(Integer, nullable=False, default=1)
+    unit_price = Column(Numeric(12, 2), nullable=False, default=0)
+    est_total_cost = Column(Numeric(14, 2), nullable=False, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     order = relationship("AdOrder", backref="blog_detail")
@@ -146,6 +149,9 @@ class AdOrderPlaceTrafficDetail(Base):
     order_id = Column(Integer, ForeignKey("ad_orders.id"), nullable=False, unique=True)
     place_name_or_id = Column(String(300), nullable=False)
     search_keywords_json = Column(Text, nullable=True)  # JSON array max 3
+    order_count = Column(Integer, nullable=False, default=1)
+    unit_price = Column(Numeric(12, 2), nullable=False, default=0)
+    est_total_cost = Column(Numeric(14, 2), nullable=False, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     order = relationship("AdOrder", backref="place_traffic_detail")

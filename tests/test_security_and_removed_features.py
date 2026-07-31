@@ -24,18 +24,19 @@ def client(tmp_path_factory):
         yield test_client
 
 
-def test_public_registration_cannot_choose_privileged_role(client):
+@pytest.mark.parametrize("requested_role", ["admin", "sales", "designer"])
+def test_public_registration_only_allows_owner(client, requested_role):
     response = client.post(
         "/api/auth/register",
         json={
-            "email": "escalation-attempt@example.com",
+            "email": f"{requested_role}-registration-attempt@example.com",
             "password": "SafePass123!",
             "name": "권한테스트",
-            "role": "admin",
+            "role": requested_role,
         },
     )
-    assert response.status_code == 200
-    assert response.json()["user"]["role"] == "owner"
+    assert response.status_code == 400
+    assert "원장님 계정만" in response.json()["detail"]
 
 
 @pytest.mark.parametrize("role", ["admin", "sales", "owner", "designer"])

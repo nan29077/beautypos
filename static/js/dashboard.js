@@ -5,6 +5,12 @@
 let currentUser = null;
 let currentPage = 'home';
 let adFeatureFlags = { ad_order_mgmt_enabled: false, ad_blog_enabled: false, ad_place_traffic_enabled: false, ad_shorts_enabled: false };
+let adPricing = {
+    blog_unit_price: 0,
+    place_traffic_unit_price: 0,
+    shorts_distribution_unit_price: 0,
+    shorts_duration_prices: {},
+};
 const roleMobileQuery = window.matchMedia('(max-width: 767.98px)');
 let mobileEnhanceObserver = null;
 let mobileEnhanceScheduled = false;
@@ -29,6 +35,27 @@ function finishAppBoot() {
 
 const mobilePageMeta = {
     home: ['대시보드', 'fas fa-home'],
+    'admin-merchants': ['가맹점 리스트', 'fas fa-store'],
+    'admin-pg': ['PG 설정', 'fas fa-network-wired'],
+    'admin-terminals': ['단말기 관리', 'fas fa-tablet-alt'],
+    'admin-transactions': ['전체 결제 내역', 'fas fa-receipt'],
+    'admin-settlements': ['정산 관리', 'fas fa-calculator'],
+    'admin-fee-settings': ['수수료 기본 설정', 'fas fa-sliders-h'],
+    'admin-fee-policies': ['가맹점별 수수료', 'fas fa-percentage'],
+    'admin-commission-visibility': ['수수료 표시 설정', 'fas fa-eye'],
+    'admin-payouts': ['출금요청 관리', 'fas fa-money-bill-wave'],
+    'admin-adorders': ['광고주문 관리', 'fas fa-bullhorn'],
+    'admin-metrics': ['광고 분석 관리', 'fas fa-chart-bar'],
+    'admin-ad-executions': ['광고 실행 현황', 'fas fa-tasks'],
+    'admin-plans': ['플랜 관리', 'fas fa-layer-group'],
+    'admin-sales-managers': ['영업관리자 관리', 'fas fa-user-tie'],
+    'admin-sales-assign': ['영업관리자 연결', 'fas fa-handshake'],
+    'admin-users': ['사용자 목록', 'fas fa-users-cog'],
+    'admin-ai-settings': ['AI 설정', 'fas fa-robot'],
+    'sales-merchants': ['담당 가맹점', 'fas fa-store'],
+    'sales-commission': ['커미션 현황', 'fas fa-coins'],
+    'sales-payouts': ['출금요청', 'fas fa-money-bill-wave'],
+    'sales-payout-history': ['출금내역', 'fas fa-history'],
     'owner-transactions': ['결제 내역', 'fas fa-receipt'],
     'owner-staff': ['직원 관리', 'fas fa-users'],
     'owner-staff-sales': ['직원별 매출', 'fas fa-chart-bar'],
@@ -47,6 +74,17 @@ const mobilePageMeta = {
     'designer-settlement': ['정산 분배', 'fas fa-coins'],
     'designer-profile': ['내 정보', 'fas fa-id-badge']
 };
+
+function isPageAllowedForCurrentRole(page) {
+    if (!currentUser || page === 'home') return page === 'home';
+    if (currentUser.role === 'admin') return page.startsWith('admin-');
+    if (currentUser.role === 'sales') return page.startsWith('sales-');
+    if (currentUser.role === 'owner') return ownerMobilePages().includes(page);
+    if (currentUser.role === 'designer') {
+        return ['designer-transactions', 'designer-monthly', 'designer-settlement', 'crm', 'designer-profile'].includes(page);
+    }
+    return false;
+}
 
 // ─── Init ──────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
@@ -88,7 +126,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     buildSidebar();
     setupRoleMobileUI();
     const requestedPage = location.hash.replace(/^#/, '');
-    navigate(mobilePageMeta[requestedPage] ? requestedPage : 'home', { replaceHistory: true });
+    navigate(isPageAllowedForCurrentRole(requestedPage) ? requestedPage : 'home', { replaceHistory: true });
     requestAnimationFrame(finishAppBoot);
 });
 
@@ -224,6 +262,7 @@ function setupRoleMobileUI() {
         }
         buildMobileNavigation();
     }
+    if (isAdminMobile()) updateAdminMobileHeader(currentPage);
     // 표를 카드형으로 바꾸는 후처리는 관리자·영업 화면에도 동일하게 적용한다.
     observeRoleMobileContent();
 }
@@ -307,6 +346,14 @@ function updateMobileNavigation(page) {
     }
 }
 
+function updateAdminMobileHeader(page) {
+    if (!isAdminMobile()) return;
+    const roleEl = document.getElementById('adminMobileRoleLabel');
+    const titleEl = document.getElementById('adminMobilePageTitle');
+    if (roleEl) roleEl.textContent = currentUser.role === 'admin' ? '최고관리자' : '영업관리자';
+    if (titleEl) titleEl.textContent = mobilePageMeta[page]?.[0] || '관리자 메뉴';
+}
+
 function enhanceRoleMobilePage(container) {
     if (!container || (!isRoleMobile() && !isAdminMobile())) return;
     container.querySelectorAll('.table').forEach(table => {
@@ -325,6 +372,77 @@ function enhanceRoleMobilePage(container) {
         wrapper.setAttribute('role', 'region');
         wrapper.setAttribute('aria-label', '목록');
     });
+    enhanceAdminMobilePage(container);
+}
+
+function enhanceAdminMobilePage(container) {
+    if (!container || !isAdminMobile()) return;
+    container.classList.add('admin-mobile-content');
+
+    container.querySelectorAll('.card').forEach(card => card.classList.add('admin-mobile-card'));
+    container.querySelectorAll('.card-header').forEach(header => header.classList.add('admin-mobile-card-header'));
+    container.querySelectorAll('.nav-tabs, .nav-pills').forEach(nav => nav.classList.add('admin-mobile-tabs'));
+
+    container.querySelectorAll('.row').forEach(row => {
+        const directFields = [...row.children].filter(child =>
+            child.matches('[class*="col-"]') && child.querySelector('input, select, textarea')
+        );
+        const directCards = [...row.children].filter(child =>
+            child.matches('[class*="col-"]') && child.querySelector(':scope > .card')
+        );
+        if (directFields.length >= 2) row.classList.add('admin-mobile-filter-grid');
+        const summaryCardsOnly = directCards.length >= 2
+            && directCards.length === row.children.length
+            && directCards.every(child => child.querySelector(':scope > .card.text-center, :scope > .kpi-card'));
+        if (summaryCardsOnly) {
+            row.classList.add('admin-mobile-summary-grid');
+        }
+    });
+
+    container.querySelectorAll('.d-flex').forEach(group => {
+        const controls = group.querySelectorAll(':scope > .btn, :scope > select, :scope > input');
+        if (group.querySelector(':scope > .btn') && controls.length >= 2) {
+            group.classList.add('admin-mobile-action-group');
+        }
+    });
+
+    container.querySelectorAll('.mobile-card-table tbody tr').forEach(row => {
+        if (row.dataset.mobileDetailsReady === 'true') return;
+        const cells = [...row.children].filter(cell => cell.tagName === 'TD' && !cell.hasAttribute('colspan'));
+        cells.forEach(cell => {
+            if ((cell.dataset.label || '').replace(/\s+/g, '') === 'ID') {
+                cell.classList.add('admin-mobile-id-cell');
+            }
+        });
+        if (cells.length <= 7) {
+            row.dataset.mobileDetailsReady = 'true';
+            return;
+        }
+
+        const detailCells = cells.filter((cell, index) => {
+            const hasControl = Boolean(cell.querySelector('button, select, input, textarea'));
+            return index >= 5 && !hasControl;
+        });
+        if (detailCells.length) {
+            detailCells.forEach(cell => cell.classList.add('admin-mobile-row-detail'));
+            const toggleCell = document.createElement('td');
+            toggleCell.className = 'admin-mobile-detail-toggle-cell';
+            toggleCell.dataset.label = '';
+            toggleCell.innerHTML = `<button type="button" class="admin-mobile-detail-toggle" aria-expanded="false" onclick="toggleAdminMobileRowDetails(this)">
+                <span>상세 보기</span><i class="fas fa-chevron-down"></i>
+            </button>`;
+            row.appendChild(toggleCell);
+        }
+        row.dataset.mobileDetailsReady = 'true';
+    });
+}
+
+function toggleAdminMobileRowDetails(button) {
+    const row = button.closest('tr');
+    if (!row) return;
+    const open = row.classList.toggle('admin-mobile-detail-open');
+    button.setAttribute('aria-expanded', String(open));
+    button.querySelector('span').textContent = open ? '간단히 보기' : '상세 보기';
 }
 
 // 모달 내용은 #pageContent 밖에서 그려지므로 pageContent 옵저버가 보지 못한다.
@@ -361,7 +479,7 @@ document.addEventListener('keydown', event => {
 
 window.addEventListener('popstate', event => {
     const page = event.state?.page || location.hash.replace(/^#/, '') || 'home';
-    if (page !== currentPage && mobilePageMeta[page]) navigate(page, { skipHistory: true });
+    if (page !== currentPage && isPageAllowedForCurrentRole(page)) navigate(page, { skipHistory: true });
 });
 
 // ─── Enhanced Sidebar ────────────────────────────────────────
@@ -469,7 +587,8 @@ function navigate(page, options = {}) {
     document.body.classList.remove('sidebar-open');
     closeMobileMenu();
     updateMobileNavigation(page);
-    if (isRoleMobile() && !options.skipHistory) {
+    updateAdminMobileHeader(page);
+    if ((isRoleMobile() || isAdminMobile()) && !options.skipHistory) {
         const url = `${location.pathname}${location.search}#${page}`;
         if (options.replaceHistory) history.replaceState({ page }, '', url);
         else if (location.hash !== `#${page}`) history.pushState({ page }, '', url);
@@ -2089,10 +2208,10 @@ async function loadAdminFeePolicies(c, t) {
                     <div class="mb-3">
                         <label class="form-label fw-bold">커미션율 (VAT별도)</label>
                         <div class="input-group">
-                            <input type="number" class="form-control" id="assignModalRate" value="1.0" step="0.1" min="0" max="3.5">
+                            <input type="number" class="form-control" id="assignModalRate" value="1.0" step="0.1" min="0">
                             <span class="input-group-text">%</span>
                         </div>
-                        <small class="text-muted">최대 3.5% (기본 수수료 내)</small>
+                        <small class="text-muted">최고관리자가 설정한 플랫폼 수익률 이내</small>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">메모</label>
@@ -2146,7 +2265,7 @@ async function confirmAssignSales() {
         const memo = document.getElementById('assignModalMemo').value;
 
         if (!salesId) { alert('영업관리자를 선택해주세요.'); return; }
-        if (rate < 0 || rate > 0.035) { alert('커미션율은 0~3.5% 범위에서 설정해주세요.'); return; }
+        if (rate < 0) { alert('커미션율은 0% 이상으로 설정해주세요.'); return; }
 
         await apiPost('/api/admin/sales-assignments', {
             merchant_id: merchantId,
@@ -2164,7 +2283,7 @@ async function confirmAssignSales() {
 async function updateSalesCommission(assignmentId, merchantId) {
     try {
         const rate = parseFloat(document.getElementById(`commRate${merchantId}`).value) / 100;
-        if (rate < 0 || rate > 0.035) { alert('커미션율은 0~3.5% 범위에서 설정해주세요.'); return; }
+        if (rate < 0) { alert('커미션율은 0% 이상으로 설정해주세요.'); return; }
         await apiPut(`/api/admin/sales-assignments/${assignmentId}`, { commission_rate: rate });
         alert(`커미션율 저장 완료! (${(rate*100).toFixed(2)}%)`);
         navigate('admin-fee-policies');
@@ -2243,9 +2362,10 @@ async function handlePayout(id, action) { await apiPost(`/api/admin/payout-reque
 
 async function loadAdminAdOrders(c, t) {
     t.textContent = '광고주문 관리';
-    const [orders, flags] = await Promise.all([
+    const [orders, flags, pricing] = await Promise.all([
         apiGet('/api/admin/ad/orders'),
         apiGet('/api/admin/ad-feature-flags'),
+        apiGet('/api/admin/ad-pricing'),
     ]);
     const pending = orders.filter(o => o.status === 'requested' || o.status === 'reviewing').length;
     const running = orders.filter(o => o.status === 'running').length;
@@ -2257,82 +2377,82 @@ async function loadAdminAdOrders(c, t) {
 
     c.innerHTML = `
     <!-- 광고 기능 스위치 -->
-    <div class="card border-0 shadow-sm mb-4" style="border-radius:14px;overflow:hidden">
+    <div class="card border-0 shadow-sm mb-4 ad-feature-control-card" style="border-radius:14px;overflow:hidden">
         <div class="card-header py-2 px-4" style="background:linear-gradient(135deg,#1b3a5c,#2c5f8a)">
             <div class="d-flex align-items-center gap-2">
                 <i class="fas fa-sliders-h text-white"></i>
                 <h6 class="mb-0 text-white fw-bold">광고 기능 스위치</h6>
-                <span class="ms-auto badge" style="background:rgba(255,255,255,.15);color:#fff;font-size:.68rem"><i class="fas fa-info-circle me-1"></i>사장님 계정에 표시될 광고 메뉴를 제어합니다</span>
+                <span class="ms-auto badge ad-feature-header-note" style="background:rgba(255,255,255,.15);color:#fff;font-size:.68rem"><i class="fas fa-info-circle me-1"></i>원장 계정에 표시될 광고 메뉴를 제어합니다</span>
             </div>
         </div>
         <div class="card-body py-3 px-4">
             <!-- 마스터 스위치: 광고 주문 관리 -->
-            <div class="d-flex align-items-center justify-content-between p-3 rounded-3 mb-3" id="masterSwitchCard" style="background:${masterOn ? 'linear-gradient(135deg,rgba(34,197,94,.06),rgba(34,197,94,.14))' : '#f8f9fa'};border:2px solid ${masterOn ? 'rgba(34,197,94,.35)' : '#ddd'};transition:all .3s">
+            <div class="d-flex align-items-center justify-content-between p-3 rounded-3 mb-3 ad-feature-switch-row ad-feature-master-row" id="masterSwitchCard" style="background:${masterOn ? 'linear-gradient(135deg,rgba(34,197,94,.06),rgba(34,197,94,.14))' : '#f8f9fa'};border:2px solid ${masterOn ? 'rgba(34,197,94,.35)' : '#ddd'};transition:all .3s">
                 <div class="d-flex align-items-center gap-3">
-                    <div id="masterSwitchIcon" style="width:46px;height:46px;border-radius:13px;background:${masterOn ? 'linear-gradient(135deg,#22c55e,#4ade80)' : '#aaa'};display:flex;align-items:center;justify-content:center;transition:all .3s;box-shadow:${masterOn ? '0 4px 12px rgba(34,197,94,.25)' : 'none'}">
+                    <div class="ad-feature-switch-icon" id="masterSwitchIcon" style="width:46px;height:46px;border-radius:13px;background:${masterOn ? 'linear-gradient(135deg,#22c55e,#4ade80)' : '#aaa'};display:flex;align-items:center;justify-content:center;transition:all .3s;box-shadow:${masterOn ? '0 4px 12px rgba(34,197,94,.25)' : 'none'}">
                         <i class="fas fa-bullhorn text-white" style="font-size:1.15rem"></i>
                     </div>
                     <div>
                         <div class="fw-bold" style="font-size:1rem">광고 주문 관리</div>
-                        <div style="font-size:.74rem;color:#888">ON: 사장님 계정에 "내 광고 주문" / "새 광고 주문" 메뉴 표시<br>OFF: 해당 메뉴 숨김 (광고 분석은 항상 표시)</div>
+                        <div class="ad-feature-description" style="font-size:.74rem;color:#888"><span class="ad-feature-desktop-copy">ON: 원장 계정에 "광고 주문 내역" / "새 광고 주문" 메뉴 표시<br>OFF: 해당 메뉴 숨김 (광고 분석은 항상 표시)</span><span class="ad-feature-mobile-copy">원장님의 광고 주문 메뉴 전체를 켜거나 끕니다.</span></div>
                     </div>
                 </div>
                 <div class="form-check form-switch mb-0" style="padding-left:0">
-                    <input class="form-check-input" type="checkbox" role="switch" id="switchAdOrderMgmt" ${masterOn ? 'checked' : ''} onchange="toggleAdFeature('ad_order_mgmt_enabled', this.checked)" style="width:52px;height:26px;cursor:pointer">
+                    <input class="form-check-input ad-feature-toggle" type="checkbox" role="switch" id="switchAdOrderMgmt" ${masterOn ? 'checked' : ''} onchange="toggleAdFeature('ad_order_mgmt_enabled', this.checked)" style="width:52px;height:26px;cursor:pointer">
                 </div>
             </div>
             <!-- 하위 스위치: 블로그 / 플레이스 -->
             <div id="subSwitchPanel" style="opacity:${masterOn ? '1' : '.45'};pointer-events:${masterOn ? 'auto' : 'none'};transition:all .3s">
-                <div class="d-flex align-items-center gap-2 mb-2" style="font-size:.76rem;color:#999">
+                <div class="d-flex align-items-center gap-2 mb-2 ad-feature-subintro" style="font-size:.76rem;color:#999">
                     <i class="fas fa-level-down-alt"></i>
                     <span>광고 주문 관리가 <strong>ON</strong>일 때 아래 스위치로 세부 기능을 제어합니다. OFF된 기능은 새 광고 주문 탭에서 숨겨집니다.</span>
                 </div>
-                <div class="row g-3">
+                <div class="row g-3 ad-feature-grid">
                     <div class="col-md-6">
-                        <div class="d-flex align-items-center justify-content-between p-3 rounded-3" id="blogSwitchCard" style="background:${blogOn ? 'linear-gradient(135deg,rgba(14,165,233,.06),rgba(14,165,233,.12))' : '#f8f9fa'};border:1px solid ${blogOn ? 'rgba(14,165,233,.2)' : '#eee'};transition:all .3s">
+                        <div class="d-flex align-items-center justify-content-between p-3 rounded-3 ad-feature-switch-row" id="blogSwitchCard" style="background:${blogOn ? 'linear-gradient(135deg,rgba(14,165,233,.06),rgba(14,165,233,.12))' : '#f8f9fa'};border:1px solid ${blogOn ? 'rgba(14,165,233,.2)' : '#eee'};transition:all .3s">
                             <div class="d-flex align-items-center gap-3">
-                                <div id="blogSwitchIcon" style="width:42px;height:42px;border-radius:12px;background:${blogOn ? 'linear-gradient(135deg,#0ea5e9,#38bdf8)' : '#ccc'};display:flex;align-items:center;justify-content:center;transition:all .3s">
+                                <div class="ad-feature-switch-icon" id="blogSwitchIcon" style="width:42px;height:42px;border-radius:12px;background:${blogOn ? 'linear-gradient(135deg,#0ea5e9,#38bdf8)' : '#ccc'};display:flex;align-items:center;justify-content:center;transition:all .3s">
                                     <i class="fas fa-pen-nib text-white"></i>
                                 </div>
                                 <div>
                                     <div class="fw-bold" style="font-size:.92rem">블로그 배포</div>
-                                    <div style="font-size:.72rem;color:#888">새 광고 주문의 블로그 탭 제어</div>
+                                    <div class="ad-feature-description" style="font-size:.72rem;color:#888">블로그 주문 탭 표시</div>
                                 </div>
                             </div>
                             <div class="form-check form-switch mb-0" style="padding-left:0">
-                                <input class="form-check-input" type="checkbox" role="switch" id="switchBlogAd" ${blogOn ? 'checked' : ''} onchange="toggleAdFeature('ad_blog_enabled', this.checked)" style="width:48px;height:24px;cursor:pointer">
+                                <input class="form-check-input ad-feature-toggle" type="checkbox" role="switch" id="switchBlogAd" ${blogOn ? 'checked' : ''} onchange="toggleAdFeature('ad_blog_enabled', this.checked)" style="width:48px;height:24px;cursor:pointer">
                             </div>
                         </div>
                     </div>
                     <div class="col-md-6">
-                        <div class="d-flex align-items-center justify-content-between p-3 rounded-3" id="placeSwitchCard" style="background:${placeOn ? 'linear-gradient(135deg,rgba(139,92,246,.06),rgba(139,92,246,.12))' : '#f8f9fa'};border:1px solid ${placeOn ? 'rgba(139,92,246,.2)' : '#eee'};transition:all .3s">
+                        <div class="d-flex align-items-center justify-content-between p-3 rounded-3 ad-feature-switch-row" id="placeSwitchCard" style="background:${placeOn ? 'linear-gradient(135deg,rgba(139,92,246,.06),rgba(139,92,246,.12))' : '#f8f9fa'};border:1px solid ${placeOn ? 'rgba(139,92,246,.2)' : '#eee'};transition:all .3s">
                             <div class="d-flex align-items-center gap-3">
-                                <div id="placeSwitchIcon" style="width:42px;height:42px;border-radius:12px;background:${placeOn ? 'linear-gradient(135deg,#8b5cf6,#a78bfa)' : '#ccc'};display:flex;align-items:center;justify-content:center;transition:all .3s">
+                                <div class="ad-feature-switch-icon" id="placeSwitchIcon" style="width:42px;height:42px;border-radius:12px;background:${placeOn ? 'linear-gradient(135deg,#8b5cf6,#a78bfa)' : '#ccc'};display:flex;align-items:center;justify-content:center;transition:all .3s">
                                     <i class="fas fa-map-marker-alt text-white"></i>
                                 </div>
                                 <div>
                                     <div class="fw-bold" style="font-size:.92rem">플레이스 유입</div>
-                                    <div style="font-size:.72rem;color:#888">새 광고 주문의 플레이스 탭 제어</div>
+                                    <div class="ad-feature-description" style="font-size:.72rem;color:#888">플레이스 주문 탭 표시</div>
                                 </div>
                             </div>
                             <div class="form-check form-switch mb-0" style="padding-left:0">
-                                <input class="form-check-input" type="checkbox" role="switch" id="switchPlaceAd" ${placeOn ? 'checked' : ''} onchange="toggleAdFeature('ad_place_traffic_enabled', this.checked)" style="width:48px;height:24px;cursor:pointer">
+                                <input class="form-check-input ad-feature-toggle" type="checkbox" role="switch" id="switchPlaceAd" ${placeOn ? 'checked' : ''} onchange="toggleAdFeature('ad_place_traffic_enabled', this.checked)" style="width:48px;height:24px;cursor:pointer">
                             </div>
                         </div>
                     </div>
                     <div class="col-md-6">
-                        <div class="d-flex align-items-center justify-content-between p-3 rounded-3" id="shortsSwitchCard" style="background:${shortsOn ? 'linear-gradient(135deg,rgba(220,38,38,.06),rgba(220,38,38,.12))' : '#f8f9fa'};border:1px solid ${shortsOn ? 'rgba(220,38,38,.2)' : '#eee'};transition:all .3s">
+                        <div class="d-flex align-items-center justify-content-between p-3 rounded-3 ad-feature-switch-row" id="shortsSwitchCard" style="background:${shortsOn ? 'linear-gradient(135deg,rgba(220,38,38,.06),rgba(220,38,38,.12))' : '#f8f9fa'};border:1px solid ${shortsOn ? 'rgba(220,38,38,.2)' : '#eee'};transition:all .3s">
                             <div class="d-flex align-items-center gap-3">
-                                <div id="shortsSwitchIcon" style="width:42px;height:42px;border-radius:12px;background:${shortsOn ? 'linear-gradient(135deg,#dc2626,#f87171)' : '#ccc'};display:flex;align-items:center;justify-content:center;transition:all .3s">
+                                <div class="ad-feature-switch-icon" id="shortsSwitchIcon" style="width:42px;height:42px;border-radius:12px;background:${shortsOn ? 'linear-gradient(135deg,#dc2626,#f87171)' : '#ccc'};display:flex;align-items:center;justify-content:center;transition:all .3s">
                                     <i class="fas fa-film text-white"></i>
                                 </div>
                                 <div>
                                     <div class="fw-bold" style="font-size:.92rem">쇼츠 배포</div>
-                                    <div style="font-size:.72rem;color:#888">새 광고 주문의 쇼츠 탭 제어</div>
+                                    <div class="ad-feature-description" style="font-size:.72rem;color:#888">쇼츠 주문 탭 표시</div>
                                 </div>
                             </div>
                             <div class="form-check form-switch mb-0" style="padding-left:0">
-                                <input class="form-check-input" type="checkbox" role="switch" id="switchShortsAd" ${shortsOn ? 'checked' : ''} onchange="toggleAdFeature('ad_shorts_enabled', this.checked)" style="width:48px;height:24px;cursor:pointer">
+                                <input class="form-check-input ad-feature-toggle" type="checkbox" role="switch" id="switchShortsAd" ${shortsOn ? 'checked' : ''} onchange="toggleAdFeature('ad_shorts_enabled', this.checked)" style="width:48px;height:24px;cursor:pointer">
                             </div>
                         </div>
                     </div>
@@ -2341,23 +2461,63 @@ async function loadAdminAdOrders(c, t) {
         </div>
     </div>
 
-    <div class="row g-3 mb-3">
-        <div class="col-md-3"><div class="card border-0 shadow-sm text-center" style="border-radius:12px"><div class="card-body py-2">
+    <div class="card data-card mb-4 ad-pricing-card">
+        <div class="card-header d-flex align-items-center gap-2">
+            <i class="fas fa-won-sign text-primary"></i>
+            <div>
+                <h5 class="mb-0">광고 상품 단가 설정</h5>
+                <small class="text-muted">원장님의 새 광고 주문 화면과 예상 집행 예산에 즉시 반영됩니다.</small>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">블로그 배포 1건 단가</label>
+                    <div class="input-group"><input type="number" min="0" step="100" class="form-control" id="adPriceBlog" value="${pricing.blog_unit_price}"><span class="input-group-text">원</span></div>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">플레이스 유입 1건 단가</label>
+                    <div class="input-group"><input type="number" min="0" step="100" class="form-control" id="adPricePlace" value="${pricing.place_traffic_unit_price}"><span class="input-group-text">원</span></div>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">쇼츠 배포 1건 단가</label>
+                    <div class="input-group"><input type="number" min="0" step="100" class="form-control" id="adPriceShortsDist" value="${pricing.shorts_distribution_unit_price}"><span class="input-group-text">원</span></div>
+                </div>
+                ${[
+                    ['15s', '쇼츠 제작 15초 이하'],
+                    ['30s', '쇼츠 제작 30초 이하'],
+                    ['60s', '쇼츠 제작 60초 이하'],
+                    ['90s', '쇼츠 제작 90초 이하'],
+                ].map(([code, label]) => `<div class="col-md-3 col-6">
+                    <label class="form-label">${label}</label>
+                    <div class="input-group"><input type="number" min="0" step="100" class="form-control" id="adPriceShorts_${code}" value="${pricing.shorts_duration_prices?.[code] || 0}"><span class="input-group-text">원</span></div>
+                </div>`).join('')}
+            </div>
+            <div class="d-flex flex-column flex-sm-row align-items-sm-center justify-content-between gap-2 mt-3">
+                <small class="text-muted"><i class="fas fa-info-circle me-1"></i>단가는 공급가액 기준이며 부가세는 별도입니다. 주문 접수 시점의 단가가 주문에 저장됩니다.</small>
+                <button type="button" class="btn btn-primary flex-shrink-0" id="saveAdPricingBtn" onclick="saveAdminAdPricing()"><i class="fas fa-save me-1"></i>단가 저장</button>
+            </div>
+            <div id="adPricingResult" class="mt-2"></div>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-3 ad-order-stats">
+        <div class="col-md-3"><div class="card border-0 shadow-sm text-center ad-order-stat-card" style="border-radius:12px"><div class="card-body py-2">
             <div class="fs-4 fw-bold text-warning">${pending}</div><small class="text-muted">대기/검토</small>
         </div></div></div>
-        <div class="col-md-3"><div class="card border-0 shadow-sm text-center" style="border-radius:12px"><div class="card-body py-2">
+        <div class="col-md-3"><div class="card border-0 shadow-sm text-center ad-order-stat-card" style="border-radius:12px"><div class="card-body py-2">
             <div class="fs-4 fw-bold text-primary">${running}</div><small class="text-muted">집행중</small>
         </div></div></div>
-        <div class="col-md-3"><div class="card border-0 shadow-sm text-center" style="border-radius:12px"><div class="card-body py-2">
+        <div class="col-md-3"><div class="card border-0 shadow-sm text-center ad-order-stat-card" style="border-radius:12px"><div class="card-body py-2">
             <div class="fs-4 fw-bold text-success">${done}</div><small class="text-muted">완료</small>
         </div></div></div>
-        <div class="col-md-3"><div class="card border-0 shadow-sm text-center" style="border-radius:12px"><div class="card-body py-2">
+        <div class="col-md-3"><div class="card border-0 shadow-sm text-center ad-order-stat-card" style="border-radius:12px"><div class="card-body py-2">
             <div class="fs-4 fw-bold text-dark">${orders.length}</div><small class="text-muted">전체</small>
         </div></div></div>
     </div>
-    <div class="card data-card"><div class="card-header d-flex justify-content-between align-items-center">
+    <div class="card data-card ad-order-list-card"><div class="card-header d-flex justify-content-between align-items-center ad-order-list-header">
         <h5 class="mb-0"><i class="fas fa-bullhorn me-2"></i>광고주문 목록</h5>
-        <div class="btn-group btn-group-sm">
+        <div class="btn-group btn-group-sm ad-order-filters">
             <button class="btn btn-outline-secondary active ad-filter-btn" onclick="filterAdOrders('all',this)">전체</button>
             <button class="btn btn-outline-warning ad-filter-btn" onclick="filterAdOrders('pending',this)">대기</button>
             <button class="btn btn-outline-primary ad-filter-btn" onclick="filterAdOrders('running',this)">집행중</button>
@@ -2371,16 +2531,47 @@ async function loadAdminAdOrders(c, t) {
                 <td>${adOrderTypeBadge(o.type)}</td>
                 <td>${statusBadge(o.status)}</td><td>${o.creator_name}</td><td>${formatDate(o.created_at)}</td>
                 <td style="font-size:.78rem;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${o.admin_memo || '-'}</td>
-                <td>
+                <td><div class="ad-order-actions">
                     <button class="btn btn-sm btn-outline-primary me-1" onclick="showAdOrderDetail(${o.id})" title="상세보기"><i class="fas fa-eye"></i></button>
                     <select class="form-select form-select-sm d-inline-block" style="width:110px" id="adStatus${o.id}">
                         ${adStatusOptions(o.allowed_statuses)}
                     </select>
                     <button class="btn btn-sm btn-primary ms-1" onclick="executeAdOrder(${o.id})"><i class="fas fa-check"></i></button>
-                </td>
+                </div></td>
             </tr>`).join('')}</tbody>
         </table></div>
     </div></div>`;
+}
+
+function adminAdPriceValue(id) {
+    const value = parseInt(document.getElementById(id)?.value, 10);
+    return Number.isFinite(value) ? Math.max(0, value) : 0;
+}
+
+async function saveAdminAdPricing() {
+    const btn = document.getElementById('saveAdPricingBtn');
+    const result = document.getElementById('adPricingResult');
+    const payload = {
+        blog_unit_price: adminAdPriceValue('adPriceBlog'),
+        place_traffic_unit_price: adminAdPriceValue('adPricePlace'),
+        shorts_distribution_unit_price: adminAdPriceValue('adPriceShortsDist'),
+        shorts_duration_prices: {
+            '15s': adminAdPriceValue('adPriceShorts_15s'),
+            '30s': adminAdPriceValue('adPriceShorts_30s'),
+            '60s': adminAdPriceValue('adPriceShorts_60s'),
+            '90s': adminAdPriceValue('adPriceShorts_90s'),
+        },
+    };
+    btn.disabled = true;
+    try {
+        const saved = await apiPut('/api/admin/ad-pricing', payload);
+        adPricing = saved;
+        result.innerHTML = '<div class="alert alert-success py-2 mb-0"><i class="fas fa-check-circle me-1"></i>광고 단가가 저장되었습니다.</div>';
+    } catch (e) {
+        result.innerHTML = `<div class="alert alert-danger py-2 mb-0">${escapeHtml(e.message)}</div>`;
+    } finally {
+        btn.disabled = false;
+    }
 }
 
 async function toggleAdFeature(key, enabled) {
@@ -2544,6 +2735,9 @@ async function showAdOrderDetail(orderId) {
                     <div class="col-md-6"><label class="small text-muted">링크</label><div style="font-size:.82rem">${(d.links && d.links.length) ? d.links.join(', ') : '-'}</div></div>
                     <div class="col-md-6"><label class="small text-muted">주요 키워드</label><div>${(d.main_keywords && d.main_keywords.length) ? d.main_keywords.join(', ') : '-'}</div></div>
                     <div class="col-md-6"><label class="small text-muted">해시태그</label><div>${(d.hashtags && d.hashtags.length) ? d.hashtags.join(', ') : '-'}</div></div>
+                    <div class="col-md-4"><label class="small text-muted">주문 건수</label><div class="fw-bold">${Number(d.order_count || 1).toLocaleString()}건</div></div>
+                    <div class="col-md-4"><label class="small text-muted">주문 단가</label><div>${Number(d.unit_price || 0).toLocaleString()}원</div></div>
+                    <div class="col-md-4"><label class="small text-muted">예상 집행 예산</label><div class="fw-bold text-primary">${Number(d.est_total_cost || 0).toLocaleString()}원</div></div>
                     <div class="col-12"><label class="small text-muted">설명</label><div style="font-size:.85rem;white-space:pre-line">${d.description || '-'}</div></div>
                     ${d.images && d.images.length > 0 ? `<div class="col-12"><label class="small text-muted">첨부 이미지 (${d.images.length}건)</label><div class="d-flex gap-1 flex-wrap">${d.images.map(img => `<span class="badge bg-light text-dark border">${img.file_path}</span>`).join('')}</div></div>` : ''}
                 </div>
@@ -2556,6 +2750,9 @@ async function showAdOrderDetail(orderId) {
                 <div class="row g-2">
                     <div class="col-md-6"><label class="small text-muted">플레이스명/ID</label><div class="fw-bold">${d.place_name_or_id || '-'}</div></div>
                     <div class="col-md-6"><label class="small text-muted">검색 키워드</label><div>${(d.search_keywords && d.search_keywords.length) ? d.search_keywords.join(', ') : '-'}</div></div>
+                    <div class="col-md-4"><label class="small text-muted">주문 건수</label><div class="fw-bold">${Number(d.order_count || 1).toLocaleString()}건</div></div>
+                    <div class="col-md-4"><label class="small text-muted">주문 단가</label><div>${Number(d.unit_price || 0).toLocaleString()}원</div></div>
+                    <div class="col-md-4"><label class="small text-muted">예상 집행 예산</label><div class="fw-bold text-primary">${Number(d.est_total_cost || 0).toLocaleString()}원</div></div>
                 </div>
             </div>`;
         } else if (o.type === 'shorts' && o.shorts_detail) {
@@ -2767,7 +2964,7 @@ async function loadAdminSalesAssign(c, t) {
                 <h6 class="fw-bold mb-1">ADPAY 영업관리자 연결 안내</h6>
                 <ul class="mb-0 small">
                     <li>영업대행사를 통해 가입한 가맹점은 <strong>최고관리자가 가맹점과 영업관리자를 연결</strong>합니다.</li>
-                    <li>영업관리자 수익은 <strong>기본 수수료 3.5% (VAT 별도) 내</strong>에서 배정합니다.</li>
+                    <li>영업관리자 수익은 <strong>최고관리자가 설정한 플랫폼 수익률 이내</strong>에서 배정합니다.</li>
                     <li>예: 수익률 1.0% 설정 시, 10,000원 결제 → 영업관리자 수익 100원</li>
                 </ul>
             </div>
@@ -2790,10 +2987,10 @@ async function loadAdminSalesAssign(c, t) {
                 <div class="col-6 col-md-4">
                     <label class="form-label fw-bold">수익률 (VAT별도)</label>
                     <div class="input-group">
-                        <input type="number" class="form-control" id="assignRate" value="1.0" step="0.1" min="0" max="3.5" placeholder="1.0">
+                        <input type="number" class="form-control" id="assignRate" value="1.0" step="0.1" min="0" placeholder="1.0">
                         <span class="input-group-text">%</span>
                     </div>
-                    <small class="text-muted">최대 3.5%</small>
+                    <small class="text-muted">플랫폼 수익률 이내</small>
                 </div>
                 <div class="col-6 col-md-4">
                     <label class="form-label fw-bold">메모</label>
@@ -2847,7 +3044,7 @@ async function createSalesAssignment() {
         const memo = document.getElementById('assignMemo').value;
 
         if (!merchantId || !salesId) { alert('가맹점과 영업관리자를 선택해주세요.'); return; }
-        if (rate < 0 || rate > 0.035) { alert('수익률은 0~3.5% 범위에서 설정해주세요.'); return; }
+        if (rate < 0) { alert('수익률은 0% 이상으로 설정해주세요.'); return; }
 
         await apiPost('/api/admin/sales-assignments', {
             merchant_id: merchantId,
@@ -5060,8 +5257,8 @@ async function loadOwnerAdOrders(c, t) {
             <thead><tr><th>ID</th><th>유형</th><th>상태</th><th>요약</th><th>관리자메모</th><th>날짜</th></tr></thead>
             <tbody>${orders.map(o => {
                 let summary = '';
-                if (o.blog_detail) summary = o.blog_detail.campaign_name;
-                if (o.place_traffic_detail) summary = o.place_traffic_detail.place_name_or_id;
+                if (o.blog_detail) summary = `${o.blog_detail.campaign_name} · ${o.blog_detail.order_count || 1}건 · ${Number(o.blog_detail.est_total_cost || 0).toLocaleString()}원`;
+                if (o.place_traffic_detail) summary = `${o.place_traffic_detail.place_name_or_id} · ${o.place_traffic_detail.order_count || 1}건 · ${Number(o.place_traffic_detail.est_total_cost || 0).toLocaleString()}원`;
                 if (o.shorts_detail) {
                     const d = o.shorts_detail;
                     const counts = [];
@@ -5258,9 +5455,10 @@ function closeOwnerExecPanel() {
 
 async function loadOwnerAdOrderNew(c, t) {
     t.textContent = '새 광고 주문';
-    // 플래그 최신 로드
+    // 플래그·단가 최신 로드
     let flags = adFeatureFlags;
     try { flags = await apiGet('/api/feature-flags'); adFeatureFlags = flags; } catch(e) {}
+    try { adPricing = await apiGet('/api/owner/ad/pricing'); } catch(e) {}
     const blogOn = flags.ad_blog_enabled;
     const placeOn = flags.ad_place_traffic_enabled;
     const shortsOn = flags.ad_shorts_enabled;
@@ -5277,10 +5475,10 @@ async function loadOwnerAdOrderNew(c, t) {
 
     // 기본 탭: 켜져 있는 유형 중 앞선 것
     const defaultTab = blogOn ? 'blog' : (placeOn ? 'place' : 'shorts');
-    let tabsHtml = '<ul class="nav nav-tabs mb-4" id="adOrderTabs">';
-    if (blogOn) tabsHtml += `<li class="nav-item"><a class="nav-link ${defaultTab==='blog'?'active':''}" href="#" data-adtab="blog" onclick="showAdTab('blog')"><i class="fas fa-blog me-1"></i>블로그 배포</a></li>`;
-    if (placeOn) tabsHtml += `<li class="nav-item"><a class="nav-link ${defaultTab==='place'?'active':''}" href="#" data-adtab="place" onclick="showAdTab('place')"><i class="fas fa-map-marker-alt me-1"></i>플레이스 유입</a></li>`;
-    if (shortsOn) tabsHtml += `<li class="nav-item"><a class="nav-link ${defaultTab==='shorts'?'active':''}" href="#" data-adtab="shorts" onclick="showAdTab('shorts')"><i class="fab fa-youtube me-1"></i>쇼츠 배포</a></li>`;
+    let tabsHtml = '<ul class="nav nav-tabs ad-order-tabs mb-4" id="adOrderTabs" role="tablist">';
+    if (blogOn) tabsHtml += `<li class="nav-item" role="presentation"><button type="button" class="nav-link ${defaultTab==='blog'?'active':''}" data-adtab="blog" role="tab" aria-selected="${defaultTab==='blog'}" onclick="showAdTab('blog')"><i class="fas fa-blog"></i><span>블로그 배포</span></button></li>`;
+    if (placeOn) tabsHtml += `<li class="nav-item" role="presentation"><button type="button" class="nav-link ${defaultTab==='place'?'active':''}" data-adtab="place" role="tab" aria-selected="${defaultTab==='place'}" onclick="showAdTab('place')"><i class="fas fa-map-marker-alt"></i><span>플레이스 유입</span></button></li>`;
+    if (shortsOn) tabsHtml += `<li class="nav-item" role="presentation"><button type="button" class="nav-link ${defaultTab==='shorts'?'active':''}" data-adtab="shorts" role="tab" aria-selected="${defaultTab==='shorts'}" onclick="showAdTab('shorts')"><i class="fab fa-youtube"></i><span>쇼츠 배포</span></button></li>`;
     tabsHtml += '</ul>';
 
     let bodyHtml = `<div class="workspace-hero mb-3">
@@ -5297,7 +5495,9 @@ async function loadOwnerAdOrderNew(c, t) {
                 <div class="col-md-6"><label class="form-label">링크 (쉼표 구분)</label><input class="form-control" id="blogLinks"></div>
                 <div class="col-md-6"><label class="form-label">메인 키워드 (최대 5) <span class="text-danger">*</span></label><input class="form-control" id="blogKeywords" placeholder="쉼표로 구분"></div>
                 <div class="col-md-6"><label class="form-label">해시태그 (최대 5)</label><input class="form-control" id="blogHashtags"></div>
+                <div class="col-md-6"><label class="form-label">주문 건수 <span class="text-danger">*</span></label><div class="input-group"><input type="number" class="form-control" id="blogOrderCount" min="1" max="10000" value="1" oninput="updateSimpleAdEstimate('blog')"><span class="input-group-text">건</span></div></div>
                 <div class="col-12"><label class="form-label">업체 소개</label><textarea class="form-control" id="blogDesc" rows="3"></textarea></div>
+                <div class="col-12" id="blogEstimateBox">${simpleAdEstimateMarkup('blog', 1)}</div>
                 <div class="col-12"><button class="btn btn-primary" id="blogSubmitBtn" onclick="submitBlogOrder()"><i class="fas fa-paper-plane me-1"></i>검토 요청하기</button></div>
             </div><div id="blogResult" class="mt-3"></div>
         </div></div>
@@ -5309,6 +5509,8 @@ async function loadOwnerAdOrderNew(c, t) {
             <div class="row g-3">
                 <div class="col-md-6"><label class="form-label">플레이스명 또는 ID <span class="text-danger">*</span></label><input class="form-control" id="placeName" maxlength="300"></div>
                 <div class="col-md-6"><label class="form-label">검색 키워드 (최대 3) <span class="text-danger">*</span></label><input class="form-control" id="placeKeywords" placeholder="쉼표로 구분"></div>
+                <div class="col-md-6"><label class="form-label">주문 건수 <span class="text-danger">*</span></label><div class="input-group"><input type="number" class="form-control" id="placeOrderCount" min="1" max="10000" value="1" oninput="updateSimpleAdEstimate('place')"><span class="input-group-text">건</span></div></div>
+                <div class="col-12" id="placeEstimateBox">${simpleAdEstimateMarkup('place', 1)}</div>
                 <div class="col-12"><button class="btn btn-success" id="placeSubmitBtn" onclick="submitPlaceOrder()"><i class="fas fa-paper-plane me-1"></i>검토 요청하기</button></div>
             </div><div id="placeResult" class="mt-3"></div>
         </div></div>
@@ -5323,6 +5525,42 @@ async function loadOwnerAdOrderNew(c, t) {
     if (shortsOn) renderShortsOrderForm();
 }
 
+function simpleAdEstimateData(type, count) {
+    const unitPrice = type === 'blog'
+        ? Number(adPricing.blog_unit_price || 0)
+        : Number(adPricing.place_traffic_unit_price || 0);
+    const safeCount = Math.min(10000, Math.max(1, parseInt(count, 10) || 1));
+    return { unitPrice, count: safeCount, total: unitPrice * safeCount };
+}
+
+function simpleAdEstimateMarkup(type, count) {
+    const est = simpleAdEstimateData(type, count);
+    const label = type === 'blog' ? '블로그 배포' : '플레이스 유입';
+    const unsetNotice = est.unitPrice === 0
+        ? '<div class="text-warning mt-2" style="font-size:.78rem"><i class="fas fa-exclamation-triangle me-1"></i>관리자 단가가 아직 설정되지 않았습니다.</div>'
+        : '';
+    return `<div class="ad-budget-summary">
+        <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
+            <strong><i class="fas fa-calculator me-1 text-primary"></i>광고 집행 예산</strong>
+            <span class="badge bg-light text-dark">${label}</span>
+        </div>
+        <div class="d-flex justify-content-between ad-budget-line"><span>광고 단가</span><span>${est.unitPrice.toLocaleString()}원 × ${est.count.toLocaleString()}건</span></div>
+        <div class="d-flex justify-content-between align-items-end mt-2 pt-2 border-top">
+            <span class="fw-bold">예상 합계</span><strong class="ad-budget-total">${est.total.toLocaleString()}원</strong>
+        </div>
+        <div class="text-muted mt-1" style="font-size:.74rem">부가세 별도 · 주문 접수 시점의 단가로 저장됩니다.</div>
+        ${unsetNotice}
+    </div>`;
+}
+
+function updateSimpleAdEstimate(type) {
+    const countId = type === 'blog' ? 'blogOrderCount' : 'placeOrderCount';
+    const boxId = type === 'blog' ? 'blogEstimateBox' : 'placeEstimateBox';
+    const count = document.getElementById(countId)?.value || 1;
+    const box = document.getElementById(boxId);
+    if (box) box.innerHTML = simpleAdEstimateMarkup(type, count);
+}
+
 function showAdTab(tab) {
     const panels = { blog: 'adTabBlog', place: 'adTabPlace', shorts: 'adTabShorts' };
     Object.entries(panels).forEach(([key, id]) => {
@@ -5330,22 +5568,25 @@ function showAdTab(tab) {
         if (el) el.style.display = (key === tab) ? '' : 'none';
     });
     document.querySelectorAll('#adOrderTabs .nav-link').forEach(el => {
-        el.classList.toggle('active', el.dataset.adtab === tab);
+        const isActive = el.dataset.adtab === tab;
+        el.classList.toggle('active', isActive);
+        el.setAttribute('aria-selected', String(isActive));
     });
 }
-
 async function submitBlogOrder() {
     const campaign = document.getElementById('blogCampaign').value.trim();
     const kw = document.getElementById('blogKeywords').value.split(',').map(s=>s.trim()).filter(Boolean);
     const links = document.getElementById('blogLinks').value.split(',').map(s=>s.trim()).filter(Boolean);
     const ht = document.getElementById('blogHashtags').value.split(',').map(s=>s.trim()).filter(Boolean);
+    const orderCount = parseInt(document.getElementById('blogOrderCount').value, 10);
     if (campaign.length < 2) { alert('캠페인 이름을 2자 이상 입력해주세요'); return; }
     if (!kw.length || kw.length > 5) { alert('메인 키워드를 1~5개 입력해주세요'); return; }
     if (ht.length > 5) { alert('해시태그는 최대 5개까지 입력할 수 있습니다'); return; }
+    if (!Number.isInteger(orderCount) || orderCount < 1 || orderCount > 10000) { alert('주문 건수를 1~10,000건으로 입력해주세요'); return; }
     const btn = document.getElementById('blogSubmitBtn');
     btn.disabled = true;
     try {
-        const res = await apiPost('/api/owner/ad/blog-orders', { campaign_name: campaign, address: document.getElementById('blogAddr').value, contact: document.getElementById('blogContact').value, links, main_keywords: kw, hashtags: ht, description: document.getElementById('blogDesc').value, extra_image_link: '' });
+        const res = await apiPost('/api/owner/ad/blog-orders', { campaign_name: campaign, address: document.getElementById('blogAddr').value, contact: document.getElementById('blogContact').value, links, main_keywords: kw, hashtags: ht, description: document.getElementById('blogDesc').value, extra_image_link: '', order_count: orderCount });
         document.getElementById('blogResult').innerHTML = `<div class="alert alert-success">요청 #${res.id}이 접수되었습니다. 주문 내역으로 이동합니다.</div>`;
         setTimeout(() => navigate('owner-adorders'), 700);
     } catch(e) {
@@ -5964,12 +6205,14 @@ async function submitShortsOrder() {
 async function submitPlaceOrder() {
     const placeName = document.getElementById('placeName').value.trim();
     const kw = document.getElementById('placeKeywords').value.split(',').map(s=>s.trim()).filter(Boolean);
+    const orderCount = parseInt(document.getElementById('placeOrderCount').value, 10);
     if (placeName.length < 2) { alert('플레이스명 또는 ID를 2자 이상 입력해주세요'); return; }
     if (!kw.length || kw.length > 3) { alert('검색 키워드를 1~3개 입력해주세요'); return; }
+    if (!Number.isInteger(orderCount) || orderCount < 1 || orderCount > 10000) { alert('주문 건수를 1~10,000건으로 입력해주세요'); return; }
     const btn = document.getElementById('placeSubmitBtn');
     btn.disabled = true;
     try {
-        const res = await apiPost('/api/owner/ad/place-traffic-orders', { place_name_or_id: placeName, search_keywords: kw });
+        const res = await apiPost('/api/owner/ad/place-traffic-orders', { place_name_or_id: placeName, search_keywords: kw, order_count: orderCount });
         document.getElementById('placeResult').innerHTML = `<div class="alert alert-success">요청 #${res.id}이 접수되었습니다. 주문 내역으로 이동합니다.</div>`;
         setTimeout(() => navigate('owner-adorders'), 700);
     } catch(e) {
@@ -6089,12 +6332,9 @@ async function loadCRM(c, t){
     const tabs=[
         {id:'dashboard',icon:'fa-chart-bar',label:'홈'},
         {id:'customers',icon:'fa-users',label:'고객'},
-        {id:'reservations',icon:'fa-calendar-alt',label:'예약'},
         {id:'staff',icon:'fa-user-tie',label:'직원'},
         {id:'services',icon:'fa-cut',label:'시술'},
         {id:'messages',icon:'fa-comment-dots',label:'메시지'},
-        {id:'analytics',icon:'fa-chart-line',label:'분석'},
-        {id:'marketing',icon:'fa-gift',label:'혜택'},
     ];
     if(!tabs.find(x=>x.id===crmTab)) crmTab='dashboard';
     const scopeToggle = crmMe.is_designer ? `
@@ -6138,9 +6378,6 @@ function crmSwitchTab(tab){
     else if(tab==='staff') crmRenderStaff(body);
     else if(tab==='messages') crmRenderMessages(body);
     else if(tab==='services') crmRenderServices(body);
-    else if(tab==='reservations') crmRenderReservations(body);
-    else if(tab==='analytics') crmRenderAnalytics(body);
-    else if(tab==='marketing') crmRenderMarketing(body);
 }
 
 // ─── Dashboard ─────────────────────────────────────────────
@@ -6357,22 +6594,19 @@ async function crmCustomerDetail(id){
             <ul class="nav nav-tabs mb-2" role="tablist">
                 <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#cdTimeline">통합 타임라인</button></li>
                 <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#cdVisits">방문 이력</button></li>
-                <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#cdCoupons">쿠폰/메시지</button></li>
+                <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#cdMessages">메시지</button></li>
             </ul>
             <div class="tab-content">
                 <div class="tab-pane fade show active" id="cdTimeline" style="max-height:280px;overflow:auto">${timelineHtml}</div>
                 <div class="tab-pane fade" id="cdVisits"><table class="table table-sm align-middle"><thead class="table-light"><tr><th>날짜</th><th>시술</th><th>담당</th><th class="text-end">금액</th><th></th></tr></thead><tbody>${(c.visits||[]).map(v=>`<tr><td>${crmDateOnly(v.visit_date)}</td><td>${v.service_name||'-'}</td><td>${v.staff_name||'-'}</td><td class="text-end">${formatMoney(v.amount)}</td><td><button class="btn btn-sm btn-outline-danger border-0" onclick="crmDeleteVisit(${v.id},${id})"><i class="fas fa-trash"></i></button></td></tr>`).join('')||`<tr><td colspan="5" class="text-center text-muted py-3">방문 이력 없음</td></tr>`}</tbody></table></div>
-                <div class="tab-pane fade" id="cdCoupons">
-                    <div class="fw-bold small mb-1">쿠폰</div>
-                    <table class="table table-sm align-middle"><tbody>${(c.coupons||[]).map(cp=>`<tr><td>${cp.name}</td><td>${cp.discount_type==='percent'?cp.value+'%':formatMoney(cp.value)}</td><td>${cp.status}</td><td class="text-muted">${cp.expires_at||''}</td></tr>`).join('')||`<tr><td class="text-center text-muted py-2">쿠폰 없음</td></tr>`}</tbody></table>
-                    <div class="fw-bold small mb-1 mt-2">메시지</div>
+                <div class="tab-pane fade" id="cdMessages">
+                    <div class="fw-bold small mb-1">메시지</div>
                     <table class="table table-sm align-middle"><tbody>${(c.messages||[]).map(m=>`<tr><td>${m.channel}</td><td>${m.content}</td><td class="text-muted text-nowrap">${crmDateOnly(m.sent_at)}</td></tr>`).join('')||`<tr><td class="text-center text-muted py-2">발송 내역 없음</td></tr>`}</tbody></table>
                 </div>
             </div>`;
         const footer=`
             <button type="button" class="btn btn-outline-danger me-auto" onclick="crmDeleteCustomer(${id})"><i class="fas fa-trash"></i></button>
             <button type="button" class="btn btn-outline-secondary" onclick="crmMessageToCustomer(${id},'${(c.name||'').replace(/'/g,'')}')"><i class="fas fa-comment-dots me-1"></i>메시지</button>
-            <button type="button" class="btn btn-outline-secondary" onclick="crmCouponForm(${id})"><i class="fas fa-ticket me-1"></i>쿠폰</button>
             <button type="button" class="btn btn-outline-secondary" onclick="crmPointForm(${id})"><i class="fas fa-coins me-1"></i>포인트</button>
             <button type="button" class="btn btn-outline-primary" onclick='crmCustomerForm(${JSON.stringify(c).replace(/'/g,"&#39;")})'><i class="fas fa-pen me-1"></i>수정</button>
             <button type="button" class="btn btn-primary" onclick="crmVisitForm(${id})"><i class="fas fa-plus me-1"></i>방문</button>`;

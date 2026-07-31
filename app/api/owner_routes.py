@@ -31,8 +31,8 @@ from app.models.ad import (
     AdPlaceProfile, AdCompetitor, AdMetric, PlaceMetricSnapshot,
     SHORTS_CAMPAIGN_TYPES, SHORTS_CAMPAIGN_TYPE_CODES, SHORTS_CAMPAIGN_TYPE_LABELS,
     SHORTS_CAMPAIGN_TYPE_USES, SHORTS_DURATION_TIERS, SHORTS_DURATION_TIER_CODES,
-    SHORTS_PLATFORMS, SHORTS_PLATFORM_CODES, SHORTS_DISTRIBUTION_UNIT_PRICE,
-    SHORTS_MAX_COUNT, shorts_estimate,
+    SHORTS_PLATFORMS, SHORTS_PLATFORM_CODES,
+    SHORTS_MAX_COUNT,
 )
 from app.models.plan import AD_EXECUTION_TYPES
 from app.models.receipt_review import ReceiptReviewConfig, ReceiptReview
@@ -48,7 +48,7 @@ from app.auth.dependencies import get_current_user, require_roles
 from app.services.settlement_service import compute_distribution, get_available_payout
 from app.services.visibility import commission_visible_for
 from app.services import naver_place
-from app.services import ai_service
+from app.services import ad_pricing, ai_service
 from app.services import plan_service
 from app.schemas.schemas import (
     StaffCreate, StaffUpdate, DesignerCreate, DesignerUpdate,
@@ -110,7 +110,13 @@ def _require_ad_order_feature(db: Session, type_key: str) -> None:
         raise HTTPException(status_code=403, detail="선택한 광고 상품이 현재 비활성화되어 있습니다")
 
 
-def _require_plan_ad_quota(db: Session, merchant_id: int, order_type: AdOrderType, ad_type: str) -> None:
+def _require_plan_ad_quota(
+    db: Session,
+    merchant_id: int,
+    order_type: AdOrderType,
+    ad_type: str,
+    requested_count: int = 1,
+) -> None:
     """이번 달 광고 주문 건수가 배정 플랜의 월 한도를 넘지 않는지 검증한다.
 
     플랜이 배정되지 않았거나 해당 광고의 월 목표가 0이면 무제한으로 본다.
@@ -124,14 +130,28 @@ def _require_plan_ad_quota(db: Session, merchant_id: int, order_type: AdOrderTyp
 
     # KST 기준 이번 달 경계를 UTC naive datetime 으로 변환하여 DB 필터에 사용
     month_start, month_end = plan_service.month_bounds(today_kst())
-    used = db.query(func.count(AdOrder.id)).filter(
+    base_filters = (
         AdOrder.merchant_id == merchant_id,
         AdOrder.type == order_type,
         AdOrder.status != AdOrderStatus.REJECTED,  # 반려된 주문은 한도에서 제외
         AdOrder.created_at >= kst_day_start_utc(month_start),
         AdOrder.created_at < kst_day_start_utc(month_end + timedelta(days=1)),
-    ).scalar() or 0
-    if used >= limit:
+    )
+    if order_type == AdOrderType.BLOG:
+        used = db.query(
+            func.coalesce(func.sum(AdOrderBlogDetail.order_count), 0)
+        ).join(AdOrder, AdOrder.id == AdOrderBlogDetail.order_id).filter(
+            *base_filters
+        ).scalar() or 0
+    elif order_type == AdOrderType.PLACE_TRAFFIC:
+        used = db.query(
+            func.coalesce(func.sum(AdOrderPlaceTrafficDetail.order_count), 0)
+        ).join(AdOrder, AdOrder.id == AdOrderPlaceTrafficDetail.order_id).filter(
+            *base_filters
+        ).scalar() or 0
+    else:
+        used = db.query(func.count(AdOrder.id)).filter(*base_filters).scalar() or 0
+    if int(used) + int(requested_count) > limit:
         raise HTTPException(status_code=403, detail="플랜 한도를 초과했습니다")
 
 
@@ -1378,12 +1398,18 @@ def list_owner_ad_orders(db: Session = Depends(get_db), user: User = Depends(req
                 item["blog_detail"] = {
                     "campaign_name": detail.campaign_name,
                     "address": detail.address, "contact": detail.contact,
+                    "order_count": detail.order_count,
+                    "unit_price": str(detail.unit_price or 0),
+                    "est_total_cost": str(detail.est_total_cost or 0),
                 }
         elif o.type == AdOrderType.PLACE_TRAFFIC:
             detail = db.query(AdOrderPlaceTrafficDetail).filter(AdOrderPlaceTrafficDetail.order_id == o.id).first()
             if detail:
                 item["place_traffic_detail"] = {
                     "place_name_or_id": detail.place_name_or_id,
+                    "order_count": detail.order_count,
+                    "unit_price": str(detail.unit_price or 0),
+                    "est_total_cost": str(detail.est_total_cost or 0),
                 }
         elif o.type == AdOrderType.SHORTS:
             detail = db.query(AdOrderShortsDetail).filter(AdOrderShortsDetail.order_id == o.id).first()
@@ -1401,11 +1427,26 @@ def list_owner_ad_orders(db: Session = Depends(get_db), user: User = Depends(req
     return results
 
 
+@router.get("/ad/pricing")
+def get_owner_ad_pricing(
+    db: Session = Depends(get_db),
+    user: User = Depends(require_owner),
+):
+    """원장 주문 화면에서 사용하는 현재 광고 단가."""
+    _get_owner_merchant(user, db)
+    return ad_pricing.get_ad_pricing(db)
+
+
 @router.post("/ad/blog-orders")
 def create_blog_order(req: AdBlogOrderCreate, db: Session = Depends(get_db), user: User = Depends(require_owner)):
     merchant = _get_owner_merchant(user, db)
     _require_ad_order_feature(db, AD_BLOG_ENABLED)
-    _require_plan_ad_quota(db, merchant.id, AdOrderType.BLOG, "blog_review")
+    _require_plan_ad_quota(
+        db, merchant.id, AdOrderType.BLOG, "blog_review", req.order_count
+    )
+    pricing = ad_pricing.get_ad_pricing(db)
+    unit_price = pricing["blog_unit_price"]
+    total_cost = unit_price * req.order_count
     keywords = [item.strip() for item in req.main_keywords if item.strip()]
     if not keywords:
         raise HTTPException(status_code=400, detail="메인 키워드를 1개 이상 입력해주세요")
@@ -1426,18 +1467,34 @@ def create_blog_order(req: AdBlogOrderCreate, db: Session = Depends(get_db), use
         hashtags_json=json.dumps([item.strip().lstrip("#") for item in req.hashtags if item.strip()]),
         description=req.description,
         extra_image_link=req.extra_image_link,
+        order_count=req.order_count,
+        unit_price=unit_price,
+        est_total_cost=total_cost,
     )
     db.add(detail)
     db.commit()
     db.refresh(order)
-    return {"id": order.id, "status": order.status.value}
+    return {
+        "id": order.id,
+        "status": order.status.value,
+        "estimate": {
+            "order_count": req.order_count,
+            "unit_price": unit_price,
+            "total_cost": total_cost,
+        },
+    }
 
 
 @router.post("/ad/place-traffic-orders")
 def create_place_traffic_order(req: AdPlaceTrafficOrderCreate, db: Session = Depends(get_db), user: User = Depends(require_owner)):
     merchant = _get_owner_merchant(user, db)
     _require_ad_order_feature(db, AD_PLACE_TRAFFIC_ENABLED)
-    _require_plan_ad_quota(db, merchant.id, AdOrderType.PLACE_TRAFFIC, "place_traffic")
+    _require_plan_ad_quota(
+        db, merchant.id, AdOrderType.PLACE_TRAFFIC, "place_traffic", req.order_count
+    )
+    pricing = ad_pricing.get_ad_pricing(db)
+    unit_price = pricing["place_traffic_unit_price"]
+    total_cost = unit_price * req.order_count
     keywords = [item.strip() for item in req.search_keywords if item.strip()]
     if not keywords:
         raise HTTPException(status_code=400, detail="검색 키워드를 1개 이상 입력해주세요")
@@ -1452,11 +1509,22 @@ def create_place_traffic_order(req: AdPlaceTrafficOrderCreate, db: Session = Dep
         order_id=order.id,
         place_name_or_id=req.place_name_or_id,
         search_keywords_json=json.dumps(keywords),
+        order_count=req.order_count,
+        unit_price=unit_price,
+        est_total_cost=total_cost,
     )
     db.add(detail)
     db.commit()
     db.refresh(order)
-    return {"id": order.id, "status": order.status.value}
+    return {
+        "id": order.id,
+        "status": order.status.value,
+        "estimate": {
+            "order_count": req.order_count,
+            "unit_price": unit_price,
+            "total_cost": total_cost,
+        },
+    }
 
 
 # ─── 쇼츠(숏폼) 배포 주문 ─────────────────────────────────────
@@ -1467,6 +1535,7 @@ def get_shorts_order_options(db: Session = Depends(get_db), user: User = Depends
 
     단가/옵션은 서버가 유일한 출처이므로 화면은 이 응답만 보고 폼을 그린다.
     """
+    pricing = ad_pricing.get_ad_pricing(db)
     return {
         "campaign_types": [
             {"code": code, "label": label, "description": desc,
@@ -1474,11 +1543,15 @@ def get_shorts_order_options(db: Session = Depends(get_db), user: User = Depends
             for code, label, desc, uses_dist, uses_prod in SHORTS_CAMPAIGN_TYPES
         ],
         "duration_tiers": [
-            {"code": code, "label": label, "unit_price": price}
+            {
+                "code": code,
+                "label": label,
+                "unit_price": pricing["shorts_duration_prices"].get(code, price),
+            }
             for code, label, price in SHORTS_DURATION_TIERS
         ],
         "platforms": [{"code": code, "label": label} for code, label in SHORTS_PLATFORMS],
-        "distribution_unit_price": SHORTS_DISTRIBUTION_UNIT_PRICE,
+        "distribution_unit_price": pricing["shorts_distribution_unit_price"],
         "max_count": SHORTS_MAX_COUNT,
     }
 
@@ -1528,8 +1601,12 @@ def create_shorts_order(req: AdShortsOrderCreate, db: Session = Depends(get_db),
     if req.start_date and req.end_date and req.end_date < req.start_date:
         raise HTTPException(status_code=400, detail="종료 희망일은 시작 희망일 이후여야 합니다")
 
-    est = shorts_estimate(
-        req.campaign_type, req.distribution_count, req.video_production_count, duration_tier
+    est = ad_pricing.shorts_estimate(
+        ad_pricing.get_ad_pricing(db),
+        req.campaign_type,
+        req.distribution_count,
+        req.video_production_count,
+        duration_tier,
     )
 
     categories = {
