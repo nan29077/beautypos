@@ -22,7 +22,7 @@ from app.database import get_db
 from app.models.user import User, UserRole
 from app.models.merchant import Merchant, STAFF_MANAGED_CATEGORIES
 from app.models.staff import Staff
-from app.models.transaction import Transaction
+from app.models.transaction import Transaction, TransactionStatus
 from app.models.settlement import Settlement, PayoutRequest
 from app.models.ad import (
     AdOrder, AdOrderType, AdOrderStatus,
@@ -481,6 +481,7 @@ def owner_settlement_breakdown(
         Transaction.merchant_id == merchant.id,
         Transaction.created_at >= start,
         Transaction.created_at <= end,
+        Transaction.status == TransactionStatus.APPROVED,
     ).all()
 
     result = compute_distribution(db, merchant.id, txns)

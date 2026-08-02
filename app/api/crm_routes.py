@@ -80,8 +80,21 @@ def _staff_name_map(db: Session, merchant_id: int) -> dict:
 
 def _require_crm_management(ctx: CrmContext) -> None:
     """Keep merchant-wide configuration changes owner/admin only."""
-    if ctx.is_designer:
+    if ctx.is_designer or ctx.role not in (UserRole.OWNER, UserRole.ADMIN):
         raise HTTPException(status_code=403, detail="매장 공통 설정은 원장 계정에서 관리해 주세요.")
+
+
+def _require_owner_admin(ctx: CrmContext, message: str) -> None:
+    """고객 자산(포인트/쿠폰)·일괄 발송·영구 삭제는 원장/관리자만 수행한다."""
+    if ctx.is_designer or ctx.role not in (UserRole.OWNER, UserRole.ADMIN):
+        raise HTTPException(status_code=403, detail=message)
+
+
+def _effective_scope(ctx: CrmContext, scope: str) -> str:
+    """디자이너는 매출/실적 조회 범위를 본인 것으로 강제한다 (scope=all 권한 상승 차단)."""
+    if ctx.is_designer:
+        return "mine"
+    return scope
 
 
 def _customer_grade(visit_count: int, total_spent: float) -> str:
@@ -470,6 +483,7 @@ def update_customer(cid: int, req: CustomerUpdate, ctx: CrmContext = Depends(get
 
 @router.delete("/customers/{cid}")
 def delete_customer(cid: int, ctx: CrmContext = Depends(get_crm_context), db: Session = Depends(get_db)):
+    _require_owner_admin(ctx, "고객 삭제는 원장 계정에서만 가능합니다.")
     c = db.query(CrmCustomer).filter(CrmCustomer.id == cid, CrmCustomer.merchant_id == ctx.merchant_id).first()
     if not c:
         raise HTTPException(404, "고객을 찾을 수 없습니다")
@@ -485,6 +499,7 @@ def delete_customer(cid: int, ctx: CrmContext = Depends(get_crm_context), db: Se
 
 @router.post("/customers/{cid}/points")
 def adjust_points(cid: int, req: PointAdjust, ctx: CrmContext = Depends(get_crm_context), db: Session = Depends(get_db)):
+    _require_owner_admin(ctx, "포인트 적립/차감은 원장 계정에서만 가능합니다.")
     c = db.query(CrmCustomer).filter(CrmCustomer.id == cid, CrmCustomer.merchant_id == ctx.merchant_id).first()
     if not c:
         raise HTTPException(404, "고객을 찾을 수 없습니다")
@@ -583,6 +598,7 @@ def list_visits(
     q = db.query(CrmVisit).filter(CrmVisit.merchant_id == ctx.merchant_id)
     if customer_id:
         q = q.filter(CrmVisit.customer_id == customer_id)
+    scope = _effective_scope(ctx, scope)
     use_mine = (scope == "mine") or (scope == "auto" and ctx.is_designer)
     if use_mine and ctx.staff_id:
         q = q.filter(CrmVisit.staff_id == ctx.staff_id)
@@ -821,6 +837,7 @@ def _range_bounds(range_str: str):
 
 
 def _visit_scope(q, ctx, scope):
+    scope = _effective_scope(ctx, scope)
     use_mine = (scope == "mine") or (scope == "auto" and ctx.is_designer)
     if use_mine and ctx.staff_id:
         q = q.filter(CrmVisit.staff_id == ctx.staff_id)
@@ -829,6 +846,7 @@ def _visit_scope(q, ctx, scope):
 
 @router.get("/stats")
 def crm_stats(scope: str = Query("auto"), ctx: CrmContext = Depends(get_crm_context), db: Session = Depends(get_db)):
+    scope = _effective_scope(ctx, scope)
     now = datetime.utcnow()
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     month_start = today_start.replace(day=1)
@@ -917,6 +935,7 @@ def crm_stats(scope: str = Query("auto"), ctx: CrmContext = Depends(get_crm_cont
 def crm_analytics(range_: str = Query("month", alias="range", pattern="^(week|month|year|all)$"),
                   scope: str = Query("auto"),
                   ctx: CrmContext = Depends(get_crm_context), db: Session = Depends(get_db)):
+    scope = _effective_scope(ctx, scope)
     start, end = _range_bounds(range_)
     q = db.query(CrmVisit).filter(CrmVisit.merchant_id == ctx.merchant_id,
                                   CrmVisit.visit_date >= start, CrmVisit.visit_date <= end)
@@ -1082,6 +1101,7 @@ def create_coupon(req: CouponIn, ctx: CrmContext = Depends(get_crm_context), db:
 
 @router.post("/coupons/bulk")
 def issue_coupons_bulk(req: CouponBulkIn, ctx: CrmContext = Depends(get_crm_context), db: Session = Depends(get_db)):
+    _require_owner_admin(ctx, "쿠폰 일괄 발급은 원장 계정에서만 가능합니다.")
     targets = _segment_customers(db, ctx, req.segment)
     exp = _parse_date(req.expires_at)
     n = 0
@@ -1179,6 +1199,10 @@ def list_messages(limit: int = Query(100, ge=1, le=500), ctx: CrmContext = Depen
 
 @router.post("/messages/send")
 def send_messages(req: SendMessageIn, ctx: CrmContext = Depends(get_crm_context), db: Session = Depends(get_db)):
+    # 세그먼트(전체/휴면/생일/VIP) 일괄 발송은 원장/관리자만
+    if req.segment and not req.customer_ids:
+        _require_owner_admin(ctx, "고객 일괄 문자 발송은 원장 계정에서만 가능합니다.")
+
     # 발송 대상 결정
     targets = []
     if req.customer_ids:

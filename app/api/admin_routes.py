@@ -19,7 +19,7 @@ from app.models.user import User, UserRole
 from app.models.merchant import Merchant
 from app.models.pg import PGProvider, MerchantPGConfig, PGConfigStatus
 from app.models.terminal import TerminalDevice
-from app.models.transaction import Transaction
+from app.models.transaction import Transaction, TransactionStatus
 from app.models.settlement import (
     FeePolicy, SalesCommissionPolicy, MerchantSalesAssignment, Settlement, PayoutRequest, PayoutStatus,
 )
@@ -1183,6 +1183,7 @@ def calculate_settlement(
         Transaction.merchant_id == merchant_id,
         Transaction.created_at >= start,
         Transaction.created_at <= end,
+        Transaction.status == TransactionStatus.APPROVED,
     ).all()
 
     gross = sum(float(t.amount) for t in txns)
@@ -2030,7 +2031,10 @@ def admin_settlement_breakdown(
     merchant = db.query(Merchant).filter(Merchant.id == mid).first()
     if not merchant:
         raise HTTPException(status_code=404)
-    q = db.query(Transaction).filter(Transaction.merchant_id == mid)
+    q = db.query(Transaction).filter(
+        Transaction.merchant_id == mid,
+        Transaction.status == TransactionStatus.APPROVED,
+    )
     if period_start:
         q = q.filter(Transaction.created_at >= datetime.fromisoformat(period_start))
     if period_end:

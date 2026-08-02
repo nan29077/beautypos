@@ -128,6 +128,10 @@ class TerminalTransactionCreate(BaseModel):
         return v
 
 
+class TransactionCancelRequest(BaseModel):
+    cancel_reason: Optional[str] = Field(None, max_length=255, description="취소 사유")
+
+
 # ─── Payout ──────────────────────────────────────────────────
 
 class PayoutRequestCreate(BaseModel):

@@ -12,7 +12,7 @@ from app.database import get_db
 from app.utils.kst import today_kst, kst_day_start_utc, now_kst
 from app.models.user import User, UserRole
 from app.models.merchant import Merchant
-from app.models.transaction import Transaction
+from app.models.transaction import Transaction, TransactionStatus
 from app.models.settlement import (
     MerchantSalesAssignment, FeePolicy, PayoutRequest, PayoutStatus,
 )
@@ -151,6 +151,7 @@ def merchant_breakdown(
         Transaction.merchant_id == mid,
         Transaction.created_at >= start,
         Transaction.created_at <= end,
+        Transaction.status == TransactionStatus.APPROVED,
     ).all()
 
     result = compute_distribution(db, mid, txns)
