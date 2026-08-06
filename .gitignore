@@ -42,3 +42,9 @@ htmlcov/
 
 # mypy
 .mypy_cache/
+
+# Android build/tooling
+android/.gradle/
+android/local.properties
+android/app/build/
+.android-tools/
