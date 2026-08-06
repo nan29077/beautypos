@@ -4043,13 +4043,17 @@ async function showDailyDetail(dateStr) {
 
 async function loadOwnerAnalysis(c, t) {
     t.textContent = '광고 분석';
+    // 페이지 재진입 시 이전 선택 상태를 초기화한다
+    analysisPeriodKey = '7d';
+    analysisBreakdownMetric = 'rank';
+    analysisSelectedTarget = null;
     c.innerHTML = `
     <div class="owner-analysis-page">
     <!-- 헤더 -->
     <div class="analysis-page-header d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
         <div class="analysis-page-title">
             <h5 class="fw-bold mb-0"><i class="fas fa-store text-primary me-2"></i>우리 매장 광고 현황</h5>
-            <small class="text-muted">네이버 플레이스 순위와 리뷰가 어떻게 달라졌는지 확인하세요</small>
+            <small class="text-muted">개요 → 대상별 성과 → 추이 분석 → 인사이트 순서로 확인하세요</small>
         </div>
         <div class="analysis-page-actions d-flex gap-2 align-items-center">
             <button class="btn btn-sm btn-primary" onclick="fetchAnalysisNow()" id="fetchNowBtn">
@@ -4066,42 +4070,76 @@ async function loadOwnerAnalysis(c, t) {
 
     <!-- 자동 수집 안내 -->
     <div class="analysis-notice mb-3">
-        <span class="analysis-notice-icon">📅</span>
+        <span class="analysis-notice-icon"><i class="fas fa-calendar-day"></i></span>
         <span><strong>순위는 매일 오후 2시에 자동으로 업데이트 됩니다.</strong>
             <small><span class="rank-update-copy-desktop">업데이트 전에 실시간으로 바로 확인하려면 <strong>광고분석하기</strong> 버튼을 눌러 주세요.</span><span class="rank-update-copy-mobile">실시간 확인은 <strong>광고분석하기</strong> 버튼을 눌러 주세요.</span></small></span>
     </div>
 
-    <!-- 상단 요약 카드 — 항상 보임 -->
-    <div id="analysisToday" class="mb-3"></div>
-
-    <!-- 탭 네비게이션 -->
-    <div class="analysis-tab-wrap mb-3">
-        <div class="analysis-tab-nav" role="tablist" aria-label="광고 분석 상세 메뉴">
-            <button type="button" class="analysis-tab-btn active" data-tab="compare" role="tab" aria-selected="true">
-                <i class="fas fa-scale-balanced me-1"></i>경쟁 매장
-            </button>
-            <button type="button" class="analysis-tab-btn" data-tab="trend" role="tab" aria-selected="false">
-                <i class="fas fa-chart-line me-1"></i>변화 흐름
-            </button>
-            <button type="button" class="analysis-tab-btn" data-tab="detail" role="tab" aria-selected="false">
-                <i class="fas fa-calendar-days me-1"></i>날짜별 기록
-            </button>
+    <!-- 공통 기간 필터 -->
+    <div class="analysis-period-bar d-flex flex-wrap align-items-center gap-2 mb-3">
+        <span class="analysis-period-label"><i class="fas fa-calendar-week me-1"></i>조회 기간</span>
+        <div class="btn-group btn-group-sm" role="group" aria-label="분석 기간 선택" id="analysisPeriodGroup">
+            <button type="button" class="btn btn-outline-primary" data-period="today">오늘</button>
+            <button type="button" class="btn btn-primary" data-period="7d">7일</button>
+            <button type="button" class="btn btn-outline-primary" data-period="30d">30일</button>
+            <button type="button" class="btn btn-outline-primary" data-period="custom">직접입력</button>
+        </div>
+        <div id="analysisCustomPeriodBox" class="analysis-custom-period" style="display:none">
+            <input type="number" class="form-control form-control-sm" id="analysisCustomDays" min="1" max="365" value="14">
+            <span class="text-muted small">일간</span>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="applyCustomAnalysisPeriod()">적용</button>
         </div>
     </div>
 
-    <!-- 탭 패널 -->
-    <div class="analysis-tab-content">
-        <div id="tab-compare" class="analysis-tab-pane" role="tabpanel">
-            <div class="analysis-tab-guide"><i class="fas fa-store"></i><span><strong>우리 매장과 주변 매장을 비교해요</strong><small>초록색은 우리 매장이 앞선 항목, 빨간색은 보완할 항목입니다.</small></span></div>
-            <div id="analysisCompare"></div>
+    <!-- 1) 개요: KPI 요약 카드 -->
+    <div class="crm-overview-grid mb-3" id="analysisKpiCards"></div>
+
+    <!-- 2) 매체(대상)별 성과 드릴다운 -->
+    <div class="card border-0 shadow-sm mb-3" id="analysisBreakdownCard">
+        <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h6 class="mb-0 fw-bold"><i class="fas fa-chart-simple text-primary me-2"></i>대상별 성과</h6>
+            <div class="btn-group btn-group-sm" id="analysisMetricGroup" aria-label="비교 지표 선택">
+                <button type="button" class="btn btn-primary" data-metric="rank">순위</button>
+                <button type="button" class="btn btn-outline-primary" data-metric="blog">블로그 리뷰</button>
+                <button type="button" class="btn btn-outline-primary" data-metric="visitor">방문자 리뷰</button>
+            </div>
         </div>
-        <div id="tab-trend" class="analysis-tab-pane" role="tabpanel" style="display:none">
-            <div class="analysis-tab-guide"><i class="fas fa-arrow-trend-up"></i><span><strong>순위와 리뷰가 어떻게 달라졌는지 확인해요</strong><small>그래프 아래에서 날짜별 실제 수치와 전날 대비 변화를 볼 수 있습니다.</small></span></div>
-            <div id="analysisTrend"></div>
+        <div class="card-body pt-2">
+            <p class="trend-card-help"><i class="fas fa-circle-info"></i>대상을 선택하면 아래에서 자세한 추이를 볼 수 있어요.</p>
+            <div class="analysis-breakdown-chart-wrap"><canvas id="analysisBreakdownChart"></canvas></div>
+            <div id="analysisBreakdownList" class="analysis-breakdown-list mt-2"></div>
         </div>
-        <div id="tab-detail" class="analysis-tab-pane" role="tabpanel" style="display:none">
-            <div class="analysis-tab-guide"><i class="fas fa-calendar-check"></i><span><strong>수집된 날짜별 기록을 한눈에 확인해요</strong><small>우리 매장과 경쟁업체의 순위·리뷰 기록을 각각 확인할 수 있습니다.</small></span></div>
-            <div id="analysisDetail"></div>
+    </div>
+
+    <!-- 3) 전환/추이 분석 -->
+    <div class="card border-0 shadow-sm mb-3 trend-metric-card" id="analysisDrilldownCard" style="display:none">
+        <div class="card-header">
+            <h6 class="mb-0 fw-bold"><i class="fas fa-arrow-trend-up me-2" style="color:#3b82f6"></i><span id="analysisDrilldownTitle">추이 분석</span></h6>
+            <span class="badge trend-period-badge" id="analysisDrilldownBadge" style="background:#eff6ff;color:#1d4ed8"></span>
+        </div>
+        <div class="card-body pt-2">
+            <div class="trend-pane"><div style="height:220px"><canvas id="analysisDrilldownChartCanvas"></canvas></div></div>
+            <div id="analysisDrilldownSummary"></div>
+            <div id="analysisDrilldownHistory"></div>
+        </div>
+    </div>
+
+    <!-- 4) 인사이트 패널 -->
+    <div class="card border-0 shadow-sm mb-3" id="analysisInsightCard">
+        <div class="card-header bg-white border-0"><h6 class="mb-0 fw-bold"><i class="fas fa-lightbulb text-warning me-2"></i>인사이트</h6></div>
+        <div class="card-body pt-2">
+            <ul class="analysis-insight-list" id="analysisInsightList"></ul>
+            <div class="border-top mt-3 pt-3">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                    <span class="fw-bold small"><i class="fas fa-wand-magic-sparkles me-2" style="color:#6366f1"></i>AI 마케팅 추천</span>
+                    <button class="btn btn-sm btn-outline-primary" onclick="generateAIRecommendation()" id="aiRecommendBtn">
+                        <i class="fas fa-magic me-1"></i>추천 받기
+                    </button>
+                </div>
+                <div id="aiRecommendBody">
+                    <p class="text-muted small mb-0"><strong>추천 받기</strong>를 누르면 경쟁업체와의 차이를 계산해 먼저 할 일을 알려드려요.</p>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -4112,17 +4150,22 @@ async function loadOwnerAnalysis(c, t) {
     </div>
     </div>`;
 
-    // onclick 속성은 Bootstrap이 nav[role=tablist] 자식에서 초기화하므로
-    // data-tab + addEventListener(이벤트 위임) 방식으로 클릭을 처리한다
-    c.querySelector('.analysis-tab-nav')?.addEventListener('click', e => {
-        const btn = e.target.closest('.analysis-tab-btn');
-        if (btn) switchAnalysisTab(btn.dataset.tab, btn);
+    // 기간/지표 버튼과 대상별 성과 목록은 이벤트 위임으로 처리한다 (매 렌더마다 리스너 재등록 불필요)
+    document.getElementById('analysisPeriodGroup')?.addEventListener('click', e => {
+        const btn = e.target.closest('button[data-period]');
+        if (btn) setAnalysisPeriod(btn.dataset.period);
+    });
+    document.getElementById('analysisMetricGroup')?.addEventListener('click', e => {
+        const btn = e.target.closest('button[data-metric]');
+        if (btn) setAnalysisBreakdownMetric(btn.dataset.metric);
+    });
+    document.getElementById('analysisBreakdownList')?.addEventListener('click', e => {
+        const row = e.target.closest('.analysis-breakdown-row');
+        if (row) selectAnalysisTarget(row.dataset.target);
     });
 
     renderAnalysisSettingsModal();
-    loadAnalysisOverview();
-    reloadAnalysis();
-    loadAnalysisTrend();
+    await loadAnalysisData();
 }
 
 // ─── 오늘 현황 / 경쟁업체 비교 ───────────────────────────────
@@ -4171,404 +4214,455 @@ function standingAmong(metricKey, mineValue, competitorValues, higherIsBetter) {
     return { place: sorted.indexOf(mineValue) + 1, total: values.length };
 }
 
-let analysisOverviewPeriod = 'day';
+// ─── 공통 기간 필터 상태 ─────────────────────────────────────
+// 오늘/7일/30일/직접입력 — 이 섹션 전체(개요·대상별 성과·추이·인사이트)에 공통 적용된다.
+const ANALYSIS_PERIODS = {
+    today: { days: 2, label: '오늘' },
+    '7d': { days: 7, label: '최근 7일' },
+    '30d': { days: 30, label: '최근 30일' },
+};
+let analysisPeriodKey = '7d';
+let analysisCustomDays = 14;
+let analysisBreakdownMetric = 'rank';   // 'rank' | 'blog' | 'visitor'
+let analysisSelectedTarget = null;      // 드릴다운에서 선택된 place_url
+let analysisHistoryData = null;         // /api/owner/ad/analysis/history 응답 캐시
+let analysisOrdersData = [];            // /api/owner/ad/orders 응답 캐시
+let analysisLoadToken = 0;              // 중복 요청 경쟁 상태 방지용
 
-async function loadAnalysisOverview(period) {
-    const todayBox = document.getElementById('analysisToday');
-    const compareBox = document.getElementById('analysisCompare');
-    if (!todayBox || !compareBox) return;
-    if (period) analysisOverviewPeriod = period;
+function currentAnalysisPeriod() {
+    if (analysisPeriodKey === 'custom') {
+        const days = Math.max(1, Math.min(365, analysisCustomDays || 14));
+        return { days, label: `최근 ${days}일` };
+    }
+    return ANALYSIS_PERIODS[analysisPeriodKey] || ANALYSIS_PERIODS['7d'];
+}
 
-    const spinner = `<div class="card border-0 shadow-sm"><div class="card-body">${adpayLoadingMarkup()}</div></div>`;
-    todayBox.innerHTML = spinner;
-    compareBox.innerHTML = '';
+function setAnalysisPeriod(key) {
+    analysisPeriodKey = key;
+    document.querySelectorAll('#analysisPeriodGroup button[data-period]').forEach(b => {
+        const active = b.dataset.period === key;
+        b.classList.toggle('btn-primary', active);
+        b.classList.toggle('btn-outline-primary', !active);
+    });
+    const customBox = document.getElementById('analysisCustomPeriodBox');
+    if (customBox) customBox.style.display = key === 'custom' ? 'flex' : 'none';
+    if (key === 'custom') return; // '적용' 버튼을 눌러야 반영
+    loadAnalysisData();
+}
+
+function applyCustomAnalysisPeriod() {
+    const input = document.getElementById('analysisCustomDays');
+    let n = parseInt(input?.value || '14', 10);
+    if (!Number.isFinite(n) || n < 1) n = 1;
+    if (n > 365) n = 365;
+    if (input) input.value = n;
+    analysisCustomDays = n;
+    loadAnalysisData();
+}
+
+function setAnalysisBreakdownMetric(metric) {
+    analysisBreakdownMetric = metric;
+    renderAnalysisBreakdown();
+}
+
+// 시계열 배열(null 포함 가능)에서 가장 최근/가장 이른 유효값을 찾는다.
+function seriesLatestValue(values) {
+    if (!values) return null;
+    for (let i = values.length - 1; i >= 0; i--) {
+        if (values[i] !== null && values[i] !== undefined) return { value: values[i], index: i };
+    }
+    return null;
+}
+function seriesEarliestValue(values) {
+    if (!values) return null;
+    for (let i = 0; i < values.length; i++) {
+        if (values[i] !== null && values[i] !== undefined) return { value: values[i], index: i };
+    }
+    return null;
+}
+// 기간 시작 대비 변화량. 순위는 숫자가 작아질수록 좋으므로 부호를 반전해 '양수 = 개선'으로 통일한다.
+function seriesPeriodChange(values, metricKey) {
+    const latest = seriesLatestValue(values);
+    const earliest = seriesEarliestValue(values);
+    if (!latest || !earliest || latest.index === earliest.index) return null;
+    const diff = latest.value - earliest.value;
+    return metricKey === 'rank' ? -diff : diff;
+}
+
+// ─── 데이터 로드: history + orders 를 한 번에 가져와 4개 섹션을 모두 갱신한다 ───
+async function loadAnalysisData() {
+    const token = ++analysisLoadToken;
+    const period = currentAnalysisPeriod();
+    const kpiBox = document.getElementById('analysisKpiCards');
+    if (kpiBox) kpiBox.innerHTML = `<div class="analysis-kpi-loading">${adpayLoadingMarkup()}</div>`;
 
     try {
-        const d = await apiGet(`/api/owner/ad/analysis/overview?period=${analysisOverviewPeriod}`);
-        renderTodayStatus(todayBox, d);
-        renderCompareTable(compareBox, d);
+        const [history, orders] = await Promise.all([
+            apiGet(`/api/owner/ad/analysis/history?days=${period.days}`),
+            apiGet('/api/owner/ad/orders').catch(() => []),
+        ]);
+        if (token !== analysisLoadToken) return; // 이후 요청이 이미 시작됐다면 이 결과는 버린다
+
+        analysisHistoryData = history;
+        analysisOrdersData = Array.isArray(orders) ? orders : [];
+        renderCollectStatus(history.collection_status);
+
+        const series = history.series || [];
+        if (!series.length) {
+            renderAnalysisEmptyState();
+            return;
+        }
+
+        renderAnalysisKpiCards(period);
+        renderAnalysisBreakdown();
+
+        if (!analysisSelectedTarget || !series.some(s => s.place_url === analysisSelectedTarget)) {
+            const mine = series.find(s => s.kind === 'my');
+            analysisSelectedTarget = (mine || series[0]).place_url;
+        }
+        renderAnalysisDrilldown();
+        renderAnalysisInsights(period);
     } catch (e) {
-        todayBox.innerHTML = `<div class="alert alert-warning py-2 mb-0 small"><i class="fas fa-exclamation-triangle me-1"></i>${escapeHtml(e.message)}</div>`;
+        if (token !== analysisLoadToken) return;
+        if (kpiBox) kpiBox.innerHTML = `<div class="analysis-kpi-error"><div class="alert alert-warning py-2 mb-0 small"><i class="fas fa-exclamation-triangle me-1"></i>${escapeHtml(e.message)}</div></div>`;
     }
 }
 
-// ── 1) 오늘 우리 매장 현황 — 큰 숫자 카드 3개 ──
-function renderTodayStatus(box, d) {
-    const m = d.my_place;
-    if (!m) {
-        box.innerHTML = `<div class="card border-0 shadow-sm"><div class="card-body text-center py-4">
-            <i class="fas fa-store fa-2x text-muted mb-2 d-block opacity-50"></i>
-            <p class="mb-1 fw-bold">아직 우리 매장이 등록되지 않았어요</p>
-            <p class="text-muted small mb-3"><strong>광고 분석설정</strong> 버튼을 눌러 네이버 플레이스 주소와 검색어를 등록해 주세요.</p>
-            <button class="btn btn-sm btn-primary" onclick="toggleManagePanel()"><i class="fas fa-gear me-1"></i>광고 분석설정 열기</button>
-        </div></div>`;
-        return;
-    }
-
-    // 좋아진 지표 개수로 전체 분위기를 판단한다.
-    const changes = [m.rank_change, m.blog_change, m.visitor_change].filter(v => v !== null && v !== undefined);
-    const better = changes.filter(v => v > 0).length;
-    const worse = changes.filter(v => v < 0).length;
-    let mood, moodIcon, moodClass;
-    if (!changes.length) { mood = '비교할 어제 자료가 아직 없어요'; moodIcon = 'circle-info'; moodClass = 'secondary'; }
-    else if (better > worse) { mood = '잘 되고 있어요'; moodIcon = 'face-smile'; moodClass = 'success'; }
-    else if (worse > better) { mood = '주의가 필요해요'; moodIcon = 'triangle-exclamation'; moodClass = 'danger'; }
-    else { mood = '어제와 비슷해요'; moodIcon = 'face-meh'; moodClass = 'secondary'; }
-
-    const label = d.period_label || '어제';
-    const cards = COMPARE_METRICS.map(metric => {
-        const value = m[metric.key];
-        const change = m[metric.key + '_change'];
-        return `<div class="col-md-4">
-            <div class="card border-0 shadow-sm h-100">
-                <div class="card-body text-center py-3">
-                    <div class="text-muted small mb-1"><i class="fas ${metric.icon} text-${metric.color} me-1"></i>${metric.label}</div>
-                    <div class="fw-bold" style="font-size:2.1rem;line-height:1.15">${metricValueText(metric.key, value)}</div>
-                    <div class="mt-1" style="font-size:.86rem">
-                        ${changeArrow(change)} <span class="${change > 0 ? 'text-success' : (change < 0 ? 'text-danger' : 'text-muted')}">${changeSentence(metric.key, change, label)}</span>
-                    </div>
-                    ${metric.key === 'rank' ? rankRefreshGuide(true) : ''}
-                </div>
-            </div>
-        </div>`;
-    }).join('');
-
-    const p = analysisOverviewPeriod;
-    box.innerHTML = `<div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
-            <h6 class="fw-bold mb-0"><i class="fas fa-calendar-day text-primary me-2"></i>오늘 우리 매장 (${escapeHtml(m.name)}) 현황
-                <small class="text-muted fw-normal ms-1">${m.date}</small></h6>
-            <div class="d-flex gap-2 align-items-center flex-wrap">
-                <span class="badge bg-${moodClass} bg-opacity-10 text-${moodClass} border border-${moodClass} border-opacity-25">
-                    <i class="fas fa-${moodIcon} me-1"></i>${mood}</span>
-                <div class="btn-group btn-group-sm">
-                    <button type="button" class="btn ${p === 'day' ? 'btn-primary' : 'btn-outline-primary'}" onclick="loadAnalysisOverview('day')">어제와 비교</button>
-                    <button type="button" class="btn ${p === 'week' ? 'btn-primary' : 'btn-outline-primary'}" onclick="loadAnalysisOverview('week')">지난주와 비교</button>
-                </div>
-            </div>
-        </div>
-        <div class="row g-3">${cards}</div>`;
-}
-
-// ── 2) 경쟁업체 비교 — 우리 매장 + 경쟁업체를 한 표에 나란히 ──
-function renderCompareTable(box, d) {
-    const m = d.my_place;
-    const label = d.period_label || '어제';
-    const comps = (d.competitors || []).filter(c => c.has_data);
-    const pending = (d.competitors || []).filter(c => !c.has_data);
-
-    if (!m) { box.innerHTML = ''; return; }
-    if (comps.length === 0) {
-        box.innerHTML = `<div class="card border-0 shadow-sm"><div class="card-body text-center py-4">
-            <i class="fas fa-users fa-2x text-muted mb-2 d-block opacity-50"></i>
-            <p class="mb-1 fw-bold">비교할 경쟁업체가 없어요</p>
-            <p class="text-muted small mb-3">근처 매장을 등록하면 우리 매장과 나란히 비교해 드려요. (최대 ${MAX_COMPETITORS}곳)</p>
-            <button class="btn btn-sm btn-outline-primary" onclick="toggleManagePanel()"><i class="fas fa-plus me-1"></i>경쟁업체 등록하기</button>
-        </div></div>`;
-        return;
-    }
-
-    // 우리 기준 우열 판정 — 앞서면 'ahead', 뒤지면 'behind', 같으면 'tie'
-    const verdictOf = (metric, mine, value) => {
-        if (value === null || value === undefined || mine === null || mine === undefined) return null;
-        if (mine === value) return 'tie';
-        return (metric.higherIsBetter ? mine > value : mine < value) ? 'ahead' : 'behind';
-    };
-
-    // 표 머리글 — 등록된 경쟁업체 수만큼 열이 늘어난다.
-    const head = `<tr>
-        <th class="cmp-metric-col">구분</th>
-        <th class="text-center cmp-col-mine">우리 매장<div class="cmp-col-sub">(${escapeHtml(m.name)})</div></th>
-        ${comps.map((c, i) => `<th class="text-center cmp-col-rival ${i % 2 ? 'cmp-col-alt' : ''}">경쟁업체<div class="cmp-col-sub">(${escapeHtml(c.name)})</div></th>`).join('')}
-    </tr>`;
-
-    const standings = {};
-    const rows = COMPARE_METRICS.map(metric => {
-        const mine = m[metric.key];
-        const theirs = comps.map(c => c[metric.key]);
-        standings[metric.key] = standingAmong(metric.key, mine, theirs, metric.higherIsBetter);
-
-        const cells = comps.map((c, i) => {
-            const value = c[metric.key];
-            const verdict = verdictOf(metric, mine, value);
-            const alt = i % 2 ? 'cmp-col-alt' : '';
-            if (!verdict) {
-                return `<td class="text-center text-muted ${alt}">${metricValueText(metric.key, value)}</td>`;
-            }
-            // 좌측 컬러 바 + 옅은 배경으로 우열을 표시한다.
-            const mark = verdict === 'tie' ? '' : (verdict === 'ahead'
-                ? '<i class="fas fa-caret-up text-success ms-1"></i>'
-                : '<i class="fas fa-caret-down text-danger ms-1"></i>');
-            return `<td class="text-center ${alt} cmp-cell cmp-${verdict}">${metricValueText(metric.key, value)}${mark}</td>`;
-        }).join('');
-
-        return `<tr>
-            <td class="fw-bold cmp-metric-col"><i class="fas ${metric.icon} text-${metric.color} me-1"></i>${metric.label}</td>
-            <td class="text-center fw-bold cmp-col-mine">${metricValueText(metric.key, mine)}</td>
-            ${cells}
-        </tr>`;
-    }).join('');
-
-    // 모바일용 카드 — 좁은 화면에서는 표 대신 업체별 카드를 보여준다.
-    const changeKey = { rank: 'comp_rank_change', blog: 'comp_blog_change', visitor: 'comp_visitor_change' };
-    const mobileCard = (name, sub, data, isMine) => {
-        const items = COMPARE_METRICS.map(metric => {
-            const value = data[metric.key];
-            const change = isMine ? data[metric.key + '_change'] : data[changeKey[metric.key]];
-            const verdict = isMine ? null : verdictOf(metric, m[metric.key], value);
-            const valueClass = verdict === 'ahead' ? 'text-success' : (verdict === 'behind' ? 'text-danger' : '');
-            return `<div class="cmp-card-item">
-                <div class="cmp-card-metric">${metric.label}</div>
-                <div class="cmp-card-value ${valueClass}">${metricValueText(metric.key, value)}</div>
-                <div class="cmp-card-change">${changeArrow(change)} ${changeSentence(metric.key, change, label)}</div>
-            </div>`;
-        }).join('');
-        const wins = isMine ? 0 : COMPARE_METRICS.filter(metric => verdictOf(metric, m[metric.key], data[metric.key]) === 'ahead').length;
-        const losses = isMine ? 0 : COMPARE_METRICS.filter(metric => verdictOf(metric, m[metric.key], data[metric.key]) === 'behind').length;
-        const tone = isMine ? 'mine' : (wins > losses ? 'ahead' : (losses > wins ? 'behind' : 'even'));
-        const badge = isMine
-            ? '<span class="badge bg-primary">우리 매장</span>'
-            : (tone === 'ahead' ? '<span class="badge bg-success">우세</span>'
-                : (tone === 'behind' ? '<span class="badge bg-danger">열세</span>' : '<span class="badge bg-secondary">대등</span>'));
-        return `<div class="cmp-card cmp-card-${tone}">
-            <div class="cmp-card-head">
-                <span class="cmp-card-name">${escapeHtml(name)}<small>${escapeHtml(sub)}</small></span>${badge}
-            </div>
-            <div class="cmp-card-body">${items}</div>
-        </div>`;
-    };
-    const mobileCards = mobileCard(`우리 매장 (${m.name})`, '우리 매장', m, true)
-        + comps.map(c => mobileCard(`경쟁업체 (${c.name})`, '경쟁업체', c, false)).join('');
-
-    // 종합 분석 — "경쟁업체 2곳 중 블로그 리뷰는 1위" 처럼 순위로 표현
-    const parts = COMPARE_METRICS
-        .filter(metric => standings[metric.key])
-        .map(metric => `${metric.label}는 ${standings[metric.key].place}위`);
-    const summaryText = parts.length
-        ? `경쟁업체 ${comps.length}곳 중 ${parts.join(', ')}입니다.`
-        : '비교할 수 있는 자료가 아직 부족해요.';
-    const firstCount = COMPARE_METRICS.filter(metric => standings[metric.key] && standings[metric.key].place === 1).length;
-    const summaryClass = firstCount >= 2 ? 'success' : (firstCount === 0 ? 'danger' : 'primary');
-
-    const pendingNote = pending.length
-        ? `<div class="text-muted mt-2" style="font-size:.78rem"><i class="fas fa-circle-info me-1"></i>
-             ${pending.map(c => escapeHtml(c.name)).join(', ')} 는 아직 자료가 없어요. 위 <strong>광고 분석하기</strong>를 눌러주세요.</div>`
-        : '';
-
-    box.innerHTML = `<div class="card border-0 shadow-sm">
-        <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center flex-wrap gap-2">
-            <h6 class="mb-0 fw-bold"><i class="fas fa-scale-balanced text-primary me-2"></i>경쟁업체와 비교
-                <span class="badge bg-secondary ms-1">${comps.length}곳</span></h6>
-            <small class="text-muted"><span class="badge bg-success bg-opacity-25 text-success">초록</span> 우리가 앞섬 ·
-                <span class="badge bg-danger bg-opacity-25 text-danger">빨강</span> 우리가 뒤짐</small>
-        </div>
-        <div class="card-body pt-2">
-            <div class="alert alert-${summaryClass} bg-${summaryClass} bg-opacity-10 border-0 py-2 px-3 mb-3">
-                <i class="fas fa-lightbulb text-warning me-2"></i><span class="fw-bold small">${escapeHtml(summaryText)}</span>
-            </div>
-            ${rankRefreshGuide()}
-            <div class="table-responsive cmp-desktop">
-                <table class="table table-bordered align-middle mb-0 text-nowrap cmp-table">
-                    <thead>${head}</thead>
-                    <tbody>${rows}</tbody>
-                </table>
-            </div>
-            <div class="cmp-mobile">${mobileCards}</div>
-            ${pendingNote}
-        </div>
+function renderAnalysisEmptyState() {
+    const kpiBox = document.getElementById('analysisKpiCards');
+    if (kpiBox) kpiBox.innerHTML = `<div class="analysis-empty-card">
+        <i class="fas fa-store fa-2x text-muted opacity-50"></i>
+        <strong>아직 등록된 매장이 없어요</strong>
+        <small class="text-muted">광고 분석설정에서 우리 매장 플레이스를 먼저 등록해 주세요.</small>
+        <button class="btn btn-sm btn-primary mt-1" onclick="toggleManagePanel()"><i class="fas fa-gear me-1"></i>광고 분석설정 열기</button>
     </div>`;
+    const breakdownList = document.getElementById('analysisBreakdownList');
+    if (breakdownList) breakdownList.innerHTML = '<p class="text-muted small mb-0">표시할 대상이 없어요.</p>';
+    destroyAnalysisBreakdownChart();
+    const drillCard = document.getElementById('analysisDrilldownCard');
+    if (drillCard) drillCard.style.display = 'none';
+    const insightList = document.getElementById('analysisInsightList');
+    if (insightList) insightList.innerHTML = '<li class="text-muted small">데이터가 쌓이면 인사이트를 보여드려요.</li>';
+}
+
+// ── 1) 개요 — KPI 요약 카드 4개 (실데이터 기준, 값이 없으면 '-') ──
+function renderAnalysisKpiCards(period) {
+    const box = document.getElementById('analysisKpiCards');
+    if (!box || !analysisHistoryData) return;
+    const series = analysisHistoryData.series || [];
+    const mine = series.find(s => s.kind === 'my');
+
+    const rankLatest = mine ? seriesLatestValue(mine.rank) : null;
+    const rankChange = mine ? seriesPeriodChange(mine.rank, 'rank') : null;
+    const blogLatest = mine ? seriesLatestValue(mine.blog) : null;
+    const blogChange = mine ? seriesPeriodChange(mine.blog, 'blog') : null;
+    const visitorLatest = mine ? seriesLatestValue(mine.visitor) : null;
+    const visitorChange = mine ? seriesPeriodChange(mine.visitor, 'visitor') : null;
+
+    const activeStatuses = ['requested', 'reviewing', 'running'];
+    const activeOrders = analysisOrdersData.filter(o => activeStatuses.includes(o.status));
+    const runningOrders = analysisOrdersData.filter(o => o.status === 'running');
+
+    const changeLine = (change, unit) => {
+        if (change === null || change === undefined) return `<em>${period.label} 비교 자료 없음</em>`;
+        const tone = change > 0 ? 'text-success' : (change < 0 ? 'text-danger' : 'text-muted');
+        const verb = change > 0 ? '개선' : (change < 0 ? '하락' : '변동 없음');
+        const amount = change === 0 ? '' : `${Math.abs(change).toLocaleString('ko-KR')}${unit} `;
+        return `<em class="${tone}">${changeArrow(change)} ${period.label} 대비 ${amount}${verb}</em>`;
+    };
+
+    const cards = [
+        {
+            icon: 'fa-trophy', color: '#3b82f6', label: '플레이스 순위',
+            value: rankLatest ? formatRank(rankLatest.value) : '-',
+            sub: changeLine(rankChange, '단계'),
+        },
+        {
+            icon: 'fa-blog', color: '#10b981', label: '블로그 리뷰',
+            value: blogLatest ? blogLatest.value.toLocaleString('ko-KR') + '개' : '-',
+            sub: changeLine(blogChange, '개'),
+        },
+        {
+            icon: 'fa-users', color: '#8b5cf6', label: '방문자 리뷰',
+            value: visitorLatest ? visitorLatest.value.toLocaleString('ko-KR') + '개' : '-',
+            sub: changeLine(visitorChange, '개'),
+        },
+        {
+            icon: 'fa-bullhorn', color: '#f59e0b', label: '진행중 광고',
+            value: activeOrders.length ? activeOrders.length.toLocaleString('ko-KR') + '건' : '0건',
+            sub: `<em>${activeOrders.length ? `집행중 ${runningOrders.length}건 포함` : '진행중인 주문이 없어요'}</em>`,
+        },
+    ];
+
+    box.innerHTML = cards.map(cardInfo => `<div class="crm-overview-card analysis-kpi-card">
+        <span class="crm-overview-icon" style="background:${cardInfo.color}1a;color:${cardInfo.color}"><i class="fas ${cardInfo.icon}"></i></span>
+        <span><small>${cardInfo.label}</small><strong>${cardInfo.value}</strong>${cardInfo.sub}</span>
+    </div>`).join('');
+}
+
+// ── 2) 매체(대상)별 성과 드릴다운 — 막대 차트 + 클릭 가능한 목록 ──
+let analysisBreakdownChartInstance = null;
+function destroyAnalysisBreakdownChart() {
+    if (analysisBreakdownChartInstance) {
+        try { analysisBreakdownChartInstance.destroy(); } catch (e) {}
+        analysisBreakdownChartInstance = null;
+    }
+}
+
+function renderAnalysisBreakdown() {
+    const listBox = document.getElementById('analysisBreakdownList');
+    if (!listBox || !analysisHistoryData) return;
+    const metric = analysisBreakdownMetric;
+    const series = analysisHistoryData.series || [];
+
+    document.querySelectorAll('#analysisMetricGroup button[data-metric]').forEach(b => {
+        const active = b.dataset.metric === metric;
+        b.classList.toggle('btn-primary', active);
+        b.classList.toggle('btn-outline-primary', !active);
+    });
+
+    const items = series.map(s => {
+        const latest = seriesLatestValue(s[metric] || []);
+        return { ...s, value: latest ? latest.value : null };
+    });
+    // 순위는 오름차순(낮을수록 좋음), 리뷰 수는 내림차순(많을수록 좋음)으로 정렬
+    const sorted = [...items].sort((a, b) => {
+        if (a.value === null && b.value === null) return 0;
+        if (a.value === null) return 1;
+        if (b.value === null) return -1;
+        return metric === 'rank' ? a.value - b.value : b.value - a.value;
+    });
+
+    const basisOf = item => item.value === null ? null : (metric === 'rank' ? Math.max(0, RANK_OUT_OF_RANGE - item.value) : item.value);
+    const maxBasis = Math.max(1, ...sorted.map(basisOf).filter(v => v !== null));
+
+    listBox.innerHTML = sorted.map(item => {
+        const isMine = item.kind === 'my';
+        const basis = basisOf(item);
+        const pct = basis === null ? 0 : Math.max(4, Math.round(basis / maxBasis * 100));
+        const valueText = item.value === null ? '-' : (metric === 'rank' ? formatRank(item.value) : item.value.toLocaleString('ko-KR') + '개');
+        const active = item.place_url === analysisSelectedTarget ? ' is-active' : '';
+        return `<button type="button" class="analysis-breakdown-row${isMine ? ' is-mine' : ''}${active}" data-target="${escapeHtml(item.place_url)}">
+            <span class="analysis-breakdown-name"><i class="fas ${isMine ? 'fa-store' : 'fa-store-alt'}"></i>${escapeHtml(item.label)}</span>
+            <span class="analysis-breakdown-bar-track"><span class="analysis-breakdown-bar-fill${isMine ? ' is-mine' : ''}" style="width:${pct}%"></span></span>
+            <span class="analysis-breakdown-value">${valueText}</span>
+        </button>`;
+    }).join('');
+
+    renderAnalysisBreakdownChart(sorted, metric);
+}
+
+function renderAnalysisBreakdownChart(items, metric) {
+    const canvas = document.getElementById('analysisBreakdownChart');
+    if (!canvas || typeof Chart === 'undefined') return;
+    destroyAnalysisBreakdownChart();
+
+    const labels = items.map(i => i.label);
+    const values = items.map(i => i.value);
+    const colors = items.map(i => i.kind === 'my' ? '#2563eb' : '#f59e0b');
+    const yScale = metric === 'rank'
+        ? { reverse: true, ticks: { precision: 0, font: { size: 9 }, callback: v => v >= RANK_OUT_OF_RANGE ? '200+' : v + '위' } }
+        : { beginAtZero: true, ticks: { precision: 0, font: { size: 9 } } };
+
+    analysisBreakdownChartInstance = new Chart(canvas, {
+        type: 'bar',
+        data: { labels, datasets: [{ data: values, backgroundColor: colors, borderRadius: 6, maxBarThickness: 46 }] },
+        options: {
+            responsive: true, maintainAspectRatio: false, animation: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: { callbacks: { label: ctx => {
+                    const item = items[ctx.dataIndex];
+                    const v = item.value === null ? '데이터 없음' : (metric === 'rank' ? formatRank(item.value) : item.value.toLocaleString('ko-KR') + '개');
+                    return `${item.label}: ${v}`;
+                } } },
+            },
+            scales: { x: { ticks: { font: { size: 9 } } }, y: yScale },
+            onClick: (evt, elements) => {
+                if (!elements.length) return;
+                const item = items[elements[0].index];
+                if (item) selectAnalysisTarget(item.place_url);
+            },
+        },
+    });
+}
+
+function selectAnalysisTarget(placeUrl) {
+    if (!placeUrl) return;
+    analysisSelectedTarget = placeUrl;
+    document.querySelectorAll('.analysis-breakdown-row').forEach(row => {
+        row.classList.toggle('is-active', row.dataset.target === placeUrl);
+    });
+    renderAnalysisDrilldown();
+    // 드릴다운 카드가 보이도록 살짝 스크롤한다 (모바일에서 특히 유용).
+    document.getElementById('analysisDrilldownCard')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// ── 3) 전환/추이 분석 — 선택된 대상의 상세 추이(차트+표) ──
+let analysisDrilldownChart = null;
+
+function renderAnalysisDrilldown() {
+    const card = document.getElementById('analysisDrilldownCard');
+    const titleEl = document.getElementById('analysisDrilldownTitle');
+    const badgeEl = document.getElementById('analysisDrilldownBadge');
+    const summaryEl = document.getElementById('analysisDrilldownSummary');
+    const historyEl = document.getElementById('analysisDrilldownHistory');
+    if (!card || !analysisHistoryData) return;
+
+    const series = analysisHistoryData.series || [];
+    const target = series.find(s => s.place_url === analysisSelectedTarget) || series[0];
+    if (!target) { card.style.display = 'none'; return; }
+    card.style.display = '';
+
+    const period = currentAnalysisPeriod();
+    if (titleEl) titleEl.innerHTML = `<i class="fas ${target.kind === 'my' ? 'fa-store' : 'fa-store-alt'} me-1"></i>${escapeHtml(target.label)} 추이`;
+    if (badgeEl) badgeEl.textContent = period.label;
+
+    renderAnalysisDrilldownChart(target);
+    if (summaryEl) summaryEl.innerHTML = renderAnalysisTargetSummary(target, period);
+    if (historyEl) historyEl.innerHTML = renderAnalysisTargetHistoryTable(target);
+}
+
+function renderAnalysisDrilldownChart(target) {
+    const canvas = document.getElementById('analysisDrilldownChartCanvas');
+    if (!canvas || typeof Chart === 'undefined' || !analysisHistoryData) return;
+    if (analysisDrilldownChart) { try { analysisDrilldownChart.destroy(); } catch (e) {} }
+
+    const labels = (analysisHistoryData.dates || []).map(d => d.slice(5));
+    const datasets = [
+        { label: '블로그 리뷰', data: target.blog, borderColor: '#10b981', backgroundColor: '#10b98118', yAxisID: 'yReview', tension: .3, spanGaps: true, pointRadius: 3, pointHoverRadius: 6 },
+        { label: '방문자 리뷰', data: target.visitor, borderColor: '#8b5cf6', backgroundColor: '#8b5cf618', yAxisID: 'yReview', tension: .3, spanGaps: true, pointRadius: 3, pointHoverRadius: 6 },
+        { label: '플레이스 순위', data: target.rank, borderColor: '#3b82f6', backgroundColor: '#3b82f618', yAxisID: 'yRank', borderDash: [5, 4], tension: .3, spanGaps: true, pointRadius: 3, pointHoverRadius: 6 },
+    ];
+
+    analysisDrilldownChart = new Chart(canvas, {
+        type: 'line',
+        data: { labels, datasets },
+        options: {
+            responsive: true, maintainAspectRatio: false, animation: false,
+            plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } },
+            scales: {
+                x: { ticks: { font: { size: 9 }, maxTicksLimit: 8 } },
+                yReview: { position: 'left', beginAtZero: true, ticks: { font: { size: 9 } } },
+                yRank: { position: 'right', reverse: true, grid: { drawOnChartArea: false }, ticks: { font: { size: 9 }, precision: 0, callback: v => v >= RANK_OUT_OF_RANGE ? '200+' : v + '위' } },
+            },
+        },
+    });
+}
+
+function renderAnalysisTargetSummary(target, period) {
+    const row = (label, latest, change, isRank) => {
+        const valueText = latest ? (isRank ? formatRank(latest.value) : latest.value.toLocaleString('ko-KR') + '개') : '-';
+        const tone = change > 0 ? 'is-up' : (change < 0 ? 'is-down' : 'is-neutral');
+        const chgText = (change === null || change === undefined)
+            ? `${period.label} 비교 자료 없음`
+            : `${period.label} 대비 ${changeArrow(change)} ${Math.abs(change).toLocaleString('ko-KR')}${isRank ? '단계' : '개'}`;
+        return `<div class="stat-mini-card"><div class="label">${label}</div><div class="value">${valueText}</div><div class="trend-change ${tone}" style="margin-top:4px">${chgText}</div></div>`;
+    };
+    return `<div class="stat-mini-cards">
+        ${row('플레이스 순위', seriesLatestValue(target.rank), seriesPeriodChange(target.rank, 'rank'), true)}
+        ${row('블로그 리뷰', seriesLatestValue(target.blog), seriesPeriodChange(target.blog, 'blog'), false)}
+        ${row('방문자 리뷰', seriesLatestValue(target.visitor), seriesPeriodChange(target.visitor, 'visitor'), false)}
+    </div>`;
+}
+
+function renderAnalysisTargetHistoryTable(target) {
+    const dates = analysisHistoryData.dates || [];
+    if (!dates.length) return '<p class="text-muted small mt-2 mb-0">표시할 날짜별 기록이 없어요.</p>';
+    const valueText = (v, isRank) => {
+        if (v === null || v === undefined) return '-';
+        return isRank ? formatRank(v) : Number(v).toLocaleString('ko-KR') + '개';
+    };
+    const rows = dates.map((date, i) => `<tr>
+            <th scope="row">${escapeHtml(date)}</th>
+            <td>${valueText(target.blog[i], false)}</td>
+            <td>${valueText(target.visitor[i], false)}</td>
+            <td>${valueText(target.rank[i], true)}</td>
+        </tr>`).reverse().join('');
+    return `<div class="trend-history">
+        <div class="trend-history-head"><strong><i class="fas fa-table-list me-1"></i>날짜별 기록</strong><span>최신 일자 우선</span></div>
+        <div class="table-responsive"><table class="table table-sm align-middle mb-0 mobile-keep-table trend-history-table">
+            <thead><tr><th scope="col">날짜</th><th scope="col">블로그리뷰</th><th scope="col">방문자리뷰</th><th scope="col">순위</th></tr></thead>
+            <tbody>${rows}</tbody>
+        </table></div>
+    </div>`;
+}
+
+// ── 4) 인사이트 패널 — 프론트에서 로드된 데이터로 계산하는 데이터 기반 문장 ──
+function renderAnalysisInsights(period) {
+    const listEl = document.getElementById('analysisInsightList');
+    if (!listEl || !analysisHistoryData) return;
+    const series = analysisHistoryData.series || [];
+    const mine = series.find(s => s.kind === 'my');
+    const competitors = series.filter(s => s.kind !== 'my');
+    const insights = [];
+    const nameOf = s => `${escapeHtml(s.label)}${s.kind === 'my' ? ' (우리 매장)' : ' (경쟁업체)'}`;
+
+    // 순위가 가장 많이 오른 대상
+    const rankMovers = series
+        .map(s => ({ s, change: seriesPeriodChange(s.rank, 'rank') }))
+        .filter(x => x.change !== null && x.change !== undefined);
+    if (rankMovers.length) {
+        const best = rankMovers.reduce((a, b) => (b.change > a.change ? b : a));
+        if (best.change > 0) {
+            insights.push({ icon: 'fa-trophy', color: '#10b981',
+                text: `${nameOf(best.s)}의 순위가 ${period.label} 동안 <strong>${best.change}단계</strong> 올라 가장 많이 상승했어요.` });
+        } else {
+            insights.push({ icon: 'fa-circle-info', color: '#6b7280',
+                text: `${period.label} 동안 순위가 오른 대상이 없어요. 방문 유도와 리뷰 확보가 필요해요.` });
+        }
+    }
+
+    // 리뷰 증가율이 낮아 개선이 필요한 대상
+    const growthList = series.map(s => {
+        const blogStart = seriesEarliestValue(s.blog), blogEnd = seriesLatestValue(s.blog);
+        const visitStart = seriesEarliestValue(s.visitor), visitEnd = seriesLatestValue(s.visitor);
+        if (!blogStart && !visitStart) return null;
+        const startTotal = (blogStart ? blogStart.value : 0) + (visitStart ? visitStart.value : 0);
+        const endTotal = (blogEnd ? blogEnd.value : 0) + (visitEnd ? visitEnd.value : 0);
+        const rate = startTotal > 0 ? ((endTotal - startTotal) / startTotal * 100) : (endTotal > 0 ? 100 : 0);
+        return { s, rate };
+    }).filter(Boolean);
+    if (growthList.length) {
+        const worst = growthList.reduce((a, b) => (b.rate < a.rate ? b : a));
+        if (worst.rate <= 5) {
+            insights.push({ icon: 'fa-triangle-exclamation', color: '#ef4444',
+                text: `${nameOf(worst.s)}은(는) ${period.label} 리뷰 증가율이 <strong>${worst.rate.toFixed(1)}%</strong>로 낮아요. 리뷰 확보 이벤트가 필요해요.` });
+        } else {
+            const best2 = growthList.reduce((a, b) => (b.rate > a.rate ? b : a));
+            insights.push({ icon: 'fa-arrow-trend-up', color: '#10b981',
+                text: `${nameOf(best2.s)}의 리뷰가 ${period.label} 동안 <strong>${best2.rate.toFixed(1)}%</strong> 늘어 가장 활발해요.` });
+        }
+    }
+
+    // 우리 매장 vs 경쟁업체 비교 요약 (1위 / 꼴찌 항목만 짚어준다)
+    if (mine && competitors.length) {
+        COMPARE_METRICS.forEach(metric => {
+            const mineVal = seriesLatestValue(mine[metric.key]);
+            const compVals = competitors.map(c => seriesLatestValue(c[metric.key])).filter(Boolean).map(v => v.value);
+            if (!mineVal || !compVals.length) return;
+            const standing = standingAmong(metric.key, mineVal.value, compVals, metric.higherIsBetter);
+            if (!standing) return;
+            if (standing.place === 1) {
+                insights.push({ icon: metric.icon, color: '#2563eb',
+                    text: `${metric.label}는 경쟁업체 ${competitors.length}곳 중 <strong>우리 매장이 1위</strong>예요.` });
+            } else if (standing.place === standing.total && standing.total > 1) {
+                insights.push({ icon: metric.icon, color: '#f59e0b',
+                    text: `${metric.label}는 경쟁업체 ${competitors.length}곳 중 우리 매장이 <strong>꼴찌(${standing.place}/${standing.total})</strong>예요. 보완이 필요해요.` });
+            }
+        });
+    } else if (mine && !competitors.length) {
+        insights.push({ icon: 'fa-users', color: '#6b7280', text: '경쟁업체를 등록하면 비교 인사이트를 더 많이 볼 수 있어요.' });
+    }
+
+    if (!insights.length) {
+        insights.push({ icon: 'fa-circle-info', color: '#6b7280', text: '아직 비교할 만한 데이터가 부족해요. 데이터가 쌓이면 인사이트를 보여드려요.' });
+    }
+
+    listEl.innerHTML = insights.map(i => `<li class="analysis-insight-item"><i class="fas ${i.icon}" style="color:${i.color}"></i><span>${i.text}</span></li>`).join('');
 }
 
 // ─── 네이버 플레이스 자동 수집 ───────────────────────────────
-
-let analysisTrendCharts = {};   // metric -> Chart 인스턴스 (지연 생성)
-let analysisTrendData = null;   // { labels, series }
-
-const TREND_CANVAS_ID = { blog: 'trendBlog', visitor: 'trendVisitor', rank: 'trendRank' };
-const TREND_PALETTE = ['#6366f1', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#06b6d4', '#ec4899'];
-
-function destroyAnalysisTrendCharts() {
-    // 인스턴스를 명시적으로 정리해 캔버스/이벤트 핸들러 누수를 막는다.
-    Object.values(analysisTrendCharts).forEach(ch => { try { ch.destroy(); } catch (e) {} });
-    analysisTrendCharts = {};
-}
-
-// 보이는 탭의 차트만 그린다. 이미 만들어져 있으면 재사용한다.
-function renderTrendChart(metric) {
-    if (!analysisTrendData || analysisTrendCharts[metric]) return;
-    const canvas = document.getElementById(TREND_CANVAS_ID[metric]);
-    if (!canvas || typeof Chart === 'undefined') return;
-
-    const { labels, series } = analysisTrendData;
-    const COMP_COLORS = ['#ef4444', '#f59e0b', '#10b981', '#8b5cf6', '#f97316'];
-    const datasets = series.map((s, i) => {
-        const isMine = s.kind === 'my';
-        const compIdx = series.filter((x, j) => x.kind !== 'my' && j < i).length;
-        const compColor = COMP_COLORS[compIdx % COMP_COLORS.length];
-        return {
-            label: `${isMine ? '우리 매장' : '경쟁업체'} (${s.label})`,
-            data: s[metric],
-            borderColor: isMine ? '#2563eb' : compColor,
-            backgroundColor: isMine ? 'rgba(37,99,235,.1)' : compColor + '18',
-            borderWidth: isMine ? 4 : 2,
-            borderDash: isMine ? [] : [5, 4],
-            tension: .3,
-            spanGaps: true,
-            pointRadius: isMine ? 6 : 3,
-            pointHoverRadius: isMine ? 10 : 6,
-            pointBackgroundColor: isMine ? '#2563eb' : compColor,
-            pointBorderColor: '#fff',
-            pointBorderWidth: isMine ? 2 : 1.5,
-        };
-    });
-    // 애니메이션을 끄면 렌더 직후 1초간 이어지던 캔버스 재도색이 사라진다.
-    const options = {
-        responsive: true,
-        maintainAspectRatio: false,
-        animation: false,
-        animations: { colors: false, x: false, y: false },
-        transitions: { active: { animation: { duration: 0 } }, resize: { animation: { duration: 0 } } },
-        hover: { animationDuration: 0 },
-        plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } },
-        scales: { x: { ticks: { font: { size: 9 }, maxTicksLimit: 8 } }, y: { ticks: { font: { size: 9 } } } },
-    };
-    if (metric === 'rank') {
-        options.scales = {
-            ...options.scales,
-            y: {
-                ...options.scales.y, reverse: true,
-                ticks: { ...options.scales.y.ticks, precision: 0, callback: v => v >= RANK_OUT_OF_RANGE ? '200+' : v + '위' },
-            },
-        };
-    }
-    analysisTrendCharts[metric] = new Chart(canvas, { type: 'line', data: { labels, datasets }, options });
-}
-
-function renderTrendSummary(metric) {
-    if (!analysisTrendData) return '';
-    const { series = [] } = analysisTrendData;
-    const myData = series.find(s => s.kind === 'my');
-    if (!myData) return '';
-    const values = (myData[metric] || []).filter(v => v !== null && v !== undefined);
-    if (!values.length) return '';
-    const isRank = metric === 'rank';
-    const best = isRank ? Math.min(...values) : Math.max(...values);
-    const avg = Math.round(values.reduce((a, b) => a + b, 0) / values.length);
-    const last = values[values.length - 1];
-    const prev = values.length > 1 ? values[values.length - 2] : null;
-    const rawChange = prev !== null ? (isRank ? prev - last : last - prev) : null;
-    const arrow = rawChange === null ? '─' : (rawChange > 0 ? '<span class="text-success">▲</span>' : (rawChange < 0 ? '<span class="text-danger">▼</span>' : '─'));
-    const absChange = rawChange !== null && rawChange !== 0 ? ` ${Math.abs(rawChange).toLocaleString('ko-KR')}` : '';
-    const fmt = v => isRank ? v + '위' : v.toLocaleString('ko-KR') + '개';
-    if (!isRank) {
-        const first = values[0];
-        const periodChange = last - first;
-        const periodText = periodChange === 0
-            ? '변화 없음'
-            : `${periodChange > 0 ? '+' : '-'}${Math.abs(periodChange).toLocaleString('ko-KR')}개`;
-        return `<div class="stat-mini-cards">
-            <div class="stat-mini-card"><div class="label">기간 시작</div><div class="value">${fmt(first)}</div></div>
-            <div class="stat-mini-card"><div class="label">현재 리뷰</div><div class="value">${fmt(last)}</div></div>
-            <div class="stat-mini-card"><div class="label">기간 동안</div><div class="value ${periodChange > 0 ? 'text-success' : (periodChange < 0 ? 'text-danger' : '')}">${periodText}</div></div>
-        </div>`;
-    }
-    return `<div class="stat-mini-cards">
-        <div class="stat-mini-card">
-            <div class="label">기간 최고</div>
-            <div class="value">${fmt(best)}</div>
-        </div>
-        <div class="stat-mini-card">
-            <div class="label">기간 평균</div>
-            <div class="value">${fmt(avg)}</div>
-        </div>
-        <div class="stat-mini-card">
-            <div class="label">현재 순위</div>
-            <div class="value">${fmt(last)} ${arrow}${absChange}</div>
-        </div>
-    </div>`;
-}
-
-function renderTrendHistoryTable(metric) {
-    if (!analysisTrendData) return '';
-    const { dates = [], series = [] } = analysisTrendData;
-    const visibleSeries = series.filter(s => (s[metric] || []).some(value => value !== null && value !== undefined));
-    if (!dates.length || !visibleSeries.length) return '<p class="text-muted small mt-2 mb-0">표시할 날짜별 기록이 없어요.</p>';
-
-    const metricLabel = { rank: '순위', blog: '블로그 리뷰', visitor: '방문자 리뷰' }[metric];
-    const valueText = value => {
-        if (value === null || value === undefined) return '-';
-        return metric === 'rank' ? formatRank(value) : Number(value).toLocaleString('ko-KR') + '개';
-    };
-    const changeText = (values, index) => {
-        const current = values[index];
-        const previous = index > 0 ? values[index - 1] : null;
-        if (current === null || current === undefined || previous === null || previous === undefined) {
-            return '<span class="trend-change is-neutral">변화 -</span>';
-        }
-        const change = metric === 'rank' ? previous - current : current - previous;
-        if (change === 0) return '<span class="trend-change is-neutral">전날과 같음</span>';
-        const better = change > 0;
-        const amount = Math.abs(change).toLocaleString('ko-KR');
-        const wording = metric === 'rank'
-            ? `전날보다 ${amount}위 ${better ? '상승' : '하락'}`
-            : `전날보다 ${amount}개 ${better ? '증가' : '감소'}`;
-        return `<span class="trend-change ${better ? 'is-up' : 'is-down'}">${better ? '▲' : '▼'} ${wording}</span>`;
-    };
-    const header = visibleSeries.map(s => `<th scope="col">${s.kind === 'my' ? '우리 매장' : '경쟁업체'}<small>(${escapeHtml(s.label)})</small></th>`).join('');
-    const rows = dates.map((date, index) => {
-        const cells = visibleSeries.map(s => `<td><strong>${valueText((s[metric] || [])[index])}</strong>${changeText(s[metric] || [], index)}</td>`).join('');
-        return `<tr><th scope="row">${escapeHtml(date)}</th>${cells}</tr>`;
-    }).reverse().join('');
-    const mobileRows = dates.map((date, index) => {
-        const stores = visibleSeries.map(s => {
-            const value = (s[metric] || [])[index];
-            return `<div class="trend-day-store ${s.kind === 'my' ? 'is-mine' : ''}">
-                <div class="trend-day-store-head"><span>${s.kind === 'my' ? '우리 매장' : '경쟁업체'} (${escapeHtml(s.label)})</span><small>${s.kind === 'my' ? '우리 매장' : '경쟁 매장'}</small></div>
-                <strong>${valueText(value)}</strong>
-                ${changeText(s[metric] || [], index)}
-            </div>`;
-        }).join('');
-        return `<article class="trend-day-card"><time datetime="${escapeHtml(date)}">${escapeHtml(date)}</time><div class="trend-day-stores">${stores}</div></article>`;
-    }).reverse().join('');
-
-    return `<div class="trend-history">
-        <div class="trend-history-head">
-            <strong><i class="fas fa-table-list me-1"></i>${metricLabel} 일자별 변화</strong>
-            <span>전일 대비 변화량 · 최신 일자 우선</span>
-        </div>
-        <div class="table-responsive trend-history-desktop">
-            <table class="table table-sm align-middle mb-0 mobile-keep-table trend-history-table">
-                <thead><tr><th scope="col">날짜</th>${header}</tr></thead>
-                <tbody>${rows}</tbody>
-            </table>
-        </div>
-        <div class="trend-history-mobile">${mobileRows}</div>
-    </div>`;
-}
-
-// 리뷰 수 차트는 기본으로 펼쳐 두며, 필요할 때만 접을 수 있다.
-function toggleReviewTrend() {
-    const body = document.getElementById('reviewTrendBody');
-    const caret = document.getElementById('reviewTrendCaret');
-    const toggle = document.getElementById('reviewTrendToggle');
-    if (!body) return;
-    const opening = body.style.display === 'none';
-    body.style.display = opening ? '' : 'none';
-    if (caret) {
-        caret.classList.toggle('fa-chevron-right', !opening);
-        caret.classList.toggle('fa-chevron-down', opening);
-    }
-    if (toggle) {
-        toggle.innerHTML = `<i class="fas fa-chevron-${opening ? 'down' : 'right'} me-1" id="reviewTrendCaret"></i>`
-            + (opening ? '리뷰 수 변화 접기' : '리뷰 수 변화도 보기');
-    }
-    if (!opening) return;
-    // 펼쳐진 뒤에 그려야 캔버스 크기가 정확하다.
-    ['blog', 'visitor'].forEach(metric => {
-        renderTrendChart(metric);
-        const chart = analysisTrendCharts[metric];
-        if (chart) { try { chart.resize(); } catch (e) {} }
-    });
-}
 
 function renderCollectStatus(status) {
     const box = document.getElementById('collectStatus');
@@ -4620,11 +4714,7 @@ async function fetchAnalysisNow() {
         if (failed.length) msg += `\n실패 ${failed.length}건: ` + failed.map(f => `${f.label}(${f.error || '알 수 없음'})`).join(', ');
 
         // 갱신 사이사이에 한 프레임씩 양보해 화면이 멈춘 것처럼 보이지 않게 한다.
-        await loadAnalysisOverview();
-        await nextFrame();
-        await reloadAnalysis();
-        await nextFrame();
-        await loadAnalysisTrend();
+        await loadAnalysisData();
         await nextFrame();
         // 수집 완료 시각을 localStorage에 저장하고 collectStatus를 강제 갱신
         // (후속 API 호출이 구 데이터를 반환해 덮어쓰는 경우를 방지)
@@ -4654,86 +4744,6 @@ async function fetchAnalysisNow() {
         analysisFetchInFlight = false;
         btn.disabled = false;
         btn.innerHTML = original;
-    }
-}
-
-async function loadAnalysisTrend(days) {
-    const box = document.getElementById('analysisTrend');
-    if (!box) return;
-    const period = days || parseInt(document.getElementById('trendDays')?.value || '30', 10);
-    try {
-        const data = await apiGet(`/api/owner/ad/analysis/history?days=${period}`);
-        renderCollectStatus(data.collection_status);
-
-        const series = (data.series || []).filter(s => (s.blog || []).some(v => v !== null) || (s.rank || []).some(v => v !== null));
-        if (series.length === 0) {
-            box.innerHTML = `<div class="card border-0 shadow-sm"><div class="card-body text-center text-muted py-4">
-                <i class="fas fa-chart-line fa-2x mb-2 d-block opacity-50"></i>
-                <p class="mb-1">아직 보여드릴 변화가 없어요</p>
-                <small>위 <strong>광고 분석하기</strong> 버튼을 누르면 오늘 자료부터 쌓입니다</small>
-            </div></div>`;
-            destroyAnalysisTrendCharts();
-            analysisTrendData = null;
-            return;
-        }
-
-        const dates = data.dates || [];
-        const labels = dates.map(d => d.slice(5));
-        destroyAnalysisTrendCharts();
-        analysisTrendData = { labels, dates, series };
-        // 순위와 리뷰 추이를 3개 별도 카드로 나누어 보여준다.
-        box.innerHTML = `<div class="d-flex flex-column" style="gap:16px">
-            <div class="d-flex justify-content-end mb-1">
-                <div class="btn-group btn-group-sm">
-                    <button type="button" class="btn ${period === 7 ? 'btn-primary' : 'btn-outline-primary'}" onclick="loadAnalysisTrend(7)">최근 7일</button>
-                    <button type="button" class="btn ${period === 30 ? 'btn-primary' : 'btn-outline-primary'}" onclick="loadAnalysisTrend(30)">최근 30일</button>
-                </div>
-            </div>
-
-            <div class="card border-0 shadow-sm trend-metric-card trend-rank-card">
-                <div class="card-header">
-                    <h6 class="mb-0 fw-bold"><i class="fas fa-trophy me-2" style="color:#3b82f6"></i>플레이스 순위 변화</h6>
-                    <span class="badge trend-period-badge" style="background:#3b82f620;color:#3b82f6">${period}일간 · 위로 갈수록 높은 순위</span>
-                </div>
-                <div class="card-body pt-2">
-                    ${rankRefreshGuide()}
-                    <p class="trend-card-help"><i class="fas fa-circle-info"></i>순위 숫자가 작을수록 검색 결과에서 더 위에 노출됩니다.</p>
-                    <div class="trend-pane" data-metric="rank"><div style="height:240px"><canvas id="trendRank"></canvas></div></div>
-                    ${renderTrendSummary('rank')}
-                    ${renderTrendHistoryTable('rank')}
-                </div>
-            </div>
-
-            <div class="card border-0 shadow-sm trend-metric-card trend-blog-card">
-                <div class="card-header">
-                    <h6 class="mb-0 fw-bold"><i class="fas fa-blog me-2" style="color:#10b981"></i>블로그 리뷰 변화</h6>
-                    <span class="badge trend-period-badge" style="background:#10b98120;color:#10b981">${period}일간</span>
-                </div>
-                <div class="card-body pt-2">
-                    <p class="trend-card-help"><i class="fas fa-circle-info"></i>네이버 블로그에 등록된 우리 매장 리뷰 수의 변화를 보여줍니다.</p>
-                    <div class="trend-pane" data-metric="blog"><div style="height:200px"><canvas id="trendBlog"></canvas></div></div>
-                    ${renderTrendSummary('blog')}
-                    ${renderTrendHistoryTable('blog')}
-                </div>
-            </div>
-
-            <div class="card border-0 shadow-sm trend-metric-card trend-visitor-card">
-                <div class="card-header">
-                    <h6 class="mb-0 fw-bold"><i class="fas fa-users me-2" style="color:#8b5cf6"></i>방문자 리뷰 변화</h6>
-                    <span class="badge trend-period-badge" style="background:#8b5cf620;color:#8b5cf6">${period}일간</span>
-                </div>
-                <div class="card-body pt-2">
-                    <p class="trend-card-help"><i class="fas fa-circle-info"></i>매장을 실제 이용한 방문자가 남긴 리뷰 수의 변화를 보여줍니다.</p>
-                    <div class="trend-pane" data-metric="visitor"><div style="height:200px"><canvas id="trendVisitor"></canvas></div></div>
-                    ${renderTrendSummary('visitor')}
-                    ${renderTrendHistoryTable('visitor')}
-                </div>
-            </div>
-        </div>`;
-
-        ['rank', 'blog', 'visitor'].forEach(renderTrendChart);
-    } catch (e) {
-        box.innerHTML = `<div class="alert alert-warning py-2 mb-0 small"><i class="fas fa-exclamation-triangle me-1"></i>트렌드 로딩 실패: ${escapeHtml(e.message)}</div>`;
     }
 }
 
@@ -4797,33 +4807,6 @@ function toggleManagePanel() {
     loadManageLists();
 }
 
-function switchAnalysisTab(tabName, btnEl) {
-    document.querySelectorAll('.analysis-tab-btn').forEach(b => {
-        b.classList.remove('active');
-        b.setAttribute('aria-selected', 'false');
-    });
-    if (btnEl) {
-        btnEl.classList.add('active');
-        btnEl.setAttribute('aria-selected', 'true');
-    }
-    document.querySelectorAll('.analysis-tab-pane').forEach(p => { p.style.display = 'none'; });
-    const pane = document.getElementById('tab-' + tabName);
-    if (pane) pane.style.display = '';
-
-    // 숨겨진 상태에서 생성된 차트는 크기 0이므로 탭 진입 시 리사이즈
-    if (tabName === 'trend') {
-        requestAnimationFrame(() => {
-            ['rank', 'blog', 'visitor'].forEach(metric => {
-                if (!analysisTrendCharts[metric]) {
-                    renderTrendChart(metric);
-                } else {
-                    try { analysisTrendCharts[metric].resize(); } catch (e) {}
-                }
-            });
-        });
-    }
-}
-
 async function loadManageLists() {
     try {
         const data = await apiGet('/api/owner/ad/analysis?range=all');
@@ -4871,9 +4854,7 @@ async function collectNewPlaceName() {
 async function refreshAnalysisAfterTargetChange() {
     await Promise.all([
         loadManageLists(),
-        reloadAnalysis(),
-        loadAnalysisOverview(),
-        loadAnalysisTrend(),
+        loadAnalysisData(),
     ]);
 }
 
@@ -4938,7 +4919,7 @@ async function removePlaceProfile(id) {
     try {
         await api(`/api/owner/ad/place-profiles/${id}`, { method: 'DELETE' });
         loadManageLists();
-        reloadAnalysis();
+        loadAnalysisData();
     } catch (e) { alert('삭제 실패: ' + e.message); }
 }
 
@@ -4947,7 +4928,7 @@ async function removeCompetitor(id) {
     try {
         await api(`/api/owner/ad/competitors/${id}`, { method: 'DELETE' });
         loadManageLists();
-        reloadAnalysis();
+        loadAnalysisData();
     } catch (e) { alert('삭제 실패: ' + e.message); }
 }
 
@@ -4965,74 +4946,6 @@ function rankRefreshGuide(compact = false) {
         <i class="fas fa-clock"></i>
         <span><strong>순위는 매일 오후 2시에 자동으로 업데이트 됩니다.</strong><small><span class="rank-update-copy-desktop">업데이트 전에 실시간으로 바로 확인하려면 <b>광고분석하기</b> 버튼을 눌러 주세요.</span><span class="rank-update-copy-mobile">실시간 확인은 <b>광고분석하기</b> 버튼을 눌러 주세요.</span></small></span>
     </div>`;
-}
-
-// ── 4) 날짜별 기록과 마케팅 추천 — 모든 영역을 기본으로 펼쳐 둔다 ──
-// 이름은 기존 호출부(프로필/경쟁업체 추가·삭제 등)와의 호환을 위해 유지한다.
-async function reloadAnalysis() {
-    const box = document.getElementById('analysisDetail');
-    if (!box) return;
-    try {
-        const range = document.getElementById('analysisRange')?.value || 'all';
-        const detail = await apiGet(`/api/owner/ad/analysis?range=${range}`);
-        renderCollectStatus(detail.collection_status);
-
-        const buildRows = (items, typeLabel) => items.map(p => {
-            const name = p.actual_name || p.nickname || p.memo || p.place_url;
-            if (!p.data || p.data.length === 0) {
-                return `<div class="mb-3"><strong class="small">${typeLabel} (${escapeHtml(name)})</strong>
-                    <p class="text-muted small mb-0">기록이 없어요</p></div>`;
-            }
-            const rows = p.data.map(d => `<tr><td>${d.date}</td><td>${d.blog_review_count}</td><td>${d.visitor_review_count}</td><td>${formatRank(d.place_rank)}</td></tr>`).join('');
-            return `<div class="mb-3"><strong class="small">${typeLabel} (${escapeHtml(name)})</strong>
-                <div class="table-responsive"><table class="table table-sm table-hover mt-1 mb-0">
-                    <thead class="table-light"><tr><th>날짜</th><th>블로그리뷰</th><th>방문자리뷰</th><th>순위</th></tr></thead>
-                    <tbody>${rows}</tbody></table></div></div>`;
-        }).join('');
-
-        const myRows = detail.my_places.length ? buildRows(detail.my_places, '우리 매장') : '<p class="text-muted small mb-0">등록된 매장이 없어요</p>';
-        const compRows = detail.competitors.length ? buildRows(detail.competitors, '경쟁업체') : '<p class="text-muted small mb-0">등록된 경쟁업체가 없어요</p>';
-
-        box.innerHTML = `<div class="card border-0 shadow-sm">
-            <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center flex-wrap gap-2">
-                <h6 class="mb-0 fw-bold"><i class="fas fa-calendar-days text-primary me-2"></i>날짜별 상세 기록과 마케팅 추천</h6>
-                <div>
-                        <select class="form-select form-select-sm" style="width:120px" id="analysisRange" onchange="reloadAnalysis()">
-                            <option value="all" ${range === 'all' ? 'selected' : ''}>전체 기간</option>
-                            <option value="month" ${range === 'month' ? 'selected' : ''}>최근 1개월</option>
-                            <option value="week" ${range === 'week' ? 'selected' : ''}>최근 1주</option>
-                            <option value="day" ${range === 'day' ? 'selected' : ''}>어제부터</option>
-                        </select>
-                </div>
-            </div>
-            <div class="card-body pt-2" id="analysisDetailBody">
-                    ${rankRefreshGuide()}
-                    <div class="analysis-detail-grid">
-                        <section class="analysis-detail-section">
-                            <h6><i class="fas fa-store me-2"></i>우리 매장 일자별 기록</h6>
-                            <div id="detailTabMy" class="analysis-scroll">${myRows}</div>
-                        </section>
-                        <section class="analysis-detail-section competitor">
-                            <h6><i class="fas fa-users me-2"></i>경쟁업체 일자별 기록</h6>
-                            <div id="detailTabComp" class="analysis-scroll">${compRows}</div>
-                        </section>
-                    </div>
-                    <div class="border-top mt-3 pt-3">
-                        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
-                            <h6 class="mb-0 fw-bold"><i class="fas fa-wand-magic-sparkles me-2" style="color:#6366f1"></i>무엇을 하면 좋을까요?</h6>
-                            <button class="btn btn-sm btn-outline-primary" onclick="generateAIRecommendation()" id="aiRecommendBtn">
-                                <i class="fas fa-magic me-1"></i>추천 받기
-                            </button>
-                        </div>
-                        <div id="aiRecommendBody">
-                            <p class="text-muted small mb-0"><strong>추천 받기</strong>를 누르면 경쟁업체와의 차이를 계산해 먼저 할 일을 알려드려요.</p>
-                        </div>
-                    </div>
-            </div>
-        </div>`;
-    } catch (e) {
-        box.innerHTML = `<div class="alert alert-danger py-2 mb-0 small"><i class="fas fa-exclamation-circle me-2"></i>${escapeHtml(e.message)}</div>`;
-    }
 }
 
 // AI 마케팅 추천 생성

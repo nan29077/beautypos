@@ -1517,6 +1517,71 @@ body[data-page="owner-analysis"] #analysisCompare .fw-bold {
 .trend-change.is-down { color: #c14747; }
 .trend-change.is-neutral { color: #8a98a7; font-weight: 600; }
 
+/* ─── 광고 분석 리디자인: 개요 → 대상별 성과 → 추이 → 인사이트 ─────── */
+.analysis-period-bar { padding: 2px 0; }
+.analysis-period-label { color: #58748d; font-size: .78rem; font-weight: 700; }
+.analysis-custom-period { display: flex; align-items: center; gap: 6px; }
+.analysis-custom-period #analysisCustomDays { width: 76px; }
+
+/* KPI 카드 4개 — 기존 crm-overview-card 스타일을 재사용하되, 변화 문구는 줄바꿈을 허용한다 */
+#analysisKpiCards .crm-overview-card em {
+    display: block;
+    margin-top: 2px;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    font-style: normal;
+    font-size: .68rem;
+    line-height: 1.35;
+}
+.analysis-kpi-loading, .analysis-kpi-error, .analysis-empty-card {
+    grid-column: 1 / -1;
+}
+.analysis-empty-card {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+    padding: 30px 16px; text-align: center; border: 1px solid #e3e9f1; border-radius: 16px; background: #fff;
+}
+.analysis-empty-card strong { font-size: .95rem; color: #213750; }
+
+/* 대상별 성과 — 막대 차트 + 클릭 가능한 목록 */
+.analysis-breakdown-chart-wrap { position: relative; height: 200px; }
+.analysis-breakdown-list { display: flex; flex-direction: column; gap: 8px; }
+.analysis-breakdown-row {
+    display: flex; align-items: center; gap: 10px; width: 100%;
+    padding: 9px 11px; border: 1px solid #e6eef5; border-radius: 12px; background: #fff;
+    text-align: left; cursor: pointer; transition: border-color .15s, background .15s;
+}
+.analysis-breakdown-row:hover { border-color: #a9c7e1; background: #f7fbff; }
+.analysis-breakdown-row.is-active { border-color: #2563eb; background: #eff6ff; }
+.analysis-breakdown-row.is-mine .analysis-breakdown-name { color: #1d4ed8; }
+.analysis-breakdown-name {
+    flex: 0 0 auto; width: 34%; min-width: 0; display: flex; align-items: center; gap: 6px;
+    font-size: .8rem; font-weight: 700; color: #395a70; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.analysis-breakdown-bar-track {
+    flex: 1 1 auto; height: 10px; border-radius: 6px; background: #eef2f6; overflow: hidden;
+}
+.analysis-breakdown-bar-fill {
+    display: block; height: 100%; border-radius: 6px; background: #f59e0b;
+}
+.analysis-breakdown-bar-fill.is-mine { background: #2563eb; }
+.analysis-breakdown-value {
+    flex: 0 0 auto; min-width: 56px; text-align: right; font-size: .8rem; font-weight: 800; color: #213750;
+}
+
+/* 인사이트 패널 */
+.analysis-insight-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.analysis-insight-item {
+    display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px;
+    border: 1px solid #eef2f6; border-radius: 12px; background: #fbfcfe; font-size: .82rem; color: #354a5f; line-height: 1.5;
+}
+.analysis-insight-item > i { margin-top: 2px; flex: 0 0 auto; }
+
+@media (max-width: 767px) {
+    .analysis-breakdown-name { width: 40%; font-size: .76rem; }
+    .analysis-breakdown-value { min-width: 48px; font-size: .76rem; }
+}
+
 .analysis-detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .analysis-detail-section {
     min-width: 0;

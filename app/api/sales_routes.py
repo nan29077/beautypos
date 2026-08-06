@@ -83,6 +83,7 @@ def merchant_stats(
         Transaction.merchant_id == mid,
         Transaction.created_at >= start,
         Transaction.created_at <= end,
+        Transaction.status == TransactionStatus.APPROVED,
     ).all()
 
     gross = sum(float(t.amount) for t in txns)

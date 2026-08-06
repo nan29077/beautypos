@@ -10,7 +10,7 @@ from app.database import get_db
 from app.utils.kst import today_kst, kst_day_start_utc, now_kst
 from app.models.user import User, UserRole
 from app.models.staff import Staff
-from app.models.transaction import Transaction
+from app.models.transaction import Transaction, TransactionStatus
 from app.auth.dependencies import get_current_user, require_roles
 from app.services.settlement_service import (
     get_effective_fee_rates, get_sales_commission_rate, apply_vat, VAT_RATE,
@@ -125,6 +125,7 @@ def designer_settlement(
         Transaction.staff_id == staff.id,
         Transaction.created_at >= start,
         Transaction.created_at <= end,
+        Transaction.status == TransactionStatus.APPROVED,
     ).all()
 
     gross = sum(float(t.amount) for t in txns)

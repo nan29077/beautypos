@@ -113,6 +113,12 @@ def ingest_transaction(
     owner_user_id = merchant.owner_user_id
     log_note = None
 
+    # DB 는 naive UTC 로 저장한다 (app/utils/kst.py 규약). 단말기가 tz-aware 값을
+    # 보내면(예: KST +09:00) 그대로 저장하면 표시 시각이 어긋나므로 UTC 로 정규화한다.
+    approved_at_value = req.approved_at
+    if approved_at_value is not None and approved_at_value.tzinfo is not None:
+        approved_at_value = approved_at_value.astimezone(timezone.utc).replace(tzinfo=None)
+
     if req.staff_code:
         staff = db.query(Staff).filter(
             Staff.merchant_id == merchant.id,
@@ -136,7 +142,7 @@ def ingest_transaction(
         card_brand=req.card_brand,
         approval_code=req.approval_code,
         staff_code_input=req.staff_code,
-        approved_at=req.approved_at or datetime.now(timezone.utc).replace(tzinfo=None),
+        approved_at=approved_at_value or datetime.now(timezone.utc).replace(tzinfo=None),
         raw_payload_json=json.dumps(req.model_dump(), default=str),
     )
     db.add(txn)

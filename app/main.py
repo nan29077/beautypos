@@ -7,11 +7,11 @@ from fastapi import Depends, FastAPI, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
-from app.api.admin_routes import router as admin_router
+from app.api.admin import router as admin_router
 from app.api.auth_routes import router as auth_router
-from app.api.crm_routes import router as crm_router
+from app.api.crm import router as crm_router
 from app.api.designer_routes import router as designer_router
-from app.api.owner_routes import router as owner_router
+from app.api.owner import router as owner_router
 from app.api.sales_routes import router as sales_router
 from app.api.terminal_routes import router as terminal_router
 from app.auth.dependencies import get_current_user
