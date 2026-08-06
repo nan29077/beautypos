@@ -219,17 +219,20 @@ def sales_dashboard_stats(db: Session = Depends(get_db), user: User = Depends(re
     today_sales = db.query(func.coalesce(func.sum(Transaction.amount), 0)).filter(
         Transaction.merchant_id.in_(merchant_ids),
         Transaction.created_at >= today_start,
+        Transaction.status == TransactionStatus.APPROVED,
     ).scalar() if merchant_ids else 0
 
     month_sales = db.query(func.coalesce(func.sum(Transaction.amount), 0)).filter(
         Transaction.merchant_id.in_(merchant_ids),
         Transaction.created_at >= month_start,
+        Transaction.status == TransactionStatus.APPROVED,
     ).scalar() if merchant_ids else 0
 
     total_commission = 0
     for a in assigns:
         gross = db.query(func.coalesce(func.sum(Transaction.amount), 0)).filter(
             Transaction.merchant_id == a.merchant_id,
+            Transaction.status == TransactionStatus.APPROVED,
         ).scalar()
         # 커미션율은 배정값이 아니라 SalesCommissionPolicy(개인 오버라이드 → 전역)를
         # 반영한 유효율을 써야 정산 로직과 값이 일치한다.

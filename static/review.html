@@ -306,8 +306,8 @@
                 <div id="attachedReceipt" style="display:none;" class="d-flex align-items-center gap-2 bg-light rounded-3 p-2 mb-3">
                     <img id="receiptThumb" class="receipt-thumb" alt="영수증">
                     <div class="flex-grow-1">
-                        <div class="small fw-bold">영수증 첨부됨</div>
-                        <div class="small text-muted">이미지가 함께 제출됩니다</div>
+                        <div class="small fw-bold">영수증 확인됨</div>
+                        <div class="small text-muted">이미지 업로드는 준비 중입니다</div>
                     </div>
                     <i class="fas fa-check-circle text-success"></i>
                 </div>
@@ -549,9 +549,8 @@
 
             if (name) formData.append('customer_name', name);
             if (phone) formData.append('customer_phone', phone);
-            if (capturedDataUrl) {
-                formData.append('receipt_image_url', capturedDataUrl.substring(0, 500));
-            }
+            // 이미지 업로드는 준비 중입니다.
+            // (기존: data URL 을 500자로 잘라 전송 → 깨진 데이터가 저장되는 버그라 전송을 비활성화함)
             if (memo) formData.append('memo', memo);
 
             const res = await fetch(`/api/public/review/${reviewToken}/submit`, {
@@ -575,6 +574,10 @@
         document.getElementById('step3').style.display = 'none';
         document.getElementById('step4').style.display = '';
 
+        // XSS 방지: http/https 스킴만 허용 (javascript: 등 차단)
+        if (placeUrl && !/^https?:\/\//i.test(String(placeUrl).trim())) {
+            placeUrl = null;
+        }
         if (placeUrl) {
             document.getElementById('placeUrlSection').style.display = '';
             document.getElementById('placeUrlBtn').href = placeUrl;

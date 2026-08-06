@@ -79,19 +79,23 @@ def designer_dashboard_stats(
     today_sales = db.query(func.coalesce(func.sum(Transaction.amount), 0)).filter(
         Transaction.staff_id == staff.id,
         Transaction.created_at >= today_start,
+        Transaction.status == TransactionStatus.APPROVED,
     ).scalar()
 
     month_sales = db.query(func.coalesce(func.sum(Transaction.amount), 0)).filter(
         Transaction.staff_id == staff.id,
         Transaction.created_at >= month_start,
+        Transaction.status == TransactionStatus.APPROVED,
     ).scalar()
 
     total_count = db.query(func.count(Transaction.id)).filter(
         Transaction.staff_id == staff.id,
+        Transaction.status == TransactionStatus.APPROVED,
     ).scalar()
 
     total_sales = db.query(func.coalesce(func.sum(Transaction.amount), 0)).filter(
         Transaction.staff_id == staff.id,
+        Transaction.status == TransactionStatus.APPROVED,
     ).scalar()
 
     return {

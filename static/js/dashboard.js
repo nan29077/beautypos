@@ -139,6 +139,15 @@ function escapeHtml(value) {
         .replaceAll("'", '&#039;');
 }
 
+// URL 을 HTML 속성(src/href/onclick)에 안전하게 넣기 위한 헬퍼.
+// http/https/상대경로/data:image 스킴만 허용하고 (javascript: 등 차단),
+// 따옴표류 문자를 제거해 속성/인라인 JS 문자열 탈출을 막는다.
+function safeUrl(value) {
+    const url = String(value ?? '').trim().replace(/['"\\<>`]/g, '');
+    if (/^(https?:\/\/|\/(?!\/)|data:image\/)/i.test(url)) return escapeHtml(url);
+    return '';
+}
+
 function roleLabel(r) {
     return {admin:'최고관리자', sales:'영업관리자', owner:'사장님(원장님)', designer:'직원(디자이너)'}[r] || r;
 }
@@ -861,6 +870,8 @@ async function loadHomePage(c, t) {
         setTimeout(() => {
             const ctx = document.getElementById('adminWeeklyChart');
             if (ctx && typeof Chart !== 'undefined') {
+                const prev = Chart.getChart(ctx);
+                if (prev) prev.destroy();
                 new Chart(ctx, {
                     type: 'bar', data: { labels: weeklyLabels, datasets: [{ label:'매출(원)', data: weeklyValues, backgroundColor:'rgba(14,165,233,.4)', borderColor:'#0ea5e9', borderWidth:1, borderRadius:6 }] },
                     options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>formatMoney(c.raw)+'원'}}}, scales:{y:{beginAtZero:true,ticks:{callback:v=>v>=10000?(v/10000)+'만':v.toLocaleString()}},x:{grid:{display:false}}} }
@@ -876,6 +887,8 @@ async function loadHomePage(c, t) {
             setTimeout(() => {
                 const mCtx = document.getElementById('adminMonthlyTrend');
                 if (mCtx && typeof Chart !== 'undefined') {
+                    const prevM = Chart.getChart(mCtx);
+                    if (prevM) prevM.destroy();
                     new Chart(mCtx, {
                         type: 'line',
                         data: {
@@ -1206,6 +1219,10 @@ async function loadHomePage(c, t) {
         setTimeout(() => {
             const ctx = document.getElementById('ownerWeeklyChart');
             if (ctx) {
+                if (typeof Chart !== 'undefined') {
+                    const prev = Chart.getChart(ctx);
+                    if (prev) prev.destroy();
+                }
                 new Chart(ctx, {
                     type: 'bar',
                     data: {
@@ -2083,7 +2100,7 @@ async function loadAdminFeePolicies(c, t) {
     const overview = await apiGet('/api/admin/fee-policy-overview');
     const salesManagers = await apiGet('/api/admin/sales-managers');
 
-    const salesOpts = salesManagers.map(u => `<option value="${u.id}">${u.name} (${u.email})</option>`).join('');
+    const salesOpts = salesManagers.map(u => `<option value="${u.id}">${escapeHtml(u.name)} (${escapeHtml(u.email)})</option>`).join('');
 
     // 통계 요약
     const totalMerchants = overview.length;
@@ -2376,10 +2393,10 @@ async function loadAdminPayouts(c, t) {
         <div class="table-responsive"><table class="table table-hover table-sm" id="payoutTable">
             <thead><tr><th>ID</th><th>요청자</th><th>역할</th><th>금액</th><th>가용잔액</th><th>은행정보</th><th>메모</th><th>상태</th><th>요청일</th><th>액션</th></tr></thead>
             <tbody>${payouts.map(p => `<tr data-status="${p.status}">
-                <td>${p.id}</td><td class="fw-bold">${p.requester_name || '-'}</td><td><span class="badge bg-${p.role==='sales'?'info':p.role==='owner'?'primary':'secondary'}">${roleLabel(p.role)}</span></td>
+                <td>${p.id}</td><td class="fw-bold">${escapeHtml(p.requester_name) || '-'}</td><td><span class="badge bg-${p.role==='sales'?'info':p.role==='owner'?'primary':'secondary'}">${roleLabel(p.role)}</span></td>
                 <td class="fw-bold">${formatMoney(p.amount)}</td>
                 <td class="${(p.available_balance ?? 0) < p.amount ? 'text-danger fw-bold' : 'text-muted'}" style="font-size:.85rem">${formatMoney(p.available_balance ?? 0)}</td>
-                <td style="font-size:.82rem">${p.bank_info||'-'}</td><td style="font-size:.82rem">${p.memo||'-'}</td>
+                <td style="font-size:.82rem">${escapeHtml(p.bank_info)||'-'}</td><td style="font-size:.82rem">${escapeHtml(p.memo)||'-'}</td>
                 <td>${statusBadge(p.status)}</td><td>${formatDate(p.created_at)}</td>
                 <td>${p.status==='pending'?`<button class="btn btn-sm btn-success me-1" onclick="handlePayout(${p.id},'approve')"><i class="fas fa-check"></i></button><button class="btn btn-sm btn-danger" onclick="handlePayout(${p.id},'reject')"><i class="fas fa-times"></i></button>`:'-'}</td>
             </tr>`).join('')}</tbody>
@@ -2564,10 +2581,10 @@ async function loadAdminAdOrders(c, t) {
         <div class="table-responsive"><table class="table table-hover table-sm" id="adOrdersTable">
             <thead><tr><th>ID</th><th>가맹점</th><th>유형</th><th>상태</th><th>요청자</th><th>요청일</th><th>관리메모</th><th>상세/집행</th></tr></thead>
             <tbody>${orders.map(o => `<tr data-status="${o.status}">
-                <td>${o.id}</td><td>${o.merchant_name}</td>
+                <td>${o.id}</td><td>${escapeHtml(o.merchant_name)}</td>
                 <td>${adOrderTypeBadge(o.type)}</td>
-                <td>${statusBadge(o.status)}</td><td>${o.creator_name}</td><td>${formatDate(o.created_at)}</td>
-                <td style="font-size:.78rem;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${o.admin_memo || '-'}</td>
+                <td>${statusBadge(o.status)}</td><td>${escapeHtml(o.creator_name)}</td><td>${formatDate(o.created_at)}</td>
+                <td style="font-size:.78rem;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(o.admin_memo) || '-'}</td>
                 <td><div class="ad-order-actions">
                     <button class="btn btn-sm btn-outline-primary me-1" onclick="showAdOrderDetail(${o.id})" title="상세보기"><i class="fas fa-eye"></i></button>
                     <select class="form-select form-select-sm d-inline-block" style="width:110px" id="adStatus${o.id}">
@@ -2766,17 +2783,17 @@ async function showAdOrderDetail(orderId) {
             <div class="border rounded p-3 mb-3" style="background:#f8f9fa">
                 <h6 class="fw-bold mb-2"><i class="fas fa-pen-nib me-1 text-info"></i>블로그 광고 상세</h6>
                 <div class="row g-2">
-                    <div class="col-md-6"><label class="small text-muted">캠페인명</label><div class="fw-bold">${d.campaign_name || '-'}</div></div>
-                    <div class="col-md-6"><label class="small text-muted">주소</label><div>${d.address || '-'}</div></div>
-                    <div class="col-md-6"><label class="small text-muted">연락처</label><div>${d.contact || '-'}</div></div>
-                    <div class="col-md-6"><label class="small text-muted">링크</label><div style="font-size:.82rem">${(d.links && d.links.length) ? d.links.join(', ') : '-'}</div></div>
-                    <div class="col-md-6"><label class="small text-muted">주요 키워드</label><div>${(d.main_keywords && d.main_keywords.length) ? d.main_keywords.join(', ') : '-'}</div></div>
-                    <div class="col-md-6"><label class="small text-muted">해시태그</label><div>${(d.hashtags && d.hashtags.length) ? d.hashtags.join(', ') : '-'}</div></div>
+                    <div class="col-md-6"><label class="small text-muted">캠페인명</label><div class="fw-bold">${escapeHtml(d.campaign_name) || '-'}</div></div>
+                    <div class="col-md-6"><label class="small text-muted">주소</label><div>${escapeHtml(d.address) || '-'}</div></div>
+                    <div class="col-md-6"><label class="small text-muted">연락처</label><div>${escapeHtml(d.contact) || '-'}</div></div>
+                    <div class="col-md-6"><label class="small text-muted">링크</label><div style="font-size:.82rem">${(d.links && d.links.length) ? escapeHtml(d.links.join(', ')) : '-'}</div></div>
+                    <div class="col-md-6"><label class="small text-muted">주요 키워드</label><div>${(d.main_keywords && d.main_keywords.length) ? escapeHtml(d.main_keywords.join(', ')) : '-'}</div></div>
+                    <div class="col-md-6"><label class="small text-muted">해시태그</label><div>${(d.hashtags && d.hashtags.length) ? escapeHtml(d.hashtags.join(', ')) : '-'}</div></div>
                     <div class="col-md-4"><label class="small text-muted">주문 건수</label><div class="fw-bold">${Number(d.order_count || 1).toLocaleString()}건</div></div>
                     <div class="col-md-4"><label class="small text-muted">주문 단가</label><div>${Number(d.unit_price || 0).toLocaleString()}원</div></div>
                     <div class="col-md-4"><label class="small text-muted">예상 집행 예산</label><div class="fw-bold text-primary">${Number(d.est_total_cost || 0).toLocaleString()}원</div></div>
-                    <div class="col-12"><label class="small text-muted">설명</label><div style="font-size:.85rem;white-space:pre-line">${d.description || '-'}</div></div>
-                    ${d.images && d.images.length > 0 ? `<div class="col-12"><label class="small text-muted">첨부 이미지 (${d.images.length}건)</label><div class="d-flex gap-1 flex-wrap">${d.images.map(img => `<span class="badge bg-light text-dark border">${img.file_path}</span>`).join('')}</div></div>` : ''}
+                    <div class="col-12"><label class="small text-muted">설명</label><div style="font-size:.85rem;white-space:pre-line">${escapeHtml(d.description) || '-'}</div></div>
+                    ${d.images && d.images.length > 0 ? `<div class="col-12"><label class="small text-muted">첨부 이미지 (${d.images.length}건)</label><div class="d-flex gap-1 flex-wrap">${d.images.map(img => `<span class="badge bg-light text-dark border">${escapeHtml(img.file_path)}</span>`).join('')}</div></div>` : ''}
                 </div>
             </div>`;
         } else if (o.type === 'place_traffic' && o.place_traffic_detail) {
@@ -2785,8 +2802,8 @@ async function showAdOrderDetail(orderId) {
             <div class="border rounded p-3 mb-3" style="background:#f8f9fa">
                 <h6 class="fw-bold mb-2"><i class="fas fa-map-marker-alt me-1 text-secondary"></i>플레이스 트래픽 상세</h6>
                 <div class="row g-2">
-                    <div class="col-md-6"><label class="small text-muted">플레이스명/ID</label><div class="fw-bold">${d.place_name_or_id || '-'}</div></div>
-                    <div class="col-md-6"><label class="small text-muted">검색 키워드</label><div>${(d.search_keywords && d.search_keywords.length) ? d.search_keywords.join(', ') : '-'}</div></div>
+                    <div class="col-md-6"><label class="small text-muted">플레이스명/ID</label><div class="fw-bold">${escapeHtml(d.place_name_or_id) || '-'}</div></div>
+                    <div class="col-md-6"><label class="small text-muted">검색 키워드</label><div>${(d.search_keywords && d.search_keywords.length) ? escapeHtml(d.search_keywords.join(', ')) : '-'}</div></div>
                     <div class="col-md-4"><label class="small text-muted">주문 건수</label><div class="fw-bold">${Number(d.order_count || 1).toLocaleString()}건</div></div>
                     <div class="col-md-4"><label class="small text-muted">주문 단가</label><div>${Number(d.unit_price || 0).toLocaleString()}원</div></div>
                     <div class="col-md-4"><label class="small text-muted">예상 집행 예산</label><div class="fw-bold text-primary">${Number(d.est_total_cost || 0).toLocaleString()}원</div></div>
@@ -2800,8 +2817,8 @@ async function showAdOrderDetail(orderId) {
         <div class="mb-3 p-3 rounded" style="background:linear-gradient(135deg,rgba(14,165,233,.04),rgba(99,102,241,.04))">
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <div>
-                    <div class="fw-bold">${o.merchant_name} ${adOrderTypeBadge(o.type)}</div>
-                    <div class="text-muted" style="font-size:.82rem">요청자: ${o.creator_name} · 담당: ${o.assigned_admin_name || '미배정'}</div>
+                    <div class="fw-bold">${escapeHtml(o.merchant_name)} ${adOrderTypeBadge(o.type)}</div>
+                    <div class="text-muted" style="font-size:.82rem">요청자: ${escapeHtml(o.creator_name)} · 담당: ${escapeHtml(o.assigned_admin_name) || '미배정'}</div>
                 </div>
                 <div class="text-end">${statusBadge(o.status)}<br><small class="text-muted">${formatDate(o.created_at)}</small></div>
             </div>
@@ -2825,7 +2842,7 @@ async function showAdOrderDetail(orderId) {
                 </div>
             </div>
         </div>
-        ${o.admin_memo ? `<div class="border rounded p-3"><h6 class="fw-bold small mb-1"><i class="fas fa-sticky-note me-1"></i>관리 메모 이력</h6><div style="font-size:.82rem;white-space:pre-line">${o.admin_memo}</div></div>` : ''}`;
+        ${o.admin_memo ? `<div class="border rounded p-3"><h6 class="fw-bold small mb-1"><i class="fas fa-sticky-note me-1"></i>관리 메모 이력</h6><div style="font-size:.82rem;white-space:pre-line">${escapeHtml(o.admin_memo)}</div></div>` : ''}`;
     } catch(e) {
         document.getElementById('formModalBody').innerHTML = `<div class="alert alert-danger">${escapeHtml(e.message)}</div>`;
     }
@@ -2991,7 +3008,7 @@ async function loadAdminSalesAssign(c, t) {
     ]);
 
     const merchantOpts = merchants.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
-    const salesOpts = salesManagers.map(u => `<option value="${u.id}">${u.name} (${u.email})</option>`).join('');
+    const salesOpts = salesManagers.map(u => `<option value="${u.id}">${escapeHtml(u.name)} (${escapeHtml(u.email)})</option>`).join('');
 
     c.innerHTML = `
     <div class="alert alert-warning mb-3" style="border-radius:12px;border:none;background:rgba(255,193,7,.08)">
@@ -3055,11 +3072,11 @@ async function loadAdminSalesAssign(c, t) {
                     <thead class="table-light"><tr><th>ID</th><th>가맹점</th><th>영업관리자</th><th>수익률</th><th>수익 예시</th><th>메모</th><th>상태</th><th>액션</th></tr></thead>
                     <tbody>${assigns.map(a => `<tr>
                         <td>${a.id}</td>
-                        <td class="fw-bold">${a.merchant_name || '-'}</td>
-                        <td><i class="fas fa-user-tie text-info me-1"></i>${a.sales_manager_name || '-'}</td>
+                        <td class="fw-bold">${escapeHtml(a.merchant_name) || '-'}</td>
+                        <td><i class="fas fa-user-tie text-info me-1"></i>${escapeHtml(a.sales_manager_name) || '-'}</td>
                         <td class="fw-bold text-primary text-nowrap">${(a.commission_rate*100).toFixed(2)}%</td>
                         <td class="text-success fw-bold text-nowrap">${(10000 * a.commission_rate).toLocaleString('ko-KR', {maximumFractionDigits:0})}원</td>
-                        <td class="text-muted small">${a.memo || '-'}</td>
+                        <td class="text-muted small">${escapeHtml(a.memo) || '-'}</td>
                         <td>${a.is_active ? '<span class="badge bg-success">활성</span>' : '<span class="badge bg-secondary">비활성</span>'}</td>
                         <td>
                             <button class="btn btn-sm btn-outline-danger" onclick="deleteSalesAssignment(${a.id})" title="연결 해제">
@@ -3122,14 +3139,14 @@ async function loadAdminUsers(c, t) {
         const rLabel = roleLabelMap[u.role] || u.role;
         const rColor = roleBadgeMap[u.role] || 'secondary';
         let extra = '';
-        if (u.role === 'owner' && u.merchant_name) extra = `<small class="text-muted d-block">${u.merchant_name}</small>`;
+        if (u.role === 'owner' && u.merchant_name) extra = `<small class="text-muted d-block">${escapeHtml(u.merchant_name)}</small>`;
         if (u.role === 'sales' && u.assigned_merchant_count > 0) extra = `<small class="text-muted d-block">담당 ${u.assigned_merchant_count}개 가맹점</small>`;
         return `<tr>
             <td>${u.id}</td>
-            <td><div class="fw-bold">${u.name}</div>${extra}</td>
-            <td>${u.email}</td>
+            <td><div class="fw-bold">${escapeHtml(u.name)}</div>${extra}</td>
+            <td>${escapeHtml(u.email)}</td>
             <td><span class="badge bg-${rColor}">${rLabel}</span></td>
-            <td>${u.phone || '-'}</td>
+            <td>${escapeHtml(u.phone) || '-'}</td>
             <td>${u.is_active ? '<span class="badge bg-success">활성</span>' : '<span class="badge bg-secondary">비활성</span>'}</td>
             <td class="small">${formatDate(u.created_at)}</td>
             <td>
@@ -3343,7 +3360,7 @@ async function createSalesUser() {
         return;
     }
     try {
-        const result = await apiPost(`/api/admin/users/create-sales?name=${encodeURIComponent(name)}&email=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}`, {});
+        const result = await apiPost('/api/admin/users/create-sales', { name, email, password });
         alertEl.className = 'mt-2 alert alert-success py-2 small';
         alertEl.innerHTML = `<i class="fas fa-check me-1"></i><strong>${escapeHtml(result.name)}</strong> 계정 생성 완료. 추천 코드: <strong>${escapeHtml(result.referral_code)}</strong>`;
         alertEl.classList.remove('d-none');
@@ -3448,7 +3465,7 @@ async function loadSalesPayouts(c, t) {
             <div class="card data-card"><div class="card-header"><h5>출금요청 내역</h5></div><div class="card-body">
                 <div class="table-responsive"><table class="table table-sm">
                     <thead><tr><th>ID</th><th>금액</th><th>은행정보</th><th>상태</th><th>요청일</th></tr></thead>
-                    <tbody>${payouts.map(p => `<tr><td>${p.id}</td><td class="fw-bold">${formatMoney(p.amount)}</td><td>${p.bank_info||'-'}</td><td>${statusBadge(p.status)}</td><td>${formatDate(p.created_at)}</td></tr>`).join('')}</tbody>
+                    <tbody>${payouts.map(p => `<tr><td>${p.id}</td><td class="fw-bold">${formatMoney(p.amount)}</td><td>${escapeHtml(p.bank_info)||'-'}</td><td>${statusBadge(p.status)}</td><td>${formatDate(p.created_at)}</td></tr>`).join('')}</tbody>
                 </table></div>
             </div></div>
         </div>
@@ -3469,7 +3486,7 @@ async function loadSalesPayoutHistory(c, t) {
     c.innerHTML = `<div class="card data-card"><div class="card-header"><h5>전체 출금내역</h5></div><div class="card-body">
         <div class="table-responsive"><table class="table table-hover table-sm">
             <thead><tr><th>ID</th><th>금액</th><th>은행정보</th><th>상태</th><th>요청일</th></tr></thead>
-            <tbody>${payouts.map(p => `<tr><td>${p.id}</td><td class="fw-bold">${formatMoney(p.amount)}</td><td>${p.bank_info||'-'}</td><td>${statusBadge(p.status)}</td><td>${formatDate(p.created_at)}</td></tr>`).join('') || '<tr><td colspan="5" class="text-muted text-center py-3">없음</td></tr>'}</tbody>
+            <tbody>${payouts.map(p => `<tr><td>${p.id}</td><td class="fw-bold">${formatMoney(p.amount)}</td><td>${escapeHtml(p.bank_info)||'-'}</td><td>${statusBadge(p.status)}</td><td>${formatDate(p.created_at)}</td></tr>`).join('') || '<tr><td colspan="5" class="text-muted text-center py-3">없음</td></tr>'}</tbody>
         </table></div></div></div>`;
 }
 
@@ -6328,12 +6345,12 @@ function crmModal(title, body, footer){
 function crmCloseModal(){ const m=bootstrap.Modal.getInstance(document.getElementById('crmDynModal')); if(m) m.hide(); }
 
 function crmStaffOptions(selectedId){
-    return `<option value="">미지정</option>`+crmStaffCache.map(s=>`<option value="${s.id}" ${s.id===selectedId?'selected':''}>${s.name}</option>`).join('');
+    return `<option value="">미지정</option>`+crmStaffCache.map(s=>`<option value="${s.id}" ${s.id===selectedId?'selected':''}>${escapeHtml(s.name)}</option>`).join('');
 }
 function crmServiceSelect(id){
     return `<select class="form-select" id="${id}" onchange="crmFillServiceAmount(this)">
         <option value="">시술 선택</option>
-        ${crmServiceCache.map(s=>`<option value="${s.name}" data-price="${s.price}" data-dur="${s.duration_min}">${s.category?('['+s.category+'] '):''}${s.name} (${formatMoney(s.price)})</option>`).join('')}
+        ${crmServiceCache.map(s=>`<option value="${escapeHtml(s.name)}" data-price="${s.price}" data-dur="${s.duration_min}">${s.category?('['+escapeHtml(s.category)+'] '):''}${escapeHtml(s.name)} (${formatMoney(s.price)})</option>`).join('')}
     </select>`;
 }
 function crmFillServiceAmount(sel){
@@ -6350,8 +6367,8 @@ function crmNowLocal(){ const d=new Date(); d.setMinutes(d.getMinutes()-d.getTim
 function crmDateOnly(s){ return s? formatDate(s).split(' ')[0] : '-'; }
 function crmTagBadges(tags, auto){
     let html='';
-    (tags||[]).forEach(t=>{ html+=`<span class="badge me-1" style="background:#eef2ff;color:#667eea;font-weight:500">#${t}</span>`; });
-    (auto||[]).forEach(t=>{ html+=`<span class="badge me-1" style="background:#f1f5f9;color:#64748b;font-weight:500;border:1px dashed #cbd5e1">${t}</span>`; });
+    (tags||[]).forEach(t=>{ html+=`<span class="badge me-1" style="background:#eef2ff;color:#667eea;font-weight:500">#${escapeHtml(t)}</span>`; });
+    (auto||[]).forEach(t=>{ html+=`<span class="badge me-1" style="background:#f1f5f9;color:#64748b;font-weight:500;border:1px dashed #cbd5e1">${escapeHtml(t)}</span>`; });
     return html||'<span class="text-muted">-</span>';
 }
 function crmResvStatusBadge(s, kr){
@@ -6513,8 +6530,8 @@ function crmCustomerTable(data){
         const due = c.next_expected_visit ? `<small class="text-muted d-block">예상재방문 ${c.next_expected_visit}</small>`:'';
         return `<tr style="cursor:pointer" onclick="crmCustomerDetail(${c.id})">
             <td><div class="d-flex align-items-center gap-2">
-                <div style="width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.82rem">${(c.name||'?')[0]}</div>
-                <div><div class="fw-bold">${c.name}${c.allergy_memo?' <i class="fas fa-triangle-exclamation text-warning" title="알레르기/주의"></i>':''}</div><small class="text-muted">${c.phone||'-'}</small></div>
+                <div style="width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.82rem">${escapeHtml((c.name||'?')[0])}</div>
+                <div><div class="fw-bold">${escapeHtml(c.name)}${c.allergy_memo?' <i class="fas fa-triangle-exclamation text-warning" title="알레르기/주의"></i>':''}</div><small class="text-muted">${escapeHtml(c.phone)||'-'}</small></div>
             </div></td>
             <td><span class="badge" style="background:${gc};font-size:.7rem">${c.grade}</span></td>
             <td>${crmTagBadges(c.tags,c.auto_tags)}</td>
@@ -6547,19 +6564,19 @@ function crmCustomerTable(data){
 function crmCustomerForm(existing){
     const c=existing||{}; const isEdit=!!(existing&&existing.id);
     const body=`<div class="row g-3">
-        <div class="col-md-6"><label class="form-label">이름 <span class="text-danger">*</span></label><input class="form-control" id="cfName" value="${c.name||''}"></div>
-        <div class="col-md-6"><label class="form-label">연락처</label><input class="form-control" id="cfPhone" value="${c.phone||''}" placeholder="010-0000-0000"></div>
+        <div class="col-md-6"><label class="form-label">이름 <span class="text-danger">*</span></label><input class="form-control" id="cfName" value="${escapeHtml(c.name)||''}"></div>
+        <div class="col-md-6"><label class="form-label">연락처</label><input class="form-control" id="cfPhone" value="${escapeHtml(c.phone)||''}" placeholder="010-0000-0000"></div>
         <div class="col-md-4"><label class="form-label">성별</label><select class="form-select" id="cfGender"><option value="" ${!c.gender?'selected':''}>선택</option><option value="female" ${c.gender==='female'?'selected':''}>여성</option><option value="male" ${c.gender==='male'?'selected':''}>남성</option></select></div>
         <div class="col-md-4"><label class="form-label">생일</label><input class="form-control" id="cfBirth" type="date" value="${c.birthday||''}"></div>
         <div class="col-md-4"><label class="form-label">기념일</label><input class="form-control" id="cfAnniv" type="date" value="${c.anniversary||''}"></div>
         <div class="col-md-6"><label class="form-label">담당 디자이너</label><select class="form-select" id="cfStaff">${crmStaffOptions(c.assigned_staff_id)}</select></div>
         <div class="col-md-6"><label class="form-label">선호 디자이너</label><select class="form-select" id="cfPrefStaff">${crmStaffOptions(c.preferred_staff_id)}</select></div>
-        <div class="col-md-6"><label class="form-label">선호 시술</label><input class="form-control" id="cfPrefSvc" list="cfSvcList" value="${c.preferred_service||''}"><datalist id="cfSvcList">${crmServiceCache.map(s=>`<option value="${s.name}">`).join('')}</datalist></div>
-        <div class="col-md-6"><label class="form-label">사진 URL</label><input class="form-control" id="cfPhoto" value="${c.photo_url||''}" placeholder="https://..."></div>
-        <div class="col-12"><label class="form-label">태그 <small class="text-muted">(콤마: 단골,염색)</small></label><input class="form-control" id="cfTags" value="${(c.tags||[]).join(',')}"></div>
-        <div class="col-md-6"><label class="form-label text-danger">알레르기/주의사항</label><textarea class="form-control" id="cfAllergy" rows="2">${c.allergy_memo||''}</textarea></div>
-        <div class="col-md-6"><label class="form-label">모발 상태/이력</label><textarea class="form-control" id="cfHair" rows="2">${c.hair_memo||''}</textarea></div>
-        <div class="col-12"><label class="form-label">일반 메모</label><textarea class="form-control" id="cfMemo" rows="2">${c.memo||''}</textarea></div>
+        <div class="col-md-6"><label class="form-label">선호 시술</label><input class="form-control" id="cfPrefSvc" list="cfSvcList" value="${escapeHtml(c.preferred_service)||''}"><datalist id="cfSvcList">${crmServiceCache.map(s=>`<option value="${escapeHtml(s.name)}">`).join('')}</datalist></div>
+        <div class="col-md-6"><label class="form-label">사진 URL</label><input class="form-control" id="cfPhoto" value="${escapeHtml(c.photo_url)||''}" placeholder="https://..."></div>
+        <div class="col-12"><label class="form-label">태그 <small class="text-muted">(콤마: 단골,염색)</small></label><input class="form-control" id="cfTags" value="${escapeHtml((c.tags||[]).join(','))}"></div>
+        <div class="col-md-6"><label class="form-label text-danger">알레르기/주의사항</label><textarea class="form-control" id="cfAllergy" rows="2">${escapeHtml(c.allergy_memo)||''}</textarea></div>
+        <div class="col-md-6"><label class="form-label">모발 상태/이력</label><textarea class="form-control" id="cfHair" rows="2">${escapeHtml(c.hair_memo)||''}</textarea></div>
+        <div class="col-12"><label class="form-label">일반 메모</label><textarea class="form-control" id="cfMemo" rows="2">${escapeHtml(c.memo)||''}</textarea></div>
         <div class="col-12"><div id="cfResult"></div></div>
     </div>`;
     const footer=`<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">닫기</button><button type="button" class="btn btn-primary" onclick="crmCustomerSave(${isEdit?c.id:'null'})"><i class="fas fa-save me-1"></i>${isEdit?'수정':'등록'}</button>`;
@@ -6596,8 +6613,8 @@ async function crmCustomerDetail(id){
             <div class="row g-2 small">
                 <div class="col-6"><span class="text-muted">생일</span> ${c.birthday||'-'}</div>
                 <div class="col-6"><span class="text-muted">기념일</span> ${c.anniversary||'-'}</div>
-                <div class="col-6"><span class="text-muted">담당</span> ${c.assigned_staff_name||'-'}</div>
-                <div class="col-6"><span class="text-muted">선호</span> ${c.preferred_staff_name||'-'} / ${c.preferred_service||'-'}</div>
+                <div class="col-6"><span class="text-muted">담당</span> ${escapeHtml(c.assigned_staff_name)||'-'}</div>
+                <div class="col-6"><span class="text-muted">선호</span> ${escapeHtml(c.preferred_staff_name)||'-'} / ${escapeHtml(c.preferred_service)||'-'}</div>
                 <div class="col-6"><span class="text-muted">방문주기</span> ${c.visit_cycle_days?c.visit_cycle_days+'일':'-'}</div>
                 <div class="col-6"><span class="text-muted">예상 재방문</span> ${c.next_expected_visit||'-'}</div>
             </div>`;
@@ -6605,17 +6622,17 @@ async function crmCustomerDetail(id){
             const ic={visit:'fa-scissors',reservation:'fa-calendar-check',point:'fa-coins',message:'fa-comment-dots',coupon:'fa-ticket'}[it.type]||'fa-circle';
             const col={visit:'#16a34a',reservation:'#3b82f6',point:'#f59e0b',message:'#8b5cf6',coupon:'#ec4899'}[it.type]||'#94a3b8';
             let detail='';
-            if(it.type==='visit') detail=`${it.title} · ${formatMoney(it.amount||0)} ${it.staff_name?'· '+it.staff_name:''}`;
-            else if(it.type==='reservation') detail=`${it.title} · ${it.status_kr||''}`;
-            else if(it.type==='point') detail=`${it.title} · ${it.delta>=0?'+':''}${it.delta}P`;
-            else if(it.type==='message') detail=`${it.content||it.title}`;
-            else if(it.type==='coupon') detail=`${it.title} · ${it.status}`;
+            if(it.type==='visit') detail=`${escapeHtml(it.title)} · ${formatMoney(it.amount||0)} ${it.staff_name?'· '+escapeHtml(it.staff_name):''}`;
+            else if(it.type==='reservation') detail=`${escapeHtml(it.title)} · ${escapeHtml(it.status_kr)||''}`;
+            else if(it.type==='point') detail=`${escapeHtml(it.title)} · ${it.delta>=0?'+':''}${it.delta}P`;
+            else if(it.type==='message') detail=`${escapeHtml(it.content||it.title)}`;
+            else if(it.type==='coupon') detail=`${escapeHtml(it.title)} · ${escapeHtml(it.status)}`;
             return `<div class="d-flex gap-2 mb-2"><div style="width:26px;height:26px;border-radius:50%;background:${col}1a;color:${col};display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="fas ${ic}" style="font-size:.7rem"></i></div><div><div style="font-size:.85rem">${detail}</div><small class="text-muted">${formatDate(it.at)}</small></div></div>`;
         }).join('')||`<div class="text-muted text-center py-3">이력 없음</div>`;
         const body=`
             <div class="d-flex align-items-center gap-3 mb-3">
-                <div style="width:54px;height:54px;border-radius:50%;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:1.3rem;overflow:hidden">${c.photo_url?`<img src="${c.photo_url}" style="width:100%;height:100%;object-fit:cover">`:(c.name||'?')[0]}</div>
-                <div><div class="d-flex align-items-center gap-2"><span class="fs-5 fw-bold">${c.name}</span><span class="badge" style="background:${gc}">${c.grade}</span></div><small class="text-muted">${c.phone||'-'}</small></div>
+                <div style="width:54px;height:54px;border-radius:50%;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:1.3rem;overflow:hidden">${safeUrl(c.photo_url)?`<img src="${safeUrl(c.photo_url)}" style="width:100%;height:100%;object-fit:cover">`:escapeHtml((c.name||'?')[0])}</div>
+                <div><div class="d-flex align-items-center gap-2"><span class="fs-5 fw-bold">${escapeHtml(c.name)}</span><span class="badge" style="background:${gc}">${c.grade}</span></div><small class="text-muted">${escapeHtml(c.phone)||'-'}</small></div>
             </div>
             <div class="row g-2 mb-3">
                 <div class="col-3"><div class="bg-light rounded-3 p-2 text-center"><div class="fw-bold">${c.visit_count}</div><small class="text-muted">방문</small></div></div>
@@ -6624,9 +6641,9 @@ async function crmCustomerDetail(id){
                 <div class="col-3"><div class="bg-light rounded-3 p-2 text-center"><div class="fw-bold">${c.points.toLocaleString()}P</div><small class="text-muted">포인트</small></div></div>
             </div>
             <div class="mb-2">${crmTagBadges(c.tags,c.auto_tags)}</div>
-            ${c.allergy_memo?`<div class="alert alert-warning py-2 small mb-2"><i class="fas fa-triangle-exclamation me-1"></i><strong>주의:</strong> ${c.allergy_memo}</div>`:''}
-            ${c.hair_memo?`<div class="alert alert-light border py-2 small mb-2"><i class="fas fa-comment me-1 text-info"></i>${c.hair_memo}</div>`:''}
-            ${c.memo?`<div class="alert alert-light border py-2 small mb-2"><i class="fas fa-note-sticky me-1 text-warning"></i>${c.memo}</div>`:''}
+            ${c.allergy_memo?`<div class="alert alert-warning py-2 small mb-2"><i class="fas fa-triangle-exclamation me-1"></i><strong>주의:</strong> ${escapeHtml(c.allergy_memo)}</div>`:''}
+            ${c.hair_memo?`<div class="alert alert-light border py-2 small mb-2"><i class="fas fa-comment me-1 text-info"></i>${escapeHtml(c.hair_memo)}</div>`:''}
+            ${c.memo?`<div class="alert alert-light border py-2 small mb-2"><i class="fas fa-note-sticky me-1 text-warning"></i>${escapeHtml(c.memo)}</div>`:''}
             <div class="card mb-2"><div class="card-body py-2">${profileRows}</div></div>
             <ul class="nav nav-tabs mb-2" role="tablist">
                 <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#cdTimeline">통합 타임라인</button></li>
@@ -6635,15 +6652,15 @@ async function crmCustomerDetail(id){
             </ul>
             <div class="tab-content">
                 <div class="tab-pane fade show active" id="cdTimeline" style="max-height:280px;overflow:auto">${timelineHtml}</div>
-                <div class="tab-pane fade" id="cdVisits"><table class="table table-sm align-middle"><thead class="table-light"><tr><th>날짜</th><th>시술</th><th>담당</th><th class="text-end">금액</th><th></th></tr></thead><tbody>${(c.visits||[]).map(v=>`<tr><td>${crmDateOnly(v.visit_date)}</td><td>${v.service_name||'-'}</td><td>${v.staff_name||'-'}</td><td class="text-end">${formatMoney(v.amount)}</td><td><button class="btn btn-sm btn-outline-danger border-0" onclick="crmDeleteVisit(${v.id},${id})"><i class="fas fa-trash"></i></button></td></tr>`).join('')||`<tr><td colspan="5" class="text-center text-muted py-3">방문 이력 없음</td></tr>`}</tbody></table></div>
+                <div class="tab-pane fade" id="cdVisits"><table class="table table-sm align-middle"><thead class="table-light"><tr><th>날짜</th><th>시술</th><th>담당</th><th class="text-end">금액</th><th></th></tr></thead><tbody>${(c.visits||[]).map(v=>`<tr><td>${crmDateOnly(v.visit_date)}</td><td>${escapeHtml(v.service_name)||'-'}</td><td>${escapeHtml(v.staff_name)||'-'}</td><td class="text-end">${formatMoney(v.amount)}</td><td><button class="btn btn-sm btn-outline-danger border-0" onclick="crmDeleteVisit(${v.id},${id})"><i class="fas fa-trash"></i></button></td></tr>`).join('')||`<tr><td colspan="5" class="text-center text-muted py-3">방문 이력 없음</td></tr>`}</tbody></table></div>
                 <div class="tab-pane fade" id="cdMessages">
                     <div class="fw-bold small mb-1">메시지</div>
-                    <table class="table table-sm align-middle"><tbody>${(c.messages||[]).map(m=>`<tr><td>${m.channel}</td><td>${m.content}</td><td class="text-muted text-nowrap">${crmDateOnly(m.sent_at)}</td></tr>`).join('')||`<tr><td class="text-center text-muted py-2">발송 내역 없음</td></tr>`}</tbody></table>
+                    <table class="table table-sm align-middle"><tbody>${(c.messages||[]).map(m=>`<tr><td>${m.channel}</td><td>${escapeHtml(m.content)}</td><td class="text-muted text-nowrap">${crmDateOnly(m.sent_at)}</td></tr>`).join('')||`<tr><td class="text-center text-muted py-2">발송 내역 없음</td></tr>`}</tbody></table>
                 </div>
             </div>`;
         const footer=`
             <button type="button" class="btn btn-outline-danger me-auto" onclick="crmDeleteCustomer(${id})"><i class="fas fa-trash"></i></button>
-            <button type="button" class="btn btn-outline-secondary" onclick="crmMessageToCustomer(${id},'${(c.name||'').replace(/'/g,'')}')"><i class="fas fa-comment-dots me-1"></i>메시지</button>
+            <button type="button" class="btn btn-outline-secondary" onclick="crmMessageToCustomer(${id},'${escapeHtml((c.name||'').replace(/['"\\]/g,''))}')"><i class="fas fa-comment-dots me-1"></i>메시지</button>
             <button type="button" class="btn btn-outline-secondary" onclick="crmPointForm(${id})"><i class="fas fa-coins me-1"></i>포인트</button>
             <button type="button" class="btn btn-outline-primary" onclick='crmCustomerForm(${JSON.stringify(c).replace(/'/g,"&#39;")})'><i class="fas fa-pen me-1"></i>수정</button>
             <button type="button" class="btn btn-primary" onclick="crmVisitForm(${id})"><i class="fas fa-plus me-1"></i>방문</button>`;
@@ -6679,7 +6696,7 @@ function crmVisitForm(customerId){
     if(!customerId) crmLoadCustomerSelect('crmVisitCustomer');
 }
 async function crmLoadCustomerSelect(selId){
-    try{ const data=await apiGet('/api/crm/customers?scope=all'); const sel=document.getElementById(selId); if(sel) sel.innerHTML=`<option value="">고객 선택</option>`+data.map(c=>`<option value="${c.id}">${c.name} (${c.phone||'-'})</option>`).join(''); }catch(e){}
+    try{ const data=await apiGet('/api/crm/customers?scope=all'); const sel=document.getElementById(selId); if(sel) sel.innerHTML=`<option value="">고객 선택</option>`+data.map(c=>`<option value="${c.id}">${escapeHtml(c.name)} (${escapeHtml(c.phone)||'-'})</option>`).join(''); }catch(e){}
 }
 async function crmVisitSave(customerId){
     const res=document.getElementById('crmVisitResult');
@@ -6730,8 +6747,8 @@ async function crmLoadReservationView(){
 function crmReservationListTable(data){
     const rows=data.map(r=>`<tr>
         <td><small>${formatDate(r.reserved_at)}</small></td>
-        <td class="fw-bold" ${r.customer_id?`style="cursor:pointer" onclick="crmCustomerDetail(${r.customer_id})"`:''}>${r.customer_name}</td>
-        <td>${r.service_name||'-'}</td><td>${r.staff_name||'-'}</td><td>${crmResvStatusBadge(r.status,r.status_kr)}</td>
+        <td class="fw-bold" ${r.customer_id?`style="cursor:pointer" onclick="crmCustomerDetail(${r.customer_id})"`:''}>${escapeHtml(r.customer_name)}</td>
+        <td>${escapeHtml(r.service_name)||'-'}</td><td>${escapeHtml(r.staff_name)||'-'}</td><td>${crmResvStatusBadge(r.status,r.status_kr)}</td>
         <td class="text-end">${crmResvActions(r)}</td></tr>`).join('')||`<tr><td colspan="6" class="text-center text-muted py-4">예약이 없습니다.</td></tr>`;
     return `<div class="card data-card"><div class="card-body p-0"><div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead class="table-light"><tr><th>예약일시</th><th>고객</th><th>시술</th><th>담당</th><th>상태</th><th class="text-end">관리</th></tr></thead><tbody>${rows}</tbody></table></div></div></div>`;
 }
@@ -6762,8 +6779,8 @@ function crmRenderDayCalendar(cal){
         const col=CRM_RESV_COLORS[ev.status]||'#667eea';
         const left=50 + idx*colW;
         return `<div onclick="crmReservationDetail(${ev.id})" style="position:absolute;top:${top+34}px;left:${left+2}px;width:${colW-6}px;height:${hgt}px;background:${col}1a;border-left:3px solid ${col};border-radius:6px;padding:3px 6px;font-size:.72rem;overflow:hidden;cursor:pointer">
-            <div class="fw-bold" style="color:${col}">${dt.getHours()}:${String(dt.getMinutes()).padStart(2,'0')} ${ev.customer_name}</div>
-            <div class="text-muted text-truncate">${ev.service_name||''}</div></div>`;
+            <div class="fw-bold" style="color:${col}">${dt.getHours()}:${String(dt.getMinutes()).padStart(2,'0')} ${escapeHtml(ev.customer_name)}</div>
+            <div class="text-muted text-truncate">${escapeHtml(ev.service_name)||''}</div></div>`;
     }).join('');
     return `<div class="card data-card"><div class="card-body" style="position:relative;overflow-x:auto"><div style="position:relative;min-width:${50+staff.length*colW}px">${header}${gridRows}${events}</div></div></div>`;
 }
@@ -6778,7 +6795,7 @@ function crmRenderWeekCalendar(cal){
         const today = k===crmCalDate;
         return `<div style="flex:1;min-width:130px;border-left:1px solid #f3f4f6">
             <div style="text-align:center;padding:6px;font-weight:700;${today?'background:#eef2ff;color:#667eea':'color:#6b7280'};border-radius:8px 8px 0 0">${wd[i]} ${d.getMonth()+1}/${d.getDate()}</div>
-            <div style="padding:4px;min-height:80px">${evs.map(ev=>{const col=CRM_RESV_COLORS[ev.status]||'#667eea'; const tt=ev.reserved_at.slice(11,16); return `<div onclick="crmReservationDetail(${ev.id})" style="background:${col}1a;border-left:3px solid ${col};border-radius:6px;padding:3px 5px;margin-bottom:4px;font-size:.72rem;cursor:pointer"><div class="fw-bold" style="color:${col}">${tt} ${ev.customer_name}</div><div class="text-muted text-truncate">${ev.staff_name||''} ${ev.service_name||''}</div></div>`;}).join('')||'<div class="text-muted text-center small py-2">-</div>'}</div>
+            <div style="padding:4px;min-height:80px">${evs.map(ev=>{const col=CRM_RESV_COLORS[ev.status]||'#667eea'; const tt=ev.reserved_at.slice(11,16); return `<div onclick="crmReservationDetail(${ev.id})" style="background:${col}1a;border-left:3px solid ${col};border-radius:6px;padding:3px 5px;margin-bottom:4px;font-size:.72rem;cursor:pointer"><div class="fw-bold" style="color:${col}">${tt} ${escapeHtml(ev.customer_name)}</div><div class="text-muted text-truncate">${escapeHtml(ev.staff_name)||''} ${escapeHtml(ev.service_name)||''}</div></div>`;}).join('')||'<div class="text-muted text-center small py-2">-</div>'}</div>
         </div>`;
     }).join('');
     return `<div class="card data-card"><div class="card-body" style="overflow-x:auto"><div style="display:flex;min-width:910px">${cols}</div></div></div>`;
@@ -6788,14 +6805,14 @@ async function crmReservationDetail(id){
         const list=await apiGet(`/api/crm/reservations?${crmScopeQS()}`);
         const r=list.find(x=>x.id===id); if(!r){ crmNotify('예약을 찾을 수 없습니다','err'); return; }
         const body=`<div class="row g-2 small mb-3">
-            <div class="col-6"><span class="text-muted">고객</span><div class="fw-bold">${r.customer_name}</div></div>
-            <div class="col-6"><span class="text-muted">연락처</span><div>${r.phone||'-'}</div></div>
+            <div class="col-6"><span class="text-muted">고객</span><div class="fw-bold">${escapeHtml(r.customer_name)}</div></div>
+            <div class="col-6"><span class="text-muted">연락처</span><div>${escapeHtml(r.phone)||'-'}</div></div>
             <div class="col-6"><span class="text-muted">예약일시</span><div class="fw-bold">${formatDate(r.reserved_at)}</div></div>
             <div class="col-6"><span class="text-muted">소요</span><div>${r.duration_min||60}분</div></div>
-            <div class="col-6"><span class="text-muted">시술</span><div>${r.service_name||'-'}</div></div>
-            <div class="col-6"><span class="text-muted">담당</span><div>${r.staff_name||'-'}</div></div>
+            <div class="col-6"><span class="text-muted">시술</span><div>${escapeHtml(r.service_name)||'-'}</div></div>
+            <div class="col-6"><span class="text-muted">담당</span><div>${escapeHtml(r.staff_name)||'-'}</div></div>
             <div class="col-12"><span class="text-muted">상태</span> ${crmResvStatusBadge(r.status,r.status_kr)}</div>
-            ${r.memo?`<div class="col-12"><span class="text-muted">메모</span><div>${r.memo}</div></div>`:''}
+            ${r.memo?`<div class="col-12"><span class="text-muted">메모</span><div>${escapeHtml(r.memo)}</div></div>`:''}
         </div><div class="d-flex flex-wrap gap-1">${crmResvActions(r)}</div>`;
         crmModal('예약 상세', body, `<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">닫기</button>`);
     }catch(e){ crmNotify(e.message,'err'); }
@@ -6961,17 +6978,17 @@ async function crmMkRender(tab){
             document.getElementById('mkRevDays').addEventListener('change', load); load();
         } else if(tab==='birthday'){
             const d=await apiGet('/api/crm/birthdays');
-            const tbl=(arr,label)=>`<div class="card data-card mb-3"><div class="card-header d-flex justify-content-between align-items-center"><h6 class="mb-0">${label} (${arr.length}명)</h6>${arr.length?`<button class="btn btn-sm btn-primary" onclick="crmSendCampaign('birthday')"><i class="fas fa-cake-candles me-1"></i>축하 메시지</button>`:''}</div><div class="card-body p-0"><div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0"><thead class="table-light"><tr><th>일</th><th>고객</th><th>연락처</th><th>등급</th><th class="text-center">방문</th></tr></thead><tbody>${arr.map(c=>`<tr style="cursor:pointer" onclick="crmCustomerDetail(${c.id})"><td class="fw-bold">${c.event_day}일</td><td>${c.name}</td><td>${c.phone||'-'}</td><td><span class="badge" style="background:${CRM_GRADE_COLORS[c.grade]}">${c.grade}</span></td><td class="text-center">${c.visit_count}회</td></tr>`).join('')||`<tr><td colspan="5" class="text-center text-muted py-3">대상 없음</td></tr>`}</tbody></table></div></div></div>`;
+            const tbl=(arr,label)=>`<div class="card data-card mb-3"><div class="card-header d-flex justify-content-between align-items-center"><h6 class="mb-0">${label} (${arr.length}명)</h6>${arr.length?`<button class="btn btn-sm btn-primary" onclick="crmSendCampaign('birthday')"><i class="fas fa-cake-candles me-1"></i>축하 메시지</button>`:''}</div><div class="card-body p-0"><div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0"><thead class="table-light"><tr><th>일</th><th>고객</th><th>연락처</th><th>등급</th><th class="text-center">방문</th></tr></thead><tbody>${arr.map(c=>`<tr style="cursor:pointer" onclick="crmCustomerDetail(${c.id})"><td class="fw-bold">${c.event_day}일</td><td>${escapeHtml(c.name)}</td><td>${escapeHtml(c.phone)||'-'}</td><td><span class="badge" style="background:${CRM_GRADE_COLORS[c.grade]}">${c.grade}</span></td><td class="text-center">${c.visit_count}회</td></tr>`).join('')||`<tr><td colspan="5" class="text-center text-muted py-3">대상 없음</td></tr>`}</tbody></table></div></div></div>`;
             box.innerHTML=`<div class="alert alert-info border-0 small"><i class="fas fa-info-circle me-1"></i>이번 달 생일/기념일 고객입니다. 축하 메시지·쿠폰 발송 대상으로 활용하세요.</div>${tbl(d.birthdays,'🎂 이달 생일')}${tbl(d.anniversaries,'💝 이달 기념일')}`;
         } else if(tab==='coupons'){
             const d=await apiGet('/api/crm/coupons');
-            const rows=d.map(cp=>`<tr><td class="fw-bold">${cp.name}</td><td>${cp.customer_name}</td><td>${cp.discount_type==='percent'?cp.value+'%':formatMoney(cp.value)}</td><td>${crmCouponStatusBadge(cp.status)}</td><td class="text-muted">${cp.expires_at||'-'}</td><td class="text-end">${cp.status==='issued'?`<button class="btn btn-sm btn-outline-success border-0" title="사용처리" onclick="crmCouponUse(${cp.id})"><i class="fas fa-check"></i></button>`:''}<button class="btn btn-sm btn-outline-danger border-0" onclick="crmCouponDelete(${cp.id})"><i class="fas fa-trash"></i></button></td></tr>`).join('')||`<tr><td colspan="6" class="text-center text-muted py-3">발급된 쿠폰이 없습니다.</td></tr>`;
+            const rows=d.map(cp=>`<tr><td class="fw-bold">${escapeHtml(cp.name)}</td><td>${escapeHtml(cp.customer_name)}</td><td>${cp.discount_type==='percent'?cp.value+'%':formatMoney(cp.value)}</td><td>${crmCouponStatusBadge(cp.status)}</td><td class="text-muted">${cp.expires_at||'-'}</td><td class="text-end">${cp.status==='issued'?`<button class="btn btn-sm btn-outline-success border-0" title="사용처리" onclick="crmCouponUse(${cp.id})"><i class="fas fa-check"></i></button>`:''}<button class="btn btn-sm btn-outline-danger border-0" onclick="crmCouponDelete(${cp.id})"><i class="fas fa-trash"></i></button></td></tr>`).join('')||`<tr><td colspan="6" class="text-center text-muted py-3">발급된 쿠폰이 없습니다.</td></tr>`;
             box.innerHTML=`<div class="card data-card"><div class="card-header d-flex justify-content-between align-items-center"><h6 class="mb-0">쿠폰 발급 현황</h6><div class="d-flex gap-2"><button class="btn btn-sm btn-outline-primary" onclick="crmCouponBulkForm()"><i class="fas fa-layer-group me-1"></i>세그먼트 일괄발급</button><button class="btn btn-sm btn-primary" onclick="crmCouponForm()"><i class="fas fa-plus me-1"></i>쿠폰 발급</button></div></div><div class="card-body p-0"><div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead class="table-light"><tr><th>쿠폰명</th><th>고객</th><th>할인</th><th>상태</th><th>만료</th><th class="text-end">관리</th></tr></thead><tbody>${rows}</tbody></table></div></div></div>`;
         }
     }catch(e){ box.innerHTML=`<div class="alert alert-danger">${escapeHtml(e.message)}</div>`; }
 }
 function crmRevisitTable(d){
-    const rows=(d.customers||[]).map(c=>`<tr><td class="fw-bold" style="cursor:pointer" onclick="crmCustomerDetail(${c.id})">${c.name}</td><td>${c.phone||'-'}</td><td><span class="badge" style="background:${CRM_GRADE_COLORS[c.grade]}">${c.grade}</span></td><td class="text-center">${c.visit_count}회</td><td class="text-center"><span class="badge bg-danger">${c.days_since_visit}일 전</span></td><td>${c.assigned_staff_name||'-'}</td><td class="text-end"><button class="btn btn-sm btn-outline-primary border-0" onclick="crmMessageToCustomer(${c.id},'${(c.name||'').replace(/'/g,'')}')"><i class="fas fa-comment-dots"></i></button></td></tr>`).join('')||`<tr><td colspan="7" class="text-center text-muted py-3">대상 고객이 없습니다.</td></tr>`;
+    const rows=(d.customers||[]).map(c=>`<tr><td class="fw-bold" style="cursor:pointer" onclick="crmCustomerDetail(${c.id})">${escapeHtml(c.name)}</td><td>${escapeHtml(c.phone)||'-'}</td><td><span class="badge" style="background:${CRM_GRADE_COLORS[c.grade]}">${c.grade}</span></td><td class="text-center">${c.visit_count}회</td><td class="text-center"><span class="badge bg-danger">${c.days_since_visit}일 전</span></td><td>${escapeHtml(c.assigned_staff_name)||'-'}</td><td class="text-end"><button class="btn btn-sm btn-outline-primary border-0" onclick="crmMessageToCustomer(${c.id},'${escapeHtml((c.name||'').replace(/['"\\]/g,''))}')"><i class="fas fa-comment-dots"></i></button></td></tr>`).join('')||`<tr><td colspan="7" class="text-center text-muted py-3">대상 고객이 없습니다.</td></tr>`;
     return `<div class="alert alert-warning border-0 rounded-0 mb-0 small"><i class="fas fa-circle-info me-1"></i>마지막 방문 후 <strong>${d.days}일</strong> 이상 경과한 고객 <strong>${d.count}명</strong></div><div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead class="table-light"><tr><th>고객</th><th>연락처</th><th>등급</th><th class="text-center">방문</th><th class="text-center">미방문</th><th>담당</th><th class="text-end">액션</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 function crmCouponStatusBadge(s){ const c={issued:'#3b82f6',used:'#16a34a',expired:'#94a3b8'}[s]||'#94a3b8'; const kr={issued:'발급',used:'사용',expired:'만료'}[s]||s; return `<span class="badge" style="background:${c}1a;color:${c};border:1px solid ${c}55">${kr}</span>`; }
@@ -7045,11 +7062,11 @@ async function crmMsgRender(tab){
                 </div></div></div>`;
         } else if(tab==='templates'){
             const tpls=await apiGet('/api/crm/message-templates');
-            const rows=tpls.map(t=>`<tr><td class="fw-bold">${t.name}</td><td><span class="badge bg-secondary">${t.channel}</span></td><td>${t.category||'-'}</td><td class="text-muted small">${t.body}</td><td class="text-end"><button class="btn btn-sm btn-outline-primary border-0" onclick='crmTemplateForm(${JSON.stringify(t).replace(/'/g,"&#39;")})'><i class="fas fa-pen"></i></button><button class="btn btn-sm btn-outline-danger border-0" onclick="crmTemplateDelete(${t.id})"><i class="fas fa-trash"></i></button></td></tr>`).join('')||`<tr><td colspan="5" class="text-center text-muted py-3">템플릿이 없습니다.</td></tr>`;
+            const rows=tpls.map(t=>`<tr><td class="fw-bold">${escapeHtml(t.name)}</td><td><span class="badge bg-secondary">${t.channel}</span></td><td>${escapeHtml(t.category)||'-'}</td><td class="text-muted small">${escapeHtml(t.body)}</td><td class="text-end"><button class="btn btn-sm btn-outline-primary border-0" onclick='crmTemplateForm(${JSON.stringify(t).replace(/'/g,"&#39;")})'><i class="fas fa-pen"></i></button><button class="btn btn-sm btn-outline-danger border-0" onclick="crmTemplateDelete(${t.id})"><i class="fas fa-trash"></i></button></td></tr>`).join('')||`<tr><td colspan="5" class="text-center text-muted py-3">템플릿이 없습니다.</td></tr>`;
             box.innerHTML=`<div class="card data-card"><div class="card-header d-flex justify-content-between align-items-center"><h6 class="mb-0">메시지 템플릿</h6><button class="btn btn-sm btn-primary" onclick="crmTemplateForm()"><i class="fas fa-plus me-1"></i>템플릿 추가</button></div><div class="card-body p-0"><div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead class="table-light"><tr><th>이름</th><th>채널</th><th>분류</th><th>내용</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div><div class="card-footer small text-muted">치환변수: {고객명} {매장명} {포인트}</div></div>`;
         } else if(tab==='log'){
             const logs=await apiGet('/api/crm/messages');
-            const rows=logs.map(m=>`<tr><td><small>${formatDate(m.sent_at)}</small></td><td>${m.customer_name}</td><td><span class="badge bg-secondary">${m.channel}</span></td><td class="small">${m.content}</td><td><span class="badge bg-light text-dark">${m.campaign||'-'}</span></td></tr>`).join('')||`<tr><td colspan="5" class="text-center text-muted py-3">발송 내역이 없습니다.</td></tr>`;
+            const rows=logs.map(m=>`<tr><td><small>${formatDate(m.sent_at)}</small></td><td>${escapeHtml(m.customer_name)}</td><td><span class="badge bg-secondary">${m.channel}</span></td><td class="small">${escapeHtml(m.content)}</td><td><span class="badge bg-light text-dark">${escapeHtml(m.campaign)||'-'}</span></td></tr>`).join('')||`<tr><td colspan="5" class="text-center text-muted py-3">발송 내역이 없습니다.</td></tr>`;
             box.innerHTML=`<div class="card data-card"><div class="card-body p-0"><div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead class="table-light"><tr><th>발송시각</th><th>고객</th><th>채널</th><th>내용</th><th>캠페인</th></tr></thead><tbody>${rows}</tbody></table></div></div></div>`;
         }
     }catch(e){ box.innerHTML=`<div class="alert alert-danger">${escapeHtml(e.message)}</div>`; }
@@ -7464,13 +7481,13 @@ async function loadOwnerReceiptReview(c, t) {
                     <!-- 플레이스 URL -->
                     <div class="mb-3">
                         <label class="form-label fw-bold small mb-1">플레이스 URL</label>
-                        <input class="form-control form-control-sm" id="reviewPlaceUrl" value="${config.place_url || ''}" placeholder="https://map.naver.com/...">
+                        <input class="form-control form-control-sm" id="reviewPlaceUrl" value="${escapeHtml(config.place_url || '')}" placeholder="https://map.naver.com/...">
                     </div>
 
                     <!-- 환영 메시지 -->
                     <div class="mb-3">
                         <label class="form-label fw-bold small mb-1">환영 메시지</label>
-                        <textarea class="form-control form-control-sm" id="reviewWelcomeMsg" rows="2" placeholder="방문해주셔서 감사합니다!">${config.welcome_message || ''}</textarea>
+                        <textarea class="form-control form-control-sm" id="reviewWelcomeMsg" rows="2" placeholder="방문해주셔서 감사합니다!">${escapeHtml(config.welcome_message || '')}</textarea>
                     </div>
 
                     <!-- 버튼 그룹 -->
@@ -7553,7 +7570,8 @@ function renderReviewCards(reviews) {
         </div>`;
     }
     return reviews.map(r => {
-        const hasImage = !!r.receipt_image_url;
+        const imgUrl = safeUrl(r.receipt_image_url);
+        const hasImage = !!imgUrl;
         const hasMemo = !!r.memo;
         const statusColor = r.status === 'approved' ? '#198754' : r.status === 'rejected' ? '#dc3545' : '#ffc107';
         return `
@@ -7565,7 +7583,7 @@ function renderReviewCards(reviews) {
             <div class="d-flex gap-3 align-items-start">
                 <div class="flex-shrink-0" style="width:56px;height:56px;">
                     ${hasImage ? `
-                        <img src="${r.receipt_image_url}" alt="영수증"
+                        <img src="${imgUrl}" alt="영수증"
                              style="width:56px;height:56px;object-fit:cover;border-radius:8px;">
                     ` : `
                         <div style="width:56px;height:56px;border-radius:8px;background:#f1f5f9;display:flex;align-items:center;justify-content:center;">
@@ -7575,13 +7593,13 @@ function renderReviewCards(reviews) {
                 </div>
                 <div class="flex-grow-1 min-w-0">
                     <div class="d-flex justify-content-between align-items-center mb-1">
-                        <span class="fw-bold" style="font-size:.9rem;">${r.customer_name || '익명 고객'}</span>
+                        <span class="fw-bold" style="font-size:.9rem;">${escapeHtml(r.customer_name) || '익명 고객'}</span>
                         <div class="d-flex align-items-center gap-1">
                             ${reviewStatusBadge(r.status)}
                             ${r.review_completed ? '<span class="badge bg-info bg-opacity-75" title="플레이스 리뷰 완료"><i class="fas fa-star"></i></span>' : ''}
                         </div>
                     </div>
-                    ${hasMemo ? `<p class="mb-1 small text-dark" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;"><i class="fas fa-comment text-primary me-1" style="font-size:.7rem;"></i>${r.memo}</p>` : ''}
+                    ${hasMemo ? `<p class="mb-1 small text-dark" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;"><i class="fas fa-comment text-primary me-1" style="font-size:.7rem;"></i>${escapeHtml(r.memo)}</p>` : ''}
                     <div class="d-flex justify-content-between align-items-center">
                         <span class="text-muted" style="font-size:.75rem;"><i class="fas fa-clock me-1"></i>${formatDate(r.created_at)}</span>
                         <div class="d-flex gap-1" onclick="event.stopPropagation();">
@@ -7609,7 +7627,8 @@ function openReviewDetail(reviewId) {
     const r = reviews.find(rv => rv.id === reviewId);
     if (!r) return;
 
-    const hasImage = !!r.receipt_image_url;
+    const imgUrl = safeUrl(r.receipt_image_url);
+    const hasImage = !!imgUrl;
     const body = document.getElementById('reviewDetailBody');
     const footer = document.getElementById('reviewDetailFooter');
 
@@ -7619,11 +7638,11 @@ function openReviewDetail(reviewId) {
         <div class="col-md-5 text-center">
             ${hasImage ? `
                 <div class="position-relative">
-                    <img src="${r.receipt_image_url}" alt="영수증 이미지"
+                    <img src="${imgUrl}" alt="영수증 이미지"
                          class="img-fluid rounded shadow-sm" style="max-height:400px;cursor:pointer;"
-                         onclick="window.open('${r.receipt_image_url}','_blank')">
+                         onclick="window.open('${imgUrl}','_blank')">
                     <div class="mt-2">
-                        <a href="${r.receipt_image_url}" target="_blank" class="btn btn-sm btn-outline-primary">
+                        <a href="${imgUrl}" target="_blank" class="btn btn-sm btn-outline-primary">
                             <i class="fas fa-expand-alt me-1"></i>원본 보기
                         </a>
                     </div>
@@ -7649,11 +7668,11 @@ function openReviewDetail(reviewId) {
                     </tr>
                     <tr>
                         <td class="text-muted fw-bold"><i class="fas fa-user me-1"></i>고객명</td>
-                        <td>${r.customer_name || '<span class="text-muted fst-italic">미입력</span>'}</td>
+                        <td>${escapeHtml(r.customer_name) || '<span class="text-muted fst-italic">미입력</span>'}</td>
                     </tr>
                     <tr>
                         <td class="text-muted fw-bold"><i class="fas fa-phone me-1"></i>연락처</td>
-                        <td>${r.customer_phone || '<span class="text-muted fst-italic">미입력</span>'}</td>
+                        <td>${escapeHtml(r.customer_phone) || '<span class="text-muted fst-italic">미입력</span>'}</td>
                     </tr>
                     <tr>
                         <td class="text-muted fw-bold"><i class="fas fa-flag me-1"></i>상태</td>
@@ -7676,7 +7695,7 @@ function openReviewDetail(reviewId) {
             <div class="mt-3">
                 <label class="form-label fw-bold small"><i class="fas fa-comment-dots text-primary me-1"></i>고객 한줄 리뷰</label>
                 <div class="bg-light rounded p-3 ${r.memo ? '' : 'text-muted fst-italic'}">
-                    ${r.memo ? r.memo : '고객이 리뷰를 남기지 않았습니다.'}
+                    ${r.memo ? escapeHtml(r.memo) : '고객이 리뷰를 남기지 않았습니다.'}
                 </div>
             </div>
 
@@ -7684,7 +7703,7 @@ function openReviewDetail(reviewId) {
             <div class="mt-3">
                 <label class="form-label fw-bold small"><i class="fas fa-sticky-note text-warning me-1"></i>관리자 메모 (내부용)</label>
                 <textarea class="form-control form-control-sm" id="modalAdminMemo" rows="2"
-                          placeholder="관리 참고용 메모를 입력하세요...">${r.admin_memo || ''}</textarea>
+                          placeholder="관리 참고용 메모를 입력하세요...">${escapeHtml(r.admin_memo) || ''}</textarea>
             </div>
         </div>
     </div>`;

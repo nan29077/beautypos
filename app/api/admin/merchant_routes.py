@@ -136,7 +136,11 @@ def list_all_users(
     """전체 사용자 목록 (역할별 필터 가능)"""
     q = db.query(User)
     if role:
-        q = q.filter(User.role == UserRole(role))
+        try:
+            role_enum = UserRole(role)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"유효하지 않은 역할입니다: {role}")
+        q = q.filter(User.role == role_enum)
     users = q.order_by(User.created_at.desc()).all()
 
     results = []

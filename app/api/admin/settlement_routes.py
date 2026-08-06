@@ -45,22 +45,30 @@ def list_all_transactions(
     limit: int = 200, offset: int = 0,
     db: Session = Depends(get_db), _=Depends(require_admin),
 ):
-    q = db.query(Transaction)
+    try:
+        dt_from = datetime.fromisoformat(date_from) if date_from else None
+        dt_to = datetime.fromisoformat(date_to) + timedelta(days=1) if date_to else None
+    except ValueError:
+        raise HTTPException(status_code=400, detail="날짜 형식이 올바르지 않습니다 (YYYY-MM-DD)")
+
+    q = db.query(Transaction).filter(Transaction.status == TransactionStatus.APPROVED)
     if merchant_id:
         q = q.filter(Transaction.merchant_id == merchant_id)
-    if date_from:
-        q = q.filter(Transaction.created_at >= datetime.fromisoformat(date_from))
-    if date_to:
-        q = q.filter(Transaction.created_at <= datetime.fromisoformat(date_to) + timedelta(days=1))
+    if dt_from:
+        q = q.filter(Transaction.created_at >= dt_from)
+    if dt_to:
+        q = q.filter(Transaction.created_at <= dt_to)
     total_count = q.count()
     # Calculate total from filtered query
-    amount_q = db.query(func.coalesce(func.sum(Transaction.amount), 0))
+    amount_q = db.query(func.coalesce(func.sum(Transaction.amount), 0)).filter(
+        Transaction.status == TransactionStatus.APPROVED
+    )
     if merchant_id:
         amount_q = amount_q.filter(Transaction.merchant_id == merchant_id)
-    if date_from:
-        amount_q = amount_q.filter(Transaction.created_at >= datetime.fromisoformat(date_from))
-    if date_to:
-        amount_q = amount_q.filter(Transaction.created_at <= datetime.fromisoformat(date_to) + timedelta(days=1))
+    if dt_from:
+        amount_q = amount_q.filter(Transaction.created_at >= dt_from)
+    if dt_to:
+        amount_q = amount_q.filter(Transaction.created_at <= dt_to)
     total_amount = float(amount_q.scalar())
 
     txns = q.order_by(Transaction.created_at.desc()).offset(offset).limit(limit).all()
@@ -880,10 +888,13 @@ def admin_settlement_breakdown(
         Transaction.merchant_id == mid,
         Transaction.status == TransactionStatus.APPROVED,
     )
-    if period_start:
-        q = q.filter(Transaction.created_at >= datetime.fromisoformat(period_start))
-    if period_end:
-        q = q.filter(Transaction.created_at <= datetime.fromisoformat(period_end))
+    try:
+        if period_start:
+            q = q.filter(Transaction.created_at >= datetime.fromisoformat(period_start))
+        if period_end:
+            q = q.filter(Transaction.created_at <= datetime.fromisoformat(period_end))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="날짜 형식이 올바르지 않습니다 (YYYY-MM-DD)")
     txns = q.all()
     result = compute_distribution(db, mid, txns)
     result["merchant_name"] = merchant.name

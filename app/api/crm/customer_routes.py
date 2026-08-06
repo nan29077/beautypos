@@ -412,6 +412,9 @@ def create_visit(req: VisitIn, ctx: CrmContext = Depends(get_crm_context), db: S
     c = db.query(CrmCustomer).filter(CrmCustomer.id == req.customer_id, CrmCustomer.merchant_id == ctx.merchant_id).first()
     if not c:
         raise HTTPException(404, "고객을 찾을 수 없습니다")
+    # 음수 금액 방지
+    if (req.amount or 0) < 0:
+        raise HTTPException(400, "금액은 0 이상이어야 합니다")
     staff_id = req.staff_id if req.staff_id is not None else (ctx.staff_id if ctx.is_designer else None)
     v = CrmVisit(merchant_id=ctx.merchant_id, customer_id=req.customer_id, staff_id=staff_id,
                  service_name=req.service_name, amount=req.amount or 0, memo=req.memo,
@@ -419,10 +422,14 @@ def create_visit(req: VisitIn, ctx: CrmContext = Depends(get_crm_context), db: S
     db.add(v)
     earned = req.points_earned if req.points_earned is not None else int((req.amount or 0) * 0.05)
     if earned:
-        new_balance = (c.points or 0) + earned
-        c.points = new_balance
-        db.add(CrmPointLog(merchant_id=ctx.merchant_id, customer_id=c.id, delta=earned,
-                           reason="방문 적립", balance_after=new_balance))
+        # 잔액 음수 방지: 차감(음수 적립) 시에도 잔액이 0 미만으로 내려가지 않도록 클램프
+        old_balance = c.points or 0
+        new_balance = max(0, old_balance + earned)
+        earned = new_balance - old_balance
+        if earned:
+            c.points = new_balance
+            db.add(CrmPointLog(merchant_id=ctx.merchant_id, customer_id=c.id, delta=earned,
+                               reason="방문 적립", balance_after=new_balance))
     db.commit(); db.refresh(v)
     return {"id": v.id, "points_earned": earned}
 
@@ -432,6 +439,28 @@ def delete_visit(vid: int, ctx: CrmContext = Depends(get_crm_context), db: Sessi
     v = db.query(CrmVisit).filter(CrmVisit.id == vid, CrmVisit.merchant_id == ctx.merchant_id).first()
     if not v:
         raise HTTPException(404, "방문 기록을 찾을 수 없습니다")
+    # 포인트 무결성: 방문 등록 시 적립된 포인트를 회수한다.
+    # 방문과 적립 로그는 같은 트랜잭션에서 생성되므로 created_at 이 근접한 "방문 적립" 로그를 찾는다.
+    c = db.query(CrmCustomer).filter(CrmCustomer.id == v.customer_id,
+                                     CrmCustomer.merchant_id == ctx.merchant_id).first()
+    if c and v.created_at:
+        window_start = v.created_at - timedelta(seconds=60)
+        window_end = v.created_at + timedelta(seconds=60)
+        earn_log = db.query(CrmPointLog).filter(
+            CrmPointLog.merchant_id == ctx.merchant_id,
+            CrmPointLog.customer_id == v.customer_id,
+            CrmPointLog.reason == "방문 적립",
+            CrmPointLog.created_at >= window_start,
+            CrmPointLog.created_at <= window_end,
+        ).first()
+        if earn_log and earn_log.delta > 0:
+            old_balance = c.points or 0
+            new_balance = max(0, old_balance - earn_log.delta)
+            reclaimed = old_balance - new_balance
+            if reclaimed:
+                c.points = new_balance
+                db.add(CrmPointLog(merchant_id=ctx.merchant_id, customer_id=c.id, delta=-reclaimed,
+                                   reason="방문 삭제 적립 회수", balance_after=new_balance))
     db.delete(v); db.commit()
     return {"ok": True}
 
@@ -472,7 +501,11 @@ def list_reservations(
     if date_to:
         q = q.filter(CrmReservation.reserved_at <= _parse_dt(date_to))
     if status:
-        q = q.filter(CrmReservation.status == ReservationStatus(status))
+        try:
+            status_enum = ReservationStatus(status)
+        except ValueError:
+            raise HTTPException(400, f"유효하지 않은 예약 상태입니다: {status}")
+        q = q.filter(CrmReservation.status == status_enum)
     if staff_id:
         q = q.filter(CrmReservation.staff_id == staff_id)
     use_mine = (scope == "mine") or (scope == "auto" and ctx.is_designer)
@@ -566,7 +599,10 @@ def update_reservation(rid: int, req: ReservationUpdate, ctx: CrmContext = Depen
         raise HTTPException(404, "예약을 찾을 수 없습니다")
     payload = req.model_dump(exclude_unset=True)
     if payload.get("status"):
-        r.status = ReservationStatus(payload.pop("status"))
+        try:
+            r.status = ReservationStatus(payload.pop("status"))
+        except ValueError:
+            raise HTTPException(400, "유효하지 않은 예약 상태입니다")
     else:
         payload.pop("status", None)
     if payload.get("reserved_at"):

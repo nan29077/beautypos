@@ -73,22 +73,27 @@ def calendar_monthly_data(
 ):
     """Get daily aggregated sales for a given month (calendar view)."""
     merchant = _get_owner_merchant(user, db)
-    from calendar import monthrange
-    from datetime import datetime
-    _, last_day = monthrange(year, month)
-    month_start = datetime(year, month, 1)
-    month_end = datetime(year, month, last_day, 23, 59, 59)
+    from datetime import date as date_type
+    from app.utils.kst import fmt_kst
+    # KST 기준 월 경계를 UTC 로 변환해 비교한다.
+    month_start = kst_day_start_utc(date_type(year, month, 1))
+    if month == 12:
+        next_month_first = date_type(year + 1, 1, 1)
+    else:
+        next_month_first = date_type(year, month + 1, 1)
+    month_end = kst_day_start_utc(next_month_first)
 
     txns = db.query(Transaction).filter(
         Transaction.merchant_id == merchant.id,
         Transaction.created_at >= month_start,
-        Transaction.created_at <= month_end,
+        Transaction.created_at < month_end,
+        Transaction.status == TransactionStatus.APPROVED,
     ).all()
 
-    # Aggregate by day
+    # Aggregate by day (KST 기준 날짜)
     daily_map = {}
     for t in txns:
-        day_key = t.created_at.strftime("%Y-%m-%d")
+        day_key = fmt_kst(t.created_at, "%Y-%m-%d")
         if day_key not in daily_map:
             daily_map[day_key] = {"date": day_key, "total": 0, "count": 0}
         daily_map[day_key]["total"] += float(t.amount)
@@ -110,13 +115,15 @@ def calendar_daily_data(
     """Get detailed transactions for a specific date."""
     merchant = _get_owner_merchant(user, db)
     from datetime import datetime
-    day_start = datetime.strptime(date, "%Y-%m-%d")
+    # KST 기준 하루 경계를 UTC 로 변환해 비교한다.
+    day_start = kst_day_start_utc(datetime.strptime(date, "%Y-%m-%d").date())
     day_end = day_start + timedelta(days=1)
 
     txns = db.query(Transaction).filter(
         Transaction.merchant_id == merchant.id,
         Transaction.created_at >= day_start,
         Transaction.created_at < day_end,
+        Transaction.status == TransactionStatus.APPROVED,
     ).order_by(Transaction.created_at.desc()).all()
 
     results = []
@@ -224,11 +231,13 @@ def owner_dashboard_stats(db: Session = Depends(get_db), user: User = Depends(re
     today_sales = db.query(func.coalesce(func.sum(Transaction.amount), 0)).filter(
         Transaction.merchant_id == merchant.id,
         Transaction.created_at >= today_start,
+        Transaction.status == TransactionStatus.APPROVED,
     ).scalar()
 
     month_sales = db.query(func.coalesce(func.sum(Transaction.amount), 0)).filter(
         Transaction.merchant_id == merchant.id,
         Transaction.created_at >= month_start,
+        Transaction.status == TransactionStatus.APPROVED,
     ).scalar()
 
     # 이번 주 (KST 기준 이번 주 월요일 0시)
@@ -236,11 +245,13 @@ def owner_dashboard_stats(db: Session = Depends(get_db), user: User = Depends(re
     week_sales = db.query(func.coalesce(func.sum(Transaction.amount), 0)).filter(
         Transaction.merchant_id == merchant.id,
         Transaction.created_at >= week_start,
+        Transaction.status == TransactionStatus.APPROVED,
     ).scalar()
 
     # 전체 누적 매출
     total_sales = db.query(func.coalesce(func.sum(Transaction.amount), 0)).filter(
         Transaction.merchant_id == merchant.id,
+        Transaction.status == TransactionStatus.APPROVED,
     ).scalar()
 
     # 정산 예정: 가장 최근 정산의 period_end 이후 거래액 합계
@@ -249,6 +260,7 @@ def owner_dashboard_stats(db: Session = Depends(get_db), user: User = Depends(re
     ).order_by(Settlement.period_end.desc()).first()
     pending_q = db.query(func.coalesce(func.sum(Transaction.amount), 0)).filter(
         Transaction.merchant_id == merchant.id,
+        Transaction.status == TransactionStatus.APPROVED,
     )
     if last_settlement:
         pending_q = pending_q.filter(Transaction.created_at > last_settlement.period_end)
@@ -256,6 +268,7 @@ def owner_dashboard_stats(db: Session = Depends(get_db), user: User = Depends(re
 
     total_txns = db.query(func.count(Transaction.id)).filter(
         Transaction.merchant_id == merchant.id,
+        Transaction.status == TransactionStatus.APPROVED,
     ).scalar()
 
     staff_count = db.query(func.count(Staff.id)).filter(
@@ -268,6 +281,7 @@ def owner_dashboard_stats(db: Session = Depends(get_db), user: User = Depends(re
         Transaction.merchant_id == merchant.id,
         Transaction.created_at >= yesterday_start,
         Transaction.created_at < today_start,
+        Transaction.status == TransactionStatus.APPROVED,
     ).scalar()
 
     last_month_start = (month_start - timedelta(days=1)).replace(day=1)
@@ -275,11 +289,13 @@ def owner_dashboard_stats(db: Session = Depends(get_db), user: User = Depends(re
         Transaction.merchant_id == merchant.id,
         Transaction.created_at >= last_month_start,
         Transaction.created_at < month_start,
+        Transaction.status == TransactionStatus.APPROVED,
     ).scalar()
 
     today_txn_count = db.query(func.count(Transaction.id)).filter(
         Transaction.merchant_id == merchant.id,
         Transaction.created_at >= today_start,
+        Transaction.status == TransactionStatus.APPROVED,
     ).scalar()
 
     # 최근 7일 일별 매출
@@ -291,6 +307,7 @@ def owner_dashboard_stats(db: Session = Depends(get_db), user: User = Depends(re
             Transaction.merchant_id == merchant.id,
             Transaction.created_at >= day_start,
             Transaction.created_at < day_end,
+            Transaction.status == TransactionStatus.APPROVED,
         ).scalar()
         weekly_data.append({
             "date": day_start.strftime("%m/%d"),
@@ -324,6 +341,7 @@ def owner_dashboard_stats(db: Session = Depends(get_db), user: User = Depends(re
             Staff.name,
             func.coalesce(func.sum(Transaction.amount), 0).label('total')
         ).outerjoin(Transaction, (Transaction.staff_id == Staff.id) & (Transaction.created_at >= today_start)
+                    & (Transaction.status == TransactionStatus.APPROVED)
         ).filter(Staff.merchant_id == merchant.id, Staff.is_active == True
         ).group_by(Staff.id).order_by(sa_desc('total')).limit(5).all()
         staff_sales_today = [{"name": r[0], "sales": float(r[1])} for r in staff_rows]
