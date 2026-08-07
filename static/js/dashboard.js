@@ -75,13 +75,22 @@ const mobilePageMeta = {
     'designer-profile': ['내 정보', 'fas fa-id-badge']
 };
 
+/** 뷰티 업종 여부. business_type이 없는 구계정은 beauty로 간주. */
+function isBeautyBusiness() {
+    if (!currentUser) return true;
+    const bt = currentUser.business_type;
+    return !bt || bt === 'beauty';
+}
+
 function isPageAllowedForCurrentRole(page) {
     if (!currentUser || page === 'home') return page === 'home';
     if (currentUser.role === 'admin') return page.startsWith('admin-');
     if (currentUser.role === 'sales') return page.startsWith('sales-');
     if (currentUser.role === 'owner') return ownerMobilePages().includes(page);
     if (currentUser.role === 'designer') {
-        return ['designer-transactions', 'designer-monthly', 'designer-settlement', 'crm', 'designer-profile'].includes(page);
+        const allowed = ['designer-transactions', 'designer-monthly', 'designer-settlement', 'designer-profile'];
+        if (isBeautyBusiness()) allowed.push('crm');
+        return allowed.includes(page);
     }
     return false;
 }
@@ -280,14 +289,16 @@ function ownerMobilePages() {
     if (adFeatureFlags.ad_order_mgmt_enabled) {
         pages.push('owner-adorders', 'owner-adorder-new');
     }
-    pages.push('crm', 'owner-info');
+    if (isBeautyBusiness()) pages.push('crm');
+    pages.push('owner-info');
     return pages;
 }
 
 function roleMobilePages() {
-    return currentUser.role === 'owner'
-        ? ownerMobilePages()
-        : ['home', 'designer-transactions', 'designer-monthly', 'designer-settlement', 'crm', 'designer-profile'];
+    if (currentUser.role === 'owner') return ownerMobilePages();
+    const designerPages = ['home', 'designer-transactions', 'designer-monthly', 'designer-settlement', 'designer-profile'];
+    if (isBeautyBusiness()) designerPages.splice(designerPages.indexOf('designer-profile'), 0, 'crm');
+    return designerPages;
 }
 
 function setupRoleMobileUI() {
@@ -333,8 +344,8 @@ function buildMobileNavigation() {
     if (!isRoleMobile()) return;
     const pages = roleMobilePages();
     const bottomPages = currentUser.role === 'owner'
-        ? ['home', 'owner-transactions', pages.includes('owner-staff') ? 'owner-staff' : 'owner-analysis', 'crm']
-        : ['home', 'designer-transactions', 'designer-monthly', 'crm'];
+        ? ['home', 'owner-transactions', pages.includes('owner-staff') ? 'owner-staff' : 'owner-analysis', ...(isBeautyBusiness() ? ['crm'] : ['owner-settlements'])]
+        : ['home', 'designer-transactions', 'designer-monthly', ...(isBeautyBusiness() ? ['crm'] : ['designer-profile'])];
     const nav = document.getElementById('mobileBottomNav');
     nav.innerHTML = bottomPages.map(page => {
         const [label, icon] = mobilePageMeta[page];
@@ -594,9 +605,12 @@ function buildSidebar() {
         <a class="nav-link" href="#" data-page="owner-adorders"><i class="fas fa-bullhorn"></i>내 광고 주문</a>
         <a class="nav-link" href="#" data-page="owner-adorder-new"><i class="fas fa-plus-circle"></i>새 광고 주문</a>`;
         }
-        html += `
+        if (isBeautyBusiness()) {
+            html += `
         <div class="nav-section">미용실 관리 프로그램</div>
-        <a class="nav-link" href="#" data-page="crm"><i class="fas fa-user-friends"></i>미용실 관리 프로그램</a>
+        <a class="nav-link" href="#" data-page="crm"><i class="fas fa-user-friends"></i>미용실 관리 프로그램</a>`;
+        }
+        html += `
         <div class="nav-section">설정</div>
         <a class="nav-link" href="#" data-page="owner-info"><i class="fas fa-cog"></i>매장 정보</a>`;
     } else if (role === 'designer') {
@@ -604,9 +618,13 @@ function buildSidebar() {
         <div class="nav-section">내 매출</div>
         <a class="nav-link" href="#" data-page="designer-transactions"><i class="fas fa-receipt"></i>결제 내역</a>
         <a class="nav-link" href="#" data-page="designer-monthly"><i class="fas fa-calendar-alt"></i>월별 통계</a>
-        <a class="nav-link" href="#" data-page="designer-settlement"><i class="fas fa-coins"></i>정산 분배</a>
+        <a class="nav-link" href="#" data-page="designer-settlement"><i class="fas fa-coins"></i>정산 분배</a>`;
+        if (isBeautyBusiness()) {
+            html += `
         <div class="nav-section">미용실 관리 프로그램</div>
-        <a class="nav-link" href="#" data-page="crm"><i class="fas fa-user-friends"></i>미용실 관리 프로그램</a>
+        <a class="nav-link" href="#" data-page="crm"><i class="fas fa-user-friends"></i>미용실 관리 프로그램</a>`;
+        }
+        html += `
         <div class="nav-section">정보</div>
         <a class="nav-link" href="#" data-page="designer-profile"><i class="fas fa-id-badge"></i>내 정보</a>`;
     }
@@ -687,8 +705,14 @@ async function loadPage(page) {
             case 'owner-adorder-new': await loadOwnerAdOrderNew(c, t); break;
             case 'owner-info': await loadOwnerInfo(c, t); break;
             case 'owner-receipt-review': await loadOwnerReceiptReview(c, t); break;
-            case 'owner-crm': await loadCRM(c, t); break;
-            case 'crm': await loadCRM(c, t); break;
+            case 'owner-crm':
+            case 'crm':
+                if (!isBeautyBusiness()) {
+                    c.innerHTML = '<div class="alert alert-warning mt-3"><i class="fas fa-lock me-2"></i>이 메뉴는 뷰티 업종 전용입니다.</div>';
+                } else {
+                    await loadCRM(c, t);
+                }
+                break;
             // Designer
             case 'designer-transactions': await loadDesignerTransactions(c, t); break;
             case 'designer-monthly': await loadDesignerMonthly(c, t); break;

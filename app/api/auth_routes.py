@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models.user import User, UserRole
+from app.models.user import User, UserRole, BusinessType
 from app.models.merchant import Merchant
 from app.models.settlement import MerchantSalesAssignment
 from app.auth.jwt_handler import (
@@ -31,6 +31,7 @@ def _user_dict(u: User) -> dict:
     return {
         "id": u.id, "email": u.email, "name": u.name,
         "role": u.role.value if isinstance(u.role, UserRole) else u.role,
+        "business_type": u.business_type if u.business_type else "beauty",
         "is_active": u.is_active,
     }
 
@@ -67,6 +68,7 @@ def register(req: RegisterRequest, db: Session = Depends(get_db)):
         name=req.name,
         phone=req.phone,
         role=role,
+        business_type=req.business_type,  # "beauty" or "general" as plain string
         referral_code=None,
     )
     db.add(user)

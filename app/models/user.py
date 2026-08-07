@@ -13,6 +13,11 @@ class UserRole(str, enum.Enum):
     DESIGNER = "designer"
 
 
+class BusinessType(str, enum.Enum):
+    BEAUTY = "beauty"
+    GENERAL = "general"
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -21,6 +26,8 @@ class User(Base):
     password_hash = Column(String(255), nullable=True)  # nullable for OAuth-only users
     name = Column(String(100), nullable=False)
     role = Column(SAEnum(UserRole), nullable=False, default=UserRole.OWNER)
+    # String 타입으로 저장: MariaDB ENUM 매핑 충돌 방지
+    business_type = Column(String(20), nullable=False, default="beauty", server_default="beauty")
     oauth_provider = Column(String(50), nullable=True)  # kakao / naver / google
     oauth_sub = Column(String(255), nullable=True)       # provider's user id
     phone = Column(String(30), nullable=True)

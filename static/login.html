@@ -133,6 +133,23 @@
                             <input type="password" class="form-control" id="regPasswordConfirm" placeholder="비밀번호 재입력">
                         </div>
                         <div class="mb-3">
+                            <label class="form-label fw-bold small mb-1">업종 선택</label>
+                            <div class="d-flex gap-3 mt-1">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="regBusinessType" id="regBusinessBeauty" value="beauty" checked>
+                                    <label class="form-check-label small" for="regBusinessBeauty">
+                                        <i class="fas fa-cut me-1 text-primary"></i>뷰티 업종
+                                    </label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="regBusinessType" id="regBusinessGeneral" value="general">
+                                    <label class="form-check-label small" for="regBusinessGeneral">
+                                        <i class="fas fa-briefcase me-1 text-secondary"></i>일반 업종 (병의원 포함)
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mb-3">
                             <label class="form-label fw-bold small mb-1">추천 코드 <span class="text-muted fw-normal">(선택)</span></label>
                             <input type="text" class="form-control" id="regReferralCode" placeholder="영업관리자 추천코드(선택)">
                         </div>
@@ -214,6 +231,7 @@
             const password = document.getElementById('regPassword').value;
             const passwordConfirm = document.getElementById('regPasswordConfirm').value;
             const referral = document.getElementById('regReferralCode').value.trim();
+            const businessType = document.querySelector('input[name="regBusinessType"]:checked')?.value || 'beauty';
 
             if (!name || !shopName || !email || !password) {
                 showAlert('이름, 매장명, 이메일, 비밀번호를 모두 입력하세요', 'warning'); return;
@@ -225,7 +243,7 @@
                 showAlert('비밀번호는 6자 이상이어야 합니다', 'warning'); return;
             }
 
-            const payload = { name, email, password, role: 'OWNER', shop_name: shopName };
+            const payload = { name, email, password, role: 'OWNER', shop_name: shopName, business_type: businessType };
             if (referral) payload.sales_referral_code = referral;
 
             try {

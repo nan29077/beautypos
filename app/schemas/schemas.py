@@ -2,7 +2,7 @@
 Pydantic schemas for request/response validation.
 """
 from pydantic import BaseModel, EmailStr, Field, field_validator
-from typing import Optional, List, Dict
+from typing import Literal, Optional, List, Dict
 from datetime import datetime, date, timezone, timedelta
 from enum import Enum
 
@@ -15,6 +15,7 @@ class RegisterRequest(BaseModel):
     name: str
     phone: Optional[str] = None
     role: str = "OWNER"                    # OWNER / SALES 가능 (ADMIN 불가)
+    business_type: Literal["beauty", "general"] = "beauty"  # 업종 선택
     sales_referral_code: Optional[str] = None  # OWNER 가입 시 SALES 추천 코드
     shop_name: Optional[str] = None        # OWNER 가입 시 가맹점명
     business_number: Optional[str] = None  # OWNER 가입 시 사업자번호
