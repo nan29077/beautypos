@@ -225,14 +225,36 @@ def update_user_role(uid: int, role: str = Query(...), db: Session = Depends(get
 
 
 @router.put("/users/{uid}/toggle-active")
-def toggle_user_active(uid: int, db: Session = Depends(get_db), _=Depends(require_admin)):
+def toggle_user_active(uid: int, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     """사용자 활성/비활성 토글"""
     user = db.query(User).filter(User.id == uid).first()
     if not user:
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+    if user.id == current_user.id:
+        raise HTTPException(status_code=400, detail="자기 자신의 상태는 변경할 수 없습니다.")
     user.is_active = not user.is_active
     db.commit()
     return {"ok": True, "is_active": user.is_active}
+
+
+@router.delete("/users/{uid}")
+def delete_user(uid: int, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
+    """사용자 완전 삭제 (복구 불가)"""
+    user = db.query(User).filter(User.id == uid).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+    if user.id == current_user.id:
+        raise HTTPException(status_code=400, detail="자기 자신은 삭제할 수 없습니다.")
+    try:
+        db.delete(user)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail="삭제 실패: 해당 사용자에게 연결된 거래·정산 등의 데이터가 있습니다. 먼저 관련 데이터를 정리해주세요."
+        )
+    return {"ok": True, "message": "사용자가 삭제되었습니다."}
 
 
 # ═══════════════════════════════════════════════════════════

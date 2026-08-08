@@ -3182,8 +3182,11 @@ async function loadAdminUsers(c, t) {
                         <option value="designer" ${u.role==='designer'?'selected':''}>직원(디자이너)</option>
                     </select>
                     <button class="btn btn-sm btn-primary" onclick="changeUserRole(${u.id})" title="역할 변경"><i class="fas fa-save"></i></button>
-                    <button class="btn btn-sm btn-outline-${u.is_active?'danger':'success'}" onclick="toggleUserActive(${u.id})" title="${u.is_active?'비활성화':'활성화'}">
-                        <i class="fas fa-${u.is_active?'ban':'check'}"></i>
+                    <button class="btn btn-sm btn-outline-${u.is_active?'warning':'success'}" onclick="toggleUserActive(${u.id})" title="${u.is_active?'활동정지':'활성화'}">
+                        <i class="fas fa-${u.is_active?'ban':'check'} me-1"></i>${u.is_active?'활동정지':'활성화'}
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="deleteUser(${u.id}, '${escapeHtml(u.name)}')" title="회원 삭제">
+                        <i class="fas fa-trash me-1"></i>삭제
                     </button>
                 </div>
             </td>
@@ -3231,11 +3234,21 @@ async function changeUserRole(uid) {
 }
 
 async function toggleUserActive(uid) {
-    if (!confirm('이 사용자의 활성 상태를 변경하시겠습니까?')) return;
+    if (!confirm('이 사용자의 활동 상태를 변경하시겠습니까?\n(활성 → 활동정지 / 정지 → 활성화)')) return;
     try {
         await apiPut(`/api/admin/users/${uid}/toggle-active`, {});
         navigate('admin-users');
     } catch (e) { alert('상태 변경 실패: ' + e.message); }
+}
+
+async function deleteUser(uid, name) {
+    if (!confirm(`[${name}] 회원을 완전히 삭제하시겠습니까?\n\n⚠️ 이 작업은 되돌릴 수 없습니다.`)) return;
+    if (!confirm(`정말로 [${name}] 회원을 삭제합니다. 계속하시겠습니까?`)) return;
+    try {
+        await apiDelete(`/api/admin/users/${uid}`);
+        alert(`[${name}] 회원이 삭제되었습니다.`);
+        navigate('admin-users');
+    } catch (e) { alert('삭제 실패: ' + e.message); }
 }
 
 // ─── 영업관리자 관리 (전담 페이지) ──────────────────────────
