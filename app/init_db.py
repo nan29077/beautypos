@@ -7,7 +7,7 @@ import sys
 from sqlalchemy import inspect, text
 from app.database import engine, Base, SessionLocal
 from app.models import *  # noqa: F401, F403 — import all models to register them
-from app.seed import run_seed, seed_crm_demo, seed_plans
+from app.seed import run_seed, seed_crm_demo, seed_plans, seed_general_owner
 from app.config import get_settings
 
 
@@ -65,6 +65,7 @@ def _ensure_columns():
         ("settlements", "company_profit_amount", "NUMERIC(14,2)", "0"),
         ("settlements", "sales_manager_user_id", "INTEGER", "NULL"),
         ("users", "referral_code", "VARCHAR(50)", "NULL"),
+        ("users", "business_type", "VARCHAR(20)", "'beauty'"),
         # 광고 주문 수량·단가 스냅샷
         ("ad_order_blog_details", "order_count", "INTEGER", "1"),
         ("ad_order_blog_details", "unit_price", "NUMERIC(12,2)", "0"),
@@ -241,6 +242,11 @@ def init_db():
             seed_crm_demo(db)
         except Exception as e:
             print(f"   ⚠️ CRM demo seed skipped: {e}")
+        # 일반 업종 테스트 원장 계정 보강 (기존 DB에도 1회 안전하게 추가)
+        try:
+            seed_general_owner(db)
+        except Exception as e:
+            print(f"   ⚠️ General owner seed skipped: {e}")
         print("✅ Seed data loaded")
     finally:
         db.close()

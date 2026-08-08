@@ -356,6 +356,44 @@ def seed_crm_demo(db: Session):
     print(f"   Created CRM demo: {len(customer_objs)} customers, {len(service_objs)} services, visits, reservations, templates, coupons")
 
 
+def seed_general_owner(db: Session):
+    """일반 업종 테스트 원장 계정을 멱등하게 시드한다.
+
+    owner_general@test.com — business_type='general', CRM 없음.
+    기존 뷰티 업종 owner@test.com 과 구분해 일반 업종 테스트용으로 사용.
+    """
+    if db.query(User).filter(User.email == "owner_general@test.com").first():
+        return  # 이미 시드됨
+
+    pw_hash = pwd_context.hash(TEST_PASSWORD)
+
+    owner_g = User(
+        email="owner_general@test.com",
+        password_hash=pw_hash,
+        name="김일반",
+        role=UserRole.OWNER,
+        business_type="general",  # CRM 비활성화 — 일반 업종 테스트용
+    )
+    db.add(owner_g)
+    db.flush()
+
+    merchant_g = Merchant(
+        name="일반상점 테스트점",
+        owner_user_id=owner_g.id,
+        business_no="987-65-43210",
+        address="서울 마포구 홍대로 456",
+        phone="02-9876-5432",
+    )
+    db.add(merchant_g)
+    db.flush()
+
+    from app.services import plan_service
+    plan_service.ensure_default_plan(db, merchant_g.id)
+
+    db.commit()
+    print("   Created general owner: owner_general@test.com (일반상점 테스트점, CRM 없음)")
+
+
 # ─── 플랜 시드 ──────────────────────────────────────────────
 
 # (code, name, 수수료율%, 블로그 일/월, 영수증 일/월, 트래픽 일/월, 저장 일/월, 쇼츠 일/월)

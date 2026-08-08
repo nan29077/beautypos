@@ -159,10 +159,11 @@ def test_login(role: str = Query(...), db: Session = Depends(get_db)):
         "sales": "sales@test.com",
         "owner": "owner@test.com",
         "designer": "designer@test.com",
+        "owner_general": "owner_general@test.com",  # 일반 업종 테스트 원장 (CRM 없음)
     }
     email = role_email_map.get(role)
     if not email:
-        raise HTTPException(status_code=400, detail="Invalid role. Use: admin/sales/owner/designer")
+        raise HTTPException(status_code=400, detail="Invalid role. Use: admin/sales/owner/designer/owner_general")
     user = db.query(User).filter(User.email == email).first()
     if not user:
         raise HTTPException(status_code=404, detail="Test account not found. Run seed first.")
