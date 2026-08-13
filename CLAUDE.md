@@ -23,6 +23,16 @@ alembic revision --autogenerate -m "description"
 alembic upgrade head
 ```
 
+## 스키마 변경 워크플로우 (중요)
+
+모델(`app/models/`)을 수정하면 반드시 alembic 마이그레이션을 함께 작성한다:
+
+1. `alembic revision --autogenerate -m "설명"` 으로 리비전 생성 (기존 파일들처럼 존재 여부를 확인하는 idempotent 스타일 권장)
+2. 커밋/푸시 후 실서버에서 `~/beautypos/deploy.sh` 실행 — git pull → pip install → `alembic upgrade head` → 서비스 재시작 순으로 자동 처리된다
+3. `app/init_db.py`의 `_ensure_columns()` pending 목록은 **레거시 보정용**이므로 새 컬럼을 추가하지 말 것
+
+운영 DB(RDS `beautypos`)는 2026-08-13에 `alembic stamp head`로 편입되었다. `create_all`은 새 테이블만 만들고 기존 테이블의 컬럼 추가/변경은 하지 못하므로, 마이그레이션 없이 배포하면 운영에서 500 에러(Unknown column)가 난다.
+
 ## Architecture
 
 **Tech Stack:** FastAPI + SQLAlchemy 2.x + Alembic, MariaDB(prod) / SQLite(dev), JWT 인증, Fernet 암호화

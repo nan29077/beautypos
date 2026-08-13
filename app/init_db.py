@@ -42,7 +42,12 @@ def wait_for_db(max_retries=30, delay=2):
 
 def _ensure_columns():
     """create_all 은 기존 테이블에 컬럼을 추가하지 않으므로, 신규 컬럼을 멱등하게 보강한다.
-    (개발: SQLite / 운영: MariaDB 모두 ADD COLUMN 지원)"""
+    (개발: SQLite / 운영: MariaDB 모두 ADD COLUMN 지원)
+
+    [LEGACY] 이 목록은 alembic 도입 전에 반영된 컬럼의 구버전 DB 보정용으로만 유지한다.
+    새 스키마 변경은 여기에 추가하지 말고 alembic 마이그레이션으로 작성할 것:
+      alembic revision --autogenerate -m "..."  → 배포 시 deploy.sh 가 upgrade head 실행.
+    운영 DB(beautypos)는 2026-08-13 에 head(a1b2c3d4e5f6)로 stamp 되어 alembic 이 관리한다."""
     # (table, column, DDL type, default)
     pending = [
         ("staff", "share_rate", "NUMERIC(5,4)", "0.5"),
