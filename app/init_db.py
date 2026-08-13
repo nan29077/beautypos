@@ -66,6 +66,10 @@ def _ensure_columns():
         ("settlements", "sales_manager_user_id", "INTEGER", "NULL"),
         ("users", "referral_code", "VARCHAR(50)", "NULL"),
         ("users", "business_type", "VARCHAR(20)", "'beauty'"),
+        # 거래 취소 기능
+        ("transactions", "status", "VARCHAR(9)", "'APPROVED'"),
+        ("transactions", "cancelled_at", "DATETIME", "NULL"),
+        ("transactions", "cancel_reason", "VARCHAR(255)", "NULL"),
         # 광고 주문 수량·단가 스냅샷
         ("ad_order_blog_details", "order_count", "INTEGER", "1"),
         ("ad_order_blog_details", "unit_price", "NUMERIC(12,2)", "0"),
