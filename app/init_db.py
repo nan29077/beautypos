@@ -81,9 +81,12 @@ def _ensure_columns():
                     if engine.dialect.name == "sqlite" else None
                 if cols is None:
                     # 비-SQLite: information_schema 로 존재 여부 확인
+                    # table_schema 를 현재 DB로 한정하지 않으면 같은 RDS 인스턴스의
+                    # 다른 데이터베이스에 있는 동명 컬럼을 보고 ALTER 를 건너뛴다.
                     res = conn.execute(text(
                         "SELECT column_name FROM information_schema.columns "
-                        "WHERE table_name = :t AND column_name = :c"
+                        "WHERE table_schema = DATABASE() "
+                        "AND table_name = :t AND column_name = :c"
                     ), {"t": table, "c": column})
                     exists = res.first() is not None
                 else:
