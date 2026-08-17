@@ -14,6 +14,7 @@ from passlib.context import CryptContext
 from app.database import get_db
 from app.models.terminal import TerminalDevice
 from app.models.transaction import Transaction, TransactionStatus
+from app.models.settlement import Settlement
 from app.models.staff import Staff
 from app.models.merchant import Merchant
 from app.models.user import User, UserRole
@@ -225,6 +226,22 @@ def cancel_transaction(
 
     if txn.status == TransactionStatus.CANCELLED:
         raise HTTPException(status_code=400, detail="이미 취소된 거래입니다")
+
+    # 이미 정산(Settlement)에 포함된 거래는 취소를 막는다.
+    # 정산 계산(settlements/calculate)은 merchant_id + created_at 이
+    # period_start~period_end 안에 드는 APPROVED 거래를 합산하므로,
+    # 같은 조건으로 정산 존재 여부를 확인한다 (취소 시 정산 금액 과대 계상 방지).
+    if txn.created_at is not None:
+        settled = db.query(Settlement).filter(
+            Settlement.merchant_id == txn.merchant_id,
+            Settlement.period_start <= txn.created_at,
+            Settlement.period_end >= txn.created_at,
+        ).first()
+        if settled:
+            raise HTTPException(
+                status_code=409,
+                detail="정산에 포함된 거래는 취소할 수 없습니다. 관리자에게 문의하세요.",
+            )
 
     txn.status = TransactionStatus.CANCELLED
     txn.cancelled_at = datetime.now(timezone.utc).replace(tzinfo=None)
