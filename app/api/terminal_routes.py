@@ -120,6 +120,21 @@ def ingest_transaction(
     if approved_at_value is not None and approved_at_value.tzinfo is not None:
         approved_at_value = approved_at_value.astimezone(timezone.utc).replace(tzinfo=None)
 
+    # approval_code 가 없는 거래는 unique 제약으로 걸러지지 않으므로,
+    # (terminal_id + amount + approved_at) 조합으로 재전송(중복)을 막는다.
+    # approved_at 미제공 시에는 수신 시각이 매번 달라 조합 비교가 불가능하므로 건너뛴다.
+    if not req.approval_code and approved_at_value is not None:
+        existing = db.query(Transaction).filter(
+            Transaction.terminal_id == terminal.id,
+            Transaction.approval_code.is_(None),
+            Transaction.amount == req.amount,
+            Transaction.approved_at == approved_at_value,
+            Transaction.status == TransactionStatus.APPROVED,
+        ).first()
+        if existing:
+            response.status_code = 200
+            return _duplicate_response(existing)
+
     if req.staff_code:
         staff = db.query(Staff).filter(
             Staff.merchant_id == merchant.id,
