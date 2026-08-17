@@ -238,7 +238,7 @@ def ad_analysis(
             metrics = db.query(AdMetric).filter(
                 AdMetric.merchant_id == merchant.id,
                 AdMetric.place_url == p.place_url,
-                AdMetric.date >= start_date.date() if hasattr(start_date, 'date') else start_date,
+                (AdMetric.date >= start_date.date() if hasattr(start_date, 'date') else AdMetric.date >= start_date),
             ).order_by(AdMetric.date.desc()).all()
             my_metrics.append({
                 "place_url": p.place_url, "nickname": p.nickname,
@@ -258,7 +258,7 @@ def ad_analysis(
         metrics = db.query(AdMetric).filter(
             AdMetric.merchant_id == merchant.id,
             AdMetric.place_url == c.competitor_place_url,
-            AdMetric.date >= start_date.date() if hasattr(start_date, 'date') else start_date,
+            (AdMetric.date >= start_date.date() if hasattr(start_date, 'date') else AdMetric.date >= start_date),
         ).order_by(AdMetric.date.desc()).all()
         comp_metrics.append({
             "place_url": c.competitor_place_url, "memo": c.memo,
@@ -639,7 +639,7 @@ def ad_analysis_summary(
         q = db.query(AdMetric).filter(
             AdMetric.merchant_id == merchant.id,
             AdMetric.place_url == place_url,
-            AdMetric.date >= start_date.date() if hasattr(start_date, 'date') else start_date,
+            (AdMetric.date >= start_date.date() if hasattr(start_date, 'date') else AdMetric.date >= start_date),
         )
         if merchant_id_filter is not None:
             q = q.filter(AdMetric.merchant_id == merchant_id_filter)
