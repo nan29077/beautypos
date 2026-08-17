@@ -1129,7 +1129,6 @@ def create_shorts_order(req: AdShortsOrderCreate, db: Session = Depends(get_db),
     """쇼츠 제작·배포 주문 접수. 예상 비용은 서버 단가로 재계산해 저장한다."""
     merchant = _get_owner_merchant(user, db)
     _require_ad_order_feature(db, AD_SHORTS_ENABLED)
-    _require_plan_ad_quota(db, merchant.id, AdOrderType.SHORTS, "shorts")
 
     if req.campaign_type not in SHORTS_CAMPAIGN_TYPE_CODES:
         raise HTTPException(status_code=400, detail="캠페인 유형을 선택해주세요")
@@ -1152,6 +1151,13 @@ def create_shorts_order(req: AdShortsOrderCreate, db: Session = Depends(get_db),
             raise HTTPException(status_code=400, detail="배포 플랫폼을 1개 이상 선택해주세요")
         if sum(platform_counts.values()) != req.distribution_count:
             raise HTTPException(status_code=400, detail="플랫폼별 배포 건수의 합이 전체 배포 건수와 일치해야 합니다")
+
+    # 플랜 한도 검증: 쇼츠 사용량은 sum(distribution_count) 로 집계되므로,
+    # 주문 건수(1)가 아니라 이번 주문의 총 배포 건수를 요청량으로 넘긴다.
+    _require_plan_ad_quota(
+        db, merchant.id, AdOrderType.SHORTS, "shorts",
+        requested_count=int(req.distribution_count or 0) if uses["distribution"] else 0,
+    )
 
     # 제작 건수 · 영상 길이 등급 검증
     duration_tier = req.video_duration_tier or None
