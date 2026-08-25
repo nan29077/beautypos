@@ -15,6 +15,7 @@ from datetime import date as date_cls, datetime, timedelta
 from typing import Optional
 
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.models.ad_dispatch import (
     AdDispatch,
@@ -196,8 +197,8 @@ def _record_skip(db: Session, item: dict, target_date: date_cls, actor_id: Optio
 def _build_request(item: dict, target_date: date_cls) -> dict:
     """리워드팝에 보낼 요청 본문.
 
-    [명세 미확정] 필드 이름은 리워드팝 문서를 받으면 맞춰야 한다.
-    지금은 무엇을 보내려 하는지 관리자가 눈으로 확인할 수 있게 하는 것이 목적이다.
+    필드 이름은 리워드팝 명세가 확정되면 이 함수 안에서만 바꾸면 된다.
+    집행 행(request_json)에 그대로 남기므로 관리자가 무엇을 보냈는지 확인할 수 있다.
     """
     return {
         "ad_type": item["ad_type"],
@@ -209,13 +210,14 @@ def _build_request(item: dict, target_date: date_cls) -> dict:
     }
 
 
-async def _dispatch_one(db: Session, item: dict, target_date: date_cls,
-                        dry_run: bool, actor_id: Optional[int]) -> AdDispatch:
-    key = build_idempotency_key(SOURCE_AUTO, item["merchant_id"], item["ad_type"], target_date)
-    payload = _build_request(item, target_date)
+def _prepare_row(db: Session, item: dict, target_date: date_cls,
+                 dry_run: bool, actor_id: Optional[int], payload: dict) -> AdDispatch:
+    """전송 전에 집행 행을 남긴다 (동기 DB 작업).
 
-    # 호출 전에 흔적을 먼저 남긴다. 주문은 나갔는데 커밋이 실패하면
-    # 다음 실행 때 같은 주문이 또 나가기 때문이다.
+    호출 전에 흔적을 먼저 남긴다. 주문은 나갔는데 커밋이 실패하면
+    다음 실행 때 같은 주문이 또 나가기 때문이다.
+    """
+    key = build_idempotency_key(SOURCE_AUTO, item["merchant_id"], item["ad_type"], target_date)
     row = db.query(AdDispatch).filter(AdDispatch.idempotency_key == key).first()
     if row is None:
         row = AdDispatch(
@@ -233,6 +235,26 @@ async def _dispatch_one(db: Session, item: dict, target_date: date_cls,
     row.error_message = None
     row.status = STATUS_DRY_RUN if dry_run else STATUS_PENDING
     db.commit()
+    return row
+
+
+def _mark_sent(db: Session, row: AdDispatch, result: dict) -> None:
+    """전송 성공을 기록하고 집행 실적에 반영한다 (동기 DB 작업)."""
+    row.status = STATUS_SENT
+    row.external_order_id = str(result.get("external_order_id") or "") or None
+    row.response_json = json.dumps(result.get("raw"), ensure_ascii=False, default=str)
+    db.commit()
+    sync_execution(db, row.merchant_id, row.ad_type, row.execution_date)
+
+
+async def _dispatch_one(db: Session, item: dict, target_date: date_cls,
+                        dry_run: bool, actor_id: Optional[int]) -> AdDispatch:
+    payload = _build_request(item, target_date)
+
+    # 동기 DB 작업은 스레드풀에 넘겨 이벤트 루프를 막지 않는다.
+    row = await run_in_threadpool(
+        _prepare_row, db, item, target_date, dry_run, actor_id, payload
+    )
 
     if dry_run:
         # 실제로 보내지 않는다. 집행 실적(AdExecution)에도 반영하지 않는다.
@@ -241,17 +263,13 @@ async def _dispatch_one(db: Session, item: dict, target_date: date_cls,
     try:
         result = await rewardpop.create_order(db, item["ad_type"], payload)
     except rewardpop.SpecMissing as exc:
-        _mark_failed(db, row, exc.message, retryable=False)
+        await run_in_threadpool(_mark_failed, db, row, exc.message, False)
         return row
     except rewardpop.RewardpopError as exc:
-        _mark_failed(db, row, exc.message, retryable=exc.retryable)
+        await run_in_threadpool(_mark_failed, db, row, exc.message, exc.retryable)
         return row
 
-    row.status = STATUS_SENT
-    row.external_order_id = str(result.get("external_order_id") or "") or None
-    row.response_json = json.dumps(result.get("raw"), ensure_ascii=False, default=str)
-    db.commit()
-    sync_execution(db, row.merchant_id, row.ad_type, row.execution_date)
+    await run_in_threadpool(_mark_sent, db, row, result)
     return row
 
 
@@ -307,14 +325,14 @@ async def run(db: Session, target_date: Optional[date_cls] = None,
               actor_id: Optional[int] = None) -> dict:
     """집행을 실행한다. 스케줄러와 관리자 수동 실행이 함께 쓴다."""
     target_date = target_date or today_kst()
-    plan = build_plan(db, target_date, merchant_id)
+    plan = await run_in_threadpool(build_plan, db, target_date, merchant_id)
     if dry_run is None:
         dry_run = plan["dry_run"]
 
     dispatched, skipped, failed = [], [], []
     for item in plan["items"]:
         if item["action"] == "skip":
-            row = _record_skip(db, item, target_date, actor_id)
+            row = await run_in_threadpool(_record_skip, db, item, target_date, actor_id)
             skipped.append({**item, "dispatch_id": row.id if row else None})
             continue
         row = await _dispatch_one(db, item, target_date, dry_run, actor_id)
@@ -350,12 +368,42 @@ async def retry(db: Session, row: AdDispatch, actor_id: Optional[int] = None) ->
         "keywords": [k.strip() for k in (row.keyword or "").split(",") if k.strip()],
         "est_cost": float(row.cost_amount or 0),
     }
-    row.retry_count = int(row.retry_count or 0) + 1
-    db.commit()
+    await run_in_threadpool(_bump_retry, db, row)
     return await _dispatch_one(db, item, row.execution_date, False, actor_id)
 
 
+def _bump_retry(db: Session, row: AdDispatch) -> None:
+    row.retry_count = int(row.retry_count or 0) + 1
+    db.commit()
+
+
 # ─── 상태 추적 ──────────────────────────────────────────────
+
+def _pending_status_rows(db: Session, target_date: Optional[date_cls], limit: int) -> list:
+    """상태를 확인해야 하는 집행 행들 (동기 DB 조회)."""
+    q = db.query(AdDispatch).filter(
+        AdDispatch.status.in_([STATUS_SENT, STATUS_RUNNING]),
+        AdDispatch.dry_run == False,  # noqa: E712
+        AdDispatch.external_order_id.isnot(None),
+    )
+    if target_date:
+        q = q.filter(AdDispatch.execution_date == target_date)
+    return q.order_by(AdDispatch.id.asc()).limit(limit).all()
+
+
+def _apply_external_status(db: Session, row: AdDispatch, new_status: str, result: dict) -> None:
+    """리워드팝에서 읽어온 상태를 반영한다 (동기 DB 작업)."""
+    row.status = STATUS_DONE if new_status == "done" else (
+        STATUS_FAILED if new_status == "failed" else STATUS_RUNNING
+    )
+    if new_status == "failed":
+        row.error_message = f"리워드팝 상태: {result.get('raw_status')}"[:500]
+        # 접수까지 됐다가 실패한 건은 자동 재시도 대상으로 두지 않는다.
+        row.retry_count = MAX_RETRY
+    row.response_json = json.dumps(result.get("raw"), ensure_ascii=False, default=str)
+    db.commit()
+    sync_execution(db, row.merchant_id, row.ad_type, row.execution_date)
+
 
 async def refresh_statuses(db: Session, target_date: Optional[date_cls] = None,
                            limit: int = 50) -> dict:
@@ -365,14 +413,7 @@ async def refresh_statuses(db: Session, target_date: Optional[date_cls] = None,
     상태를 읽지 못한 건은 손대지 않는다 — 모르는 값을 완료로 바꾸면
     집행 실적이 부풀려진다.
     """
-    q = db.query(AdDispatch).filter(
-        AdDispatch.status.in_([STATUS_SENT, STATUS_RUNNING]),
-        AdDispatch.dry_run == False,  # noqa: E712
-        AdDispatch.external_order_id.isnot(None),
-    )
-    if target_date:
-        q = q.filter(AdDispatch.execution_date == target_date)
-    rows = q.order_by(AdDispatch.id.asc()).limit(limit).all()
+    rows = await run_in_threadpool(_pending_status_rows, db, target_date, limit)
 
     updated, unchanged, errors = 0, 0, []
     for row in rows:
@@ -391,16 +432,7 @@ async def refresh_statuses(db: Session, target_date: Optional[date_cls] = None,
             unchanged += 1
             continue
 
-        row.status = STATUS_DONE if new_status == "done" else (
-            STATUS_FAILED if new_status == "failed" else STATUS_RUNNING
-        )
-        if new_status == "failed":
-            row.error_message = f"리워드팝 상태: {result.get('raw_status')}"[:500]
-            # 접수까지 됐다가 실패한 건은 자동 재시도 대상으로 두지 않는다.
-            row.retry_count = MAX_RETRY
-        row.response_json = json.dumps(result.get("raw"), ensure_ascii=False, default=str)
-        db.commit()
-        sync_execution(db, row.merchant_id, row.ad_type, row.execution_date)
+        await run_in_threadpool(_apply_external_status, db, row, new_status, result)
         updated += 1
 
     return {

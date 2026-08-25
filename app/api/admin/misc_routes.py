@@ -5,6 +5,7 @@ from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+from starlette.concurrency import run_in_threadpool
 
 from app.utils.kst import today_kst, kst_day_start_utc
 
@@ -261,7 +262,7 @@ def delete_ai_settings(db: Session = Depends(get_db), _=Depends(require_admin)):
 @router.get("/settings/ai/status")
 async def test_ai_connection(db: Session = Depends(get_db), _=Depends(require_admin)):
     """저장된 키로 OpenAI 에 실제 요청을 보내 연결 상태를 확인한다."""
-    key = ai_service.get_api_key(db)
+    key = await run_in_threadpool(ai_service.get_api_key, db)
     if not key:
         return {"configured": False, "ok": False, "detail": "등록된 API 키가 없습니다."}
     result = await ai_service.test_connection(key)

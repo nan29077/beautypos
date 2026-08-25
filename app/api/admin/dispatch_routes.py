@@ -8,6 +8,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.auth.dependencies import require_admin
 from app.database import get_db
@@ -113,7 +114,10 @@ async def retry_dispatch(
     admin: User = Depends(require_admin),
 ):
     """실패한 집행을 다시 시도한다 (드라이런이 아닌 실제 전송)."""
-    row = db.query(AdDispatch).filter(AdDispatch.id == dispatch_id).first()
+    # 동기 DB 조회는 스레드풀에서 — async 라우트가 이벤트 루프를 막지 않게 한다.
+    row = await run_in_threadpool(
+        lambda: db.query(AdDispatch).filter(AdDispatch.id == dispatch_id).first()
+    )
     if not row:
         raise HTTPException(status_code=404, detail="집행 기록을 찾을 수 없습니다")
     if not row.retryable:

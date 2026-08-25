@@ -6,6 +6,7 @@ app.services.rewardpop 어댑터를 거친다.
 """
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.auth.dependencies import require_admin
 from app.database import get_db
@@ -89,7 +90,7 @@ async def test_rewardpop_connection(db: Session = Depends(get_db), _: User = Dep
 @router.get("/rewardpop/balance")
 async def get_rewardpop_balance(db: Session = Depends(get_db), _: User = Depends(require_admin)):
     """리워드팝 포인트 잔액을 조회한다."""
-    if not rewardpop.get_api_key(db):
+    if not await run_in_threadpool(rewardpop.get_api_key, db):
         raise HTTPException(status_code=400, detail="API 키가 등록되지 않았습니다")
     try:
         return {"ok": True, **await rewardpop.get_balance(db)}

@@ -9,6 +9,7 @@ from typing import Optional
 
 import httpx
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.models.system_config import SystemConfig, OPENAI_API_KEY
 from app.services.encryption import encrypt_value, decrypt_value
@@ -103,7 +104,8 @@ async def generate_ad_recommendation(db: Session, context: dict) -> Optional[str
 
     키가 없으면 None 을 돌려주고, 호출부는 기존 규칙 기반 문구를 사용한다.
     """
-    api_key = get_api_key(db)
+    # 동기 DB 조회 — async 함수 안이라 스레드풀로 넘긴다.
+    api_key = await run_in_threadpool(get_api_key, db)
     if not api_key:
         return None
 

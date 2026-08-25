@@ -11,6 +11,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.database import get_db
 from app.models.user import User
@@ -315,15 +316,19 @@ async def ad_fetch_now(
     force: bool = Query(False, description="오늘 수집분이 있어도 강제로 다시 조회"),
     db: Session = Depends(get_db),
     user: User = Depends(require_owner),
+    merchant_id: Optional[int] = Query(None, description="최고관리자 전용: 대상 가맹점 ID"),
 ):
     """네이버 플레이스 리뷰 수 / 검색 순위를 즉시 수집한다 (병렬 조회)."""
-    merchant = _get_owner_merchant(user, db)
+    # 동기 DB 조회는 스레드풀에서 — async 라우트가 이벤트 루프를 막지 않게 한다.
+    merchant = await run_in_threadpool(_get_owner_merchant, user, db, merchant_id)
 
     # 강제 재수집 연타는 네이버 요청 한도를 소진시키므로 쿨다운을 둔다.
     if force:
-        last = db.query(PlaceMetricSnapshot).filter(
-            PlaceMetricSnapshot.merchant_id == merchant.id,
-        ).order_by(PlaceMetricSnapshot.collected_at.desc()).first()
+        last = await run_in_threadpool(
+            lambda: db.query(PlaceMetricSnapshot).filter(
+                PlaceMetricSnapshot.merchant_id == merchant.id,
+            ).order_by(PlaceMetricSnapshot.collected_at.desc()).first()
+        )
         if last and last.collected_at:
             waited = (datetime.utcnow() - last.collected_at).total_seconds()
             cooldown = naver_place.FORCE_REFRESH_COOLDOWN_SECONDS
@@ -338,7 +343,9 @@ async def ad_fetch_now(
     except Exception as exc:  # noqa: BLE001 — 수집 실패가 500 으로 전파되지 않게 한다
         raise HTTPException(status_code=502, detail=f"네이버 수집에 실패했습니다: {exc}") from exc
 
-    result["collection_status"] = _collection_status(db, merchant.id)
+    result["collection_status"] = await run_in_threadpool(
+        _collection_status, db, merchant.id
+    )
     return result
 
 
@@ -621,12 +628,16 @@ async def ad_recommendation(
     최고관리자가 OpenAI API 키를 등록해 두면 AI 추천을 사용하고,
     없으면 화면의 기존 규칙 기반 문구를 그대로 쓰도록 mode 를 내려준다.
     """
-    merchant = _get_owner_merchant(user, db, merchant_id)
-    # 라우트 함수를 직접 부르므로 merchant_id 도 그대로 넘긴다
-    # (넘기지 않으면 FastAPI 의 Query 기본값 객체가 그대로 들어간다).
-    overview = ad_analysis_overview(period="day", db=db, user=user, merchant_id=merchant_id)
+    # 동기 DB 작업은 한 번에 모아 스레드풀에서 처리한다.
+    def _gather():
+        merchant = _get_owner_merchant(user, db, merchant_id)
+        # 라우트 함수를 직접 부르므로 merchant_id 도 그대로 넘긴다
+        # (넘기지 않으면 FastAPI 의 Query 기본값 객체가 그대로 들어간다).
+        overview = ad_analysis_overview(period="day", db=db, user=user, merchant_id=merchant_id)
+        return merchant, overview, ai_service.is_configured(db)
 
-    if not ai_service.is_configured(db):
+    merchant, overview, ai_configured = await run_in_threadpool(_gather)
+    if not ai_configured:
         return {"ai_enabled": False, "mode": "rule", "text": None}
 
     context = {
