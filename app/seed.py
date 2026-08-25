@@ -13,6 +13,7 @@ from app.models.user import User, UserRole
 from app.models.merchant import Merchant
 from app.models.staff import Staff
 from app.models.terminal import TerminalDevice
+from app.services import terminal_auth
 from app.models.pg import PGProvider, MerchantPGConfig, PGConfigStatus
 from app.models.transaction import Transaction
 from app.models.settlement import FeePolicy, MerchantSalesAssignment, PayoutRequest, PayoutStatus
@@ -69,7 +70,8 @@ def run_seed(db: Session):
     terminal = TerminalDevice(
         merchant_id=merchant.id,
         terminal_serial="TERM001",
-        api_key_hash=pwd_context.hash(TERMINAL_API_KEY),
+        api_key_hash=terminal_auth.hash_api_key(TERMINAL_API_KEY),
+        api_key_fingerprint=terminal_auth.fingerprint(TERMINAL_API_KEY),
         memo="메인 카운터 단말기",
     )
     db.add(terminal)

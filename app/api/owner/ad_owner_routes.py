@@ -242,8 +242,9 @@ def ad_analysis(
     range: str = Query("all", pattern="^(day|week|month|all)$"),
     db: Session = Depends(get_db),
     user: User = Depends(require_owner),
+    merchant_id: Optional[int] = Query(None, description="최고관리자 전용: 대상 가맹점 ID"),
 ):
-    merchant = _get_owner_merchant(user, db)
+    merchant = _get_owner_merchant(user, db, merchant_id)
     start_date, end_date = _date_range(range)
 
     # Get my place profiles
@@ -346,9 +347,10 @@ def ad_analysis_history(
     days: int = Query(30, ge=1, le=365),
     db: Session = Depends(get_db),
     user: User = Depends(require_owner),
+    merchant_id: Optional[int] = Query(None, description="최고관리자 전용: 대상 가맹점 ID"),
 ):
     """일별 히스토리(블로그/방문자 리뷰 수, 순위)를 대상별로 반환한다."""
-    merchant = _get_owner_merchant(user, db)
+    merchant = _get_owner_merchant(user, db, merchant_id)
     today = today_kst()
     start = today - timedelta(days=days - 1)
 
@@ -509,9 +511,10 @@ def ad_analysis_overview(
     period: str = Query("day", pattern="^(day|week)$"),
     db: Session = Depends(get_db),
     user: User = Depends(require_owner),
+    merchant_id: Optional[int] = Query(None, description="최고관리자 전용: 대상 가맹점 ID"),
 ):
     """한눈에 보기 — 우리 매장과 각 경쟁업체의 일별/주별 비교 요약."""
-    merchant = _get_owner_merchant(user, db)
+    merchant = _get_owner_merchant(user, db, merchant_id)
     period_label = "지난주" if period == "week" else "어제"
 
     profiles = db.query(AdPlaceProfile).filter(
@@ -611,14 +614,17 @@ def ad_analysis_overview(
 async def ad_recommendation(
     db: Session = Depends(get_db),
     user: User = Depends(require_owner),
+    merchant_id: Optional[int] = Query(None, description="최고관리자 전용: 대상 가맹점 ID"),
 ):
     """마케팅 추천 문구.
 
     최고관리자가 OpenAI API 키를 등록해 두면 AI 추천을 사용하고,
     없으면 화면의 기존 규칙 기반 문구를 그대로 쓰도록 mode 를 내려준다.
     """
-    merchant = _get_owner_merchant(user, db)
-    overview = ad_analysis_overview(period="day", db=db, user=user)
+    merchant = _get_owner_merchant(user, db, merchant_id)
+    # 라우트 함수를 직접 부르므로 merchant_id 도 그대로 넘긴다
+    # (넘기지 않으면 FastAPI 의 Query 기본값 객체가 그대로 들어간다).
+    overview = ad_analysis_overview(period="day", db=db, user=user, merchant_id=merchant_id)
 
     if not ai_service.is_configured(db):
         return {"ai_enabled": False, "mode": "rule", "text": None}
@@ -646,9 +652,10 @@ def ad_analysis_summary(
     range: str = Query("all", pattern="^(day|week|month|all)$"),
     db: Session = Depends(get_db),
     user: User = Depends(require_owner),
+    merchant_id: Optional[int] = Query(None, description="최고관리자 전용: 대상 가맹점 ID"),
 ):
     """우리 매장 vs 경쟁업체 비교 요약 데이터를 반환"""
-    merchant = _get_owner_merchant(user, db)
+    merchant = _get_owner_merchant(user, db, merchant_id)
     start_date, end_date = _date_range(range)
 
     profiles = db.query(AdPlaceProfile).filter(AdPlaceProfile.merchant_id == merchant.id).all()
@@ -963,8 +970,10 @@ def create_competitor(req: AdCompetitorCreate, db: Session = Depends(get_db), us
 # ─── Ad Orders ──────────────────────────────────────────────
 
 @router.get("/ad/orders")
-def list_owner_ad_orders(db: Session = Depends(get_db), user: User = Depends(require_owner)):
-    merchant = _get_owner_merchant(user, db)
+def list_owner_ad_orders(db: Session = Depends(get_db), user: User = Depends(require_owner),
+    merchant_id: Optional[int] = Query(None, description="최고관리자 전용: 대상 가맹점 ID"),
+):
+    merchant = _get_owner_merchant(user, db, merchant_id)
     orders = db.query(AdOrder).filter(AdOrder.merchant_id == merchant.id).order_by(AdOrder.created_at.desc()).all()
     results = []
     for o in orders:
@@ -1011,9 +1020,10 @@ def list_owner_ad_orders(db: Session = Depends(get_db), user: User = Depends(req
 def get_owner_ad_pricing(
     db: Session = Depends(get_db),
     user: User = Depends(require_owner),
+    merchant_id: Optional[int] = Query(None, description="최고관리자 전용: 대상 가맹점 ID"),
 ):
     """원장 주문 화면에서 사용하는 현재 광고 단가."""
-    _get_owner_merchant(user, db)
+    _get_owner_merchant(user, db, merchant_id)
     return ad_pricing.get_ad_pricing(db)
 
 

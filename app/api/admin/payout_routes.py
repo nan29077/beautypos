@@ -2,7 +2,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.utils.kst import now_kst
+from datetime import datetime
+
+from app.utils.kst import fmt_kst
 from app.database import get_db
 from app.models.user import User
 from app.models.settlement import PayoutRequest, PayoutStatus
@@ -29,8 +31,9 @@ def list_payout_requests(db: Session = Depends(get_db), _=Depends(require_admin)
             "available_balance": float(available),
             "bank_info": r.bank_info, "memo": r.memo,
             "status": r.status.value if r.status else None,
-            "created_at": str(r.created_at),
-            "reviewed_at": str(r.reviewed_at) if r.reviewed_at else None,
+            # DB 는 naive UTC 로 저장하고 화면에는 KST 로 내려준다 (app/utils/kst.py 규약).
+            "created_at": fmt_kst(r.created_at),
+            "reviewed_at": fmt_kst(r.reviewed_at),
         })
     return results
 
@@ -48,10 +51,10 @@ def approve_payout(pid: int, db: Session = Depends(get_db), admin: User = Depend
     if Decimal(str(pr.amount)) > available:
         raise HTTPException(status_code=400, detail=f"출금 가능 잔액({available:,.0f}원)이 부족해 승인할 수 없습니다")
     pr.status = PayoutStatus.APPROVED
-    pr.reviewed_at = now_kst().replace(tzinfo=None)
+    pr.reviewed_at = datetime.utcnow()
     pr.reviewed_by = admin.id
     db.commit()
-    return {"ok": True, "status": "approved"}
+    return {"ok": True, "status": "approved", "reviewed_at": fmt_kst(pr.reviewed_at)}
 
 
 @router.post("/payout-requests/{pid}/reject")
@@ -62,7 +65,7 @@ def reject_payout(pid: int, db: Session = Depends(get_db), admin: User = Depends
     if pr.status != PayoutStatus.PENDING:
         raise HTTPException(status_code=400, detail="이미 처리된 페이아웃 요청입니다.")
     pr.status = PayoutStatus.REJECTED
-    pr.reviewed_at = now_kst().replace(tzinfo=None)
+    pr.reviewed_at = datetime.utcnow()
     pr.reviewed_by = admin.id
     db.commit()
-    return {"ok": True, "status": "rejected"}
+    return {"ok": True, "status": "rejected", "reviewed_at": fmt_kst(pr.reviewed_at)}

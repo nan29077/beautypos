@@ -54,6 +54,8 @@ def list_designer_transactions(
         Transaction.staff_id == staff.id,
         Transaction.created_at >= start,
         Transaction.created_at <= end,
+        # 취소된 결제는 내 매출이 아니므로 목록에서도 뺀다.
+        Transaction.status == TransactionStatus.APPROVED,
     ).order_by(Transaction.created_at.desc()).all()
 
     return [{

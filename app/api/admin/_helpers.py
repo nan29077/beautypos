@@ -6,12 +6,17 @@ ad-order transition / commission-rate validation / shorts-detail serialization
 helpers without duplicating code.
 """
 import json
+from decimal import Decimal
+from typing import Optional
 
 from fastapi import HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.settlement import MerchantSalesAssignment
 from app.models.ad import AdOrderShortsDetail, SHORTS_CAMPAIGN_TYPE_LABELS, SHORTS_DURATION_TIERS
+from app.models.ad_credit import AdCreditLedger, PAYMENT_CREDIT
+from app.services import ad_credit
 from app.services.settlement_service import get_effective_fee_rates
 
 AD_ORDER_TRANSITIONS = {
@@ -130,3 +135,58 @@ def _validate_merchant_commission_fit(
         db, merchant_id, sales_manager_user_id
     )
     _validate_commission_rate(commission_rate, merchant_fee_rate, pg_fee_rate)
+
+
+def _order_credit_outstanding(db: Session, order_id: int) -> Decimal:
+    """이 주문 때문에 지금 잠겨 있는(차감된 채로 남은) 크레딧 금액.
+
+    원장에서 이 주문에 달린 항목을 모두 더한다. 차감(use)은 음수, 되돌림(reverse)은
+    양수라 합계가 -10,000 이면 아직 10,000원이 차감된 상태다.
+    """
+    total = db.query(func.coalesce(func.sum(AdCreditLedger.amount), 0)).filter(
+        AdCreditLedger.ad_order_id == order_id
+    ).scalar() or 0
+    outstanding = -Decimal(str(total))
+    return outstanding if outstanding > 0 else Decimal("0")
+
+
+def _sync_order_credit(db: Session, order, new_status: str, actor_id: Optional[int]):
+    """광고 주문 상태 변경에 맞춰 크레딧을 되돌리거나 다시 차감한다.
+
+    반려되면 차감했던 광고비를 매장에 돌려주고, 반려를 풀면 다시 차감한다.
+    원장 합계로 현재 상태를 보고 판단하므로 몇 번을 호출해도 중복 환급되지 않는다.
+
+    돌려주는 값: 뒤이은 커밋이 실패했을 때 방금 한 환급/재차감을 되돌리는 함수
+                 (되돌릴 것이 없으면 None). 크레딧 변경은 자체 커밋이라
+                 상태 변경 커밋이 실패하면 이 보상 함수로 짝을 맞춘다.
+    """
+    if getattr(order, "payment_source", None) != PAYMENT_CREDIT:
+        return None
+    amount = Decimal(str(order.credit_amount or 0))
+    if amount <= 0:
+        return None
+
+    old_status = order.status.value if hasattr(order.status, "value") else str(order.status)
+    outstanding = _order_credit_outstanding(db, order.id)
+
+    if new_status == "rejected" and outstanding > 0:
+        ad_credit.reverse(db, order.merchant_id, outstanding, order.id,
+                          f"광고주문 #{order.id} 반려 — 광고비 반환", actor_id)
+        returned = outstanding
+
+        def _undo():
+            ad_credit.use(db, order.merchant_id, returned, order.id,
+                          f"광고주문 #{order.id} 반려 처리 실패 — 반환 취소", actor_id)
+        return _undo
+
+    if old_status == "rejected" and new_status != "rejected" and outstanding <= 0:
+        # 반려를 풀어 다시 진행하는 경우 — 돌려줬던 광고비를 다시 차감한다.
+        ad_credit.use(db, order.merchant_id, amount, order.id,
+                      f"광고주문 #{order.id} 반려 취소 — 광고비 재차감", actor_id)
+
+        def _undo():
+            ad_credit.reverse(db, order.merchant_id, amount, order.id,
+                              f"광고주문 #{order.id} 반려 취소 실패 — 재차감 취소", actor_id)
+        return _undo
+
+    return None

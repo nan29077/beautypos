@@ -3,7 +3,8 @@
 여기서 등록·수정한 키워드는 '승인 대기' 상태로 들어가며,
 최고관리자가 승인해야 자동 집행에 쓰인다.
 """
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Optional
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.api.owner._helpers import _get_owner_merchant, require_owner
@@ -28,9 +29,11 @@ def _own_keyword(db: Session, keyword_id: int, merchant_id: int) -> MerchantAdKe
 
 
 @router.get("/ad/keywords")
-def list_my_keywords(db: Session = Depends(get_db), user: User = Depends(require_owner)):
+def list_my_keywords(db: Session = Depends(get_db), user: User = Depends(require_owner),
+    merchant_id: Optional[int] = Query(None, description="최고관리자 전용: 대상 가맹점 ID"),
+):
     """내 매장 키워드 목록과 승인 현황."""
-    merchant = _get_owner_merchant(user, db)
+    merchant = _get_owner_merchant(user, db, merchant_id)
     rows = ad_keyword.list_for_merchant(db, merchant.id)
     usable = [k for k in rows if k.is_usable]
     return {

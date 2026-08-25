@@ -20,9 +20,11 @@ router = APIRouter()
 # ─── Receipt Review Management ────────────────────────────
 
 @router.get("/receipt-review/config")
-def get_receipt_review_config(db: Session = Depends(get_db), user: User = Depends(require_owner)):
+def get_receipt_review_config(db: Session = Depends(get_db), user: User = Depends(require_owner),
+    merchant_id: Optional[int] = Query(None, description="최고관리자 전용: 대상 가맹점 ID"),
+):
     """매장의 영수증 리뷰 설정 조회"""
-    merchant = _get_owner_merchant(user, db)
+    merchant = _get_owner_merchant(user, db, merchant_id)
     config = db.query(ReceiptReviewConfig).filter(
         ReceiptReviewConfig.merchant_id == merchant.id
     ).first()
@@ -101,9 +103,10 @@ def list_receipt_reviews(
     limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
     user: User = Depends(require_owner),
+    merchant_id: Optional[int] = Query(None, description="최고관리자 전용: 대상 가맹점 ID"),
 ):
     """영수증 리뷰 목록 조회"""
-    merchant = _get_owner_merchant(user, db)
+    merchant = _get_owner_merchant(user, db, merchant_id)
     q = db.query(ReceiptReview).filter(ReceiptReview.merchant_id == merchant.id)
     if status:
         q = q.filter(ReceiptReview.status == status)

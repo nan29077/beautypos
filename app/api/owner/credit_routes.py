@@ -3,7 +3,8 @@
 플랜에 포함된 집행량을 넘겨 광고를 더 주문하려면 광고비를 충전해야 한다.
 충전은 관리자가 입금을 확인하고 반영하므로 여기서는 조회와 환불 신청만 한다.
 """
-from fastapi import APIRouter, Depends
+from typing import Optional
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.api.owner._helpers import _get_owner_merchant, require_owner
@@ -17,9 +18,11 @@ router = APIRouter()
 
 
 @router.get("/ad/credit")
-def my_credit(db: Session = Depends(get_db), user: User = Depends(require_owner)):
+def my_credit(db: Session = Depends(get_db), user: User = Depends(require_owner),
+    merchant_id: Optional[int] = Query(None, description="최고관리자 전용: 대상 가맹점 ID"),
+):
     """잔액과 사용 내역, 환불 신청 현황."""
-    merchant = _get_owner_merchant(user, db)
+    merchant = _get_owner_merchant(user, db, merchant_id)
     info = ad_credit.credit_dict(db, merchant.id, merchant.name)
     refunds = db.query(AdCreditRefund).filter(
         AdCreditRefund.merchant_id == merchant.id

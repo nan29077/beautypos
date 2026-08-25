@@ -2,13 +2,14 @@
 
 Split out of the original app/api/owner_routes.py.
 """
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.user import User, UserRole
 from app.models.staff import Staff
-from app.models.transaction import Transaction
+from app.models.transaction import Transaction, TransactionStatus
 from app.auth.jwt_handler import hash_password
 from app.schemas.schemas import StaffCreate, StaffUpdate, DesignerCreate, DesignerUpdate
 
@@ -20,8 +21,10 @@ router = APIRouter()
 # ─── Staff Management ───────────────────────────────────────
 
 @router.get("/staff")
-def list_staff(db: Session = Depends(get_db), user: User = Depends(require_owner)):
-    merchant = _get_owner_merchant(user, db)
+def list_staff(db: Session = Depends(get_db), user: User = Depends(require_owner),
+    merchant_id: Optional[int] = Query(None, description="최고관리자 전용: 대상 가맹점 ID"),
+):
+    merchant = _get_owner_merchant(user, db, merchant_id)
     staff_list = db.query(Staff).filter(Staff.merchant_id == merchant.id).all()
     return [{
         "id": s.id, "name": s.name, "staff_code": s.staff_code,
@@ -74,9 +77,11 @@ def update_staff(sid: int, req: StaffUpdate, db: Session = Depends(get_db), user
 # 디자이너는 직접 회원가입할 수 없고, 원장이 계정을 만들어 미용실에 귀속시킨다.
 
 @router.get("/designers")
-def list_designers(db: Session = Depends(get_db), user: User = Depends(require_owner)):
+def list_designers(db: Session = Depends(get_db), user: User = Depends(require_owner),
+    merchant_id: Optional[int] = Query(None, description="최고관리자 전용: 대상 가맹점 ID"),
+):
     """이 미용실에 귀속된 디자이너(로그인 계정 보유 Staff) 목록."""
-    merchant = _get_owner_merchant(user, db)
+    merchant = _get_owner_merchant(user, db, merchant_id)
     rows = db.query(Staff).filter(
         Staff.merchant_id == merchant.id, Staff.user_id.isnot(None)
     ).order_by(Staff.created_at.desc()).all()
@@ -178,8 +183,9 @@ def staff_sales(
     range: str = Query("all", pattern="^(day|week|month|all)$"),
     db: Session = Depends(get_db),
     user: User = Depends(require_owner),
+    merchant_id: Optional[int] = Query(None, description="최고관리자 전용: 대상 가맹점 ID"),
 ):
-    merchant = _get_owner_merchant(user, db)
+    merchant = _get_owner_merchant(user, db, merchant_id)
     staff = db.query(Staff).filter(Staff.id == sid, Staff.merchant_id == merchant.id).first()
     if not staff:
         raise HTTPException(status_code=404)
@@ -189,6 +195,8 @@ def staff_sales(
         Transaction.staff_id == sid,
         Transaction.created_at >= start,
         Transaction.created_at <= end,
+        # 취소된 결제는 직원 매출에 포함하지 않는다.
+        Transaction.status == TransactionStatus.APPROVED,
     ).all()
     total = sum(float(t.amount) for t in txns)
     return {

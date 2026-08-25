@@ -35,8 +35,12 @@ from app.models.plan import (
 from app.services import plan_service
 from app.api.admin._helpers import (
     _allowed_ad_order_statuses, _validate_ad_order_transition, _shorts_detail_payload,
-    _validate_merchant_commission_fit,
+    _validate_merchant_commission_fit, _sync_order_credit,
 )
+from app.services import ad_credit
+
+# admin_memo 를 이어붙일 때 쓰는 줄바꿈
+NEWLINE = chr(10)
 
 router = APIRouter()
 
@@ -104,21 +108,61 @@ def list_ad_orders(db: Session = Depends(get_db), _=Depends(require_admin)):
     return results
 
 
-@router.post("/ad/orders/{oid}/status")
-def update_ad_order_status(oid: int, req: AdOrderStatusUpdate, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+def _change_ad_order_status(
+    db: Session, oid: int, status: str, admin: User,
+    admin_memo: Optional[str] = None, append_memo: bool = False,
+) -> dict:
+    """광고 주문 상태를 바꾼다. 상태 변경 엔드포인트가 공통으로 쓰는 한 곳이다.
+
+    반려하면 차감했던 광고비 크레딧을 되돌리고, 반려를 풀면 다시 차감한다.
+    크레딧 처리는 자체 커밋이므로, 뒤이은 상태 커밋이 실패하면 보상 함수로
+    되돌려 잔액과 주문 상태가 어긋나지 않게 한다.
+    """
     order = db.query(AdOrder).filter(AdOrder.id == oid).first()
     if not order:
-        raise HTTPException(status_code=404)
+        raise HTTPException(status_code=404, detail="광고주문을 찾을 수 없습니다")
+
     valid = [s.value for s in AdOrderStatus]
-    if req.status not in valid:
+    if status not in valid:
         raise HTTPException(status_code=400, detail=f"Invalid status. Use: {valid}")
-    _validate_ad_order_transition(order.status.value, req.status)
-    order.status = AdOrderStatus(req.status)
+    _validate_ad_order_transition(order.status.value, status)
+
+    old_status = order.status.value
+    undo_credit = _sync_order_credit(db, order, status, admin.id)
+
+    order.status = AdOrderStatus(status)
     order.assigned_admin_id = admin.id
-    if req.admin_memo:
-        order.admin_memo = req.admin_memo
-    db.commit()
-    return {"ok": True, "status": order.status.value}
+    if admin_memo:
+        if append_memo:
+            stamp = now_kst().strftime("%Y-%m-%d %H:%M")
+            order.admin_memo = (order.admin_memo or "") + NEWLINE + f"[{stamp} KST] {admin_memo}"
+        else:
+            order.admin_memo = admin_memo
+    order.updated_at = datetime.utcnow()
+
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        if undo_credit:
+            undo_credit()
+        raise
+
+    return {
+        "ok": True,
+        "order_id": order.id,
+        "old_status": old_status,
+        "new_status": order.status.value,
+        "status": order.status.value,
+        "credit_refunded": bool(undo_credit) and status == "rejected",
+        "credit_balance": ad_credit.balance_of(db, order.merchant_id),
+    }
+
+
+@router.post("/ad/orders/{oid}/status")
+def update_ad_order_status(oid: int, req: AdOrderStatusUpdate, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """상태 변경 (구 엔드포인트). /ad/orders/{oid}/execute 와 같은 처리를 한다."""
+    return _change_ad_order_status(db, oid, req.status, admin, req.admin_memo)
 
 
 # ─── Ad Metrics ──────────────────────────────────────────────
@@ -326,31 +370,12 @@ def execute_ad_order(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
-    """Execute/update an ad order with full status tracking."""
-    order = db.query(AdOrder).filter(AdOrder.id == oid).first()
-    if not order:
-        raise HTTPException(status_code=404)
+    """Execute/update an ad order with full status tracking.
 
-    valid = [s.value for s in AdOrderStatus]
-    if status not in valid:
-        raise HTTPException(status_code=400, detail=f"Invalid status. Use: {valid}")
-    _validate_ad_order_transition(order.status.value, status)
-
-    old_status = order.status.value
-    order.status = AdOrderStatus(status)
-    order.assigned_admin_id = admin.id
-    if admin_memo:
-        order.admin_memo = (order.admin_memo or "") + f"\n[{now_kst().strftime('%Y-%m-%d %H:%M')} KST] {admin_memo}"
-    order.updated_at = datetime.utcnow()
-    db.commit()
-
-    return {
-        "ok": True,
-        "order_id": order.id,
-        "old_status": old_status,
-        "new_status": status,
-        "assigned_admin": admin.name,
-    }
+    반려 시 크레딧 환급을 포함한 상태 변경 처리는 _change_ad_order_status() 한 곳에 있다.
+    """
+    result = _change_ad_order_status(db, oid, status, admin, admin_memo, append_memo=True)
+    return {**result, "assigned_admin": admin.name}
 
 
 # ═══════════════════════════════════════════════════════════

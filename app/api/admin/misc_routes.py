@@ -11,7 +11,7 @@ from app.utils.kst import today_kst, kst_day_start_utc
 from app.database import get_db
 from app.models.user import User
 from app.models.merchant import Merchant
-from app.models.transaction import Transaction
+from app.models.transaction import Transaction, TransactionStatus
 from app.models.ad import AdOrder, AdOrderStatus
 from app.models.settlement import PayoutRequest, PayoutStatus
 from app.auth.dependencies import require_admin
@@ -19,6 +19,10 @@ from app.services import ai_service
 from app.schemas.schemas import AISettingsUpdate
 
 router = APIRouter()
+
+# 매출 집계는 승인된 거래만 센다. 취소된 거래를 그대로 더하면
+# 대시보드 매출이 실제 정산액보다 부풀려진다.
+_APPROVED = Transaction.status == TransactionStatus.APPROVED
 
 
 # ─── Landing Stats ──────────────────────────────────────────
@@ -30,9 +34,9 @@ def landing_stats(db: Session = Depends(get_db), _=Depends(require_admin)):
     매출 총액과 최근 결제 내역이 포함되므로 최고관리자만 조회할 수 있다.
     """
     total_merchants = db.query(func.count(Merchant.id)).scalar() or 0
-    total_transactions = db.query(func.count(Transaction.id)).scalar() or 0
+    total_transactions = db.query(func.count(Transaction.id)).filter(_APPROVED).scalar() or 0
     total_ad_orders = db.query(func.count(AdOrder.id)).scalar() or 0
-    total_volume = db.query(func.coalesce(func.sum(Transaction.amount), 0)).scalar()
+    total_volume = db.query(func.coalesce(func.sum(Transaction.amount), 0)).filter(_APPROVED).scalar()
     total_users = db.query(func.count(User.id)).scalar() or 0
 
     # KST 기준 오늘/이번 달 경계 → naive UTC datetime 으로 변환하여 DB 필터에 사용
@@ -42,12 +46,13 @@ def landing_stats(db: Session = Depends(get_db), _=Depends(require_admin)):
     yesterday_start = kst_day_start_utc(_kst_today - timedelta(days=1))
 
     today_sales = db.query(func.coalesce(func.sum(Transaction.amount), 0)).filter(
-        Transaction.created_at >= today_start).scalar()
+        _APPROVED, Transaction.created_at >= today_start).scalar()
     today_txn_count = db.query(func.count(Transaction.id)).filter(
-        Transaction.created_at >= today_start).scalar()
+        _APPROVED, Transaction.created_at >= today_start).scalar()
     month_sales = db.query(func.coalesce(func.sum(Transaction.amount), 0)).filter(
-        Transaction.created_at >= month_start).scalar()
+        _APPROVED, Transaction.created_at >= month_start).scalar()
     yesterday_sales = db.query(func.coalesce(func.sum(Transaction.amount), 0)).filter(
+        _APPROVED,
         Transaction.created_at >= yesterday_start, Transaction.created_at < today_start).scalar()
 
     # Pending payouts
@@ -65,9 +70,9 @@ def landing_stats(db: Session = Depends(get_db), _=Depends(require_admin)):
         day_start = kst_day_start_utc(kst_day)
         day_end = kst_day_start_utc(kst_day + timedelta(days=1))
         day_sales = db.query(func.coalesce(func.sum(Transaction.amount), 0)).filter(
-            Transaction.created_at >= day_start, Transaction.created_at < day_end).scalar()
+            _APPROVED, Transaction.created_at >= day_start, Transaction.created_at < day_end).scalar()
         day_count = db.query(func.count(Transaction.id)).filter(
-            Transaction.created_at >= day_start, Transaction.created_at < day_end).scalar()
+            _APPROVED, Transaction.created_at >= day_start, Transaction.created_at < day_end).scalar()
         weekly_data.append({
             "date": kst_day.strftime("%m/%d"),
             "day": ["월","화","수","목","금","토","일"][kst_day.weekday()],
@@ -75,14 +80,18 @@ def landing_stats(db: Session = Depends(get_db), _=Depends(require_admin)):
         })
 
     # Recent transactions
-    recent_txns = db.query(Transaction).order_by(Transaction.created_at.desc()).limit(10).all()
-    recent_list = []
-    for tx in recent_txns:
-        m = db.query(Merchant).filter(Merchant.id == tx.merchant_id).first()
-        recent_list.append({
-            "id": tx.id, "amount": float(tx.amount), "merchant_name": m.name if m else "-",
-            "card_brand": tx.card_brand, "created_at": str(tx.created_at),
-        })
+    recent_txns = db.query(Transaction).filter(_APPROVED).order_by(
+        Transaction.created_at.desc()).limit(10).all()
+    recent_names = dict(
+        db.query(Merchant.id, Merchant.name)
+        .filter(Merchant.id.in_({tx.merchant_id for tx in recent_txns}))
+        .all()
+    ) if recent_txns else {}
+    recent_list = [{
+        "id": tx.id, "amount": float(tx.amount),
+        "merchant_name": recent_names.get(tx.merchant_id, "-"),
+        "card_brand": tx.card_brand, "created_at": str(tx.created_at),
+    } for tx in recent_txns]
 
     return {
         "total_merchants": total_merchants,
@@ -150,10 +159,10 @@ def enhanced_admin_stats(db: Session = Depends(get_db), _=Depends(require_admin)
         m_start = (month_start.replace(day=1) - timedelta(days=i*30)).replace(day=1)
         m_end = (m_start + timedelta(days=32)).replace(day=1)
         m_sales = db.query(func.coalesce(func.sum(Transaction.amount), 0)).filter(
-            Transaction.created_at >= m_start, Transaction.created_at < m_end
+            _APPROVED, Transaction.created_at >= m_start, Transaction.created_at < m_end
         ).scalar()
         m_count = db.query(func.count(Transaction.id)).filter(
-            Transaction.created_at >= m_start, Transaction.created_at < m_end
+            _APPROVED, Transaction.created_at >= m_start, Transaction.created_at < m_end
         ).scalar()
         monthly_trend.append({
             "month": m_start.strftime("%Y-%m"),
@@ -163,21 +172,24 @@ def enhanced_admin_stats(db: Session = Depends(get_db), _=Depends(require_admin)
         })
 
     # Top merchants by sales this month
-    top_merchants = []
     merchants = db.query(Merchant).filter(Merchant.is_active == True).all()
+    month_rows = db.query(
+        Transaction.merchant_id,
+        func.coalesce(func.sum(Transaction.amount), 0),
+        func.count(Transaction.id),
+    ).filter(
+        _APPROVED,
+        Transaction.created_at >= month_start,
+    ).group_by(Transaction.merchant_id).all()
+    month_by_merchant = {r[0]: (float(r[1] or 0), int(r[2] or 0)) for r in month_rows}
+
+    top_merchants = []
     for m in merchants:
-        m_sales = db.query(func.coalesce(func.sum(Transaction.amount), 0)).filter(
-            Transaction.merchant_id == m.id,
-            Transaction.created_at >= month_start,
-        ).scalar()
-        m_count = db.query(func.count(Transaction.id)).filter(
-            Transaction.merchant_id == m.id,
-            Transaction.created_at >= month_start,
-        ).scalar()
-        if float(m_sales) > 0:
+        m_sales, m_count = month_by_merchant.get(m.id, (0.0, 0))
+        if m_sales > 0:
             top_merchants.append({
                 "id": m.id, "name": m.name,
-                "sales": float(m_sales), "count": m_count,
+                "sales": m_sales, "count": m_count,
             })
     top_merchants.sort(key=lambda x: x["sales"], reverse=True)
 

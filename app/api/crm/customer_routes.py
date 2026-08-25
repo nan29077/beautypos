@@ -22,6 +22,7 @@ from app.api.crm._helpers import (
     _staff_name_map, _effective_scope, _require_crm_management, _require_owner_admin,
     _customer_stats, _serialize_customer, _is_birthday_soon,
     _parse_dt, _parse_date,
+    _assert_staff_in_merchant,
 )
 
 router = APIRouter()
@@ -175,6 +176,7 @@ def list_customers(
 
 @router.post("/customers")
 def create_customer(req: CustomerIn, ctx: CrmContext = Depends(get_crm_context), db: Session = Depends(get_db)):
+    _assert_staff_in_merchant(db, ctx, req.assigned_staff_id, req.preferred_staff_id)
     c = CrmCustomer(
         merchant_id=ctx.merchant_id, name=req.name, phone=req.phone, gender=req.gender,
         birthday=_parse_date(req.birthday), anniversary=_parse_date(req.anniversary),
@@ -279,6 +281,8 @@ def update_customer(cid: int, req: CustomerUpdate, ctx: CrmContext = Depends(get
     if not c:
         raise HTTPException(404, "고객을 찾을 수 없습니다")
     payload = req.model_dump(exclude_unset=True)
+    _assert_staff_in_merchant(db, ctx, payload.get("assigned_staff_id"),
+                              payload.get("preferred_staff_id"))
     if "tags" in payload:
         c.tags = ",".join(payload.pop("tags") or []) or None
     if "birthday" in payload:
@@ -363,6 +367,7 @@ def set_service_price(sid: int, req: ServicePriceIn, ctx: CrmContext = Depends(g
     s = db.query(CrmService).filter(CrmService.id == sid, CrmService.merchant_id == ctx.merchant_id).first()
     if not s:
         raise HTTPException(404, "시술을 찾을 수 없습니다")
+    _assert_staff_in_merchant(db, ctx, req.staff_id)
     existing = db.query(CrmServicePrice).filter(CrmServicePrice.service_id == sid, CrmServicePrice.staff_id == req.staff_id).first()
     if existing:
         existing.price = req.price
@@ -415,6 +420,7 @@ def create_visit(req: VisitIn, ctx: CrmContext = Depends(get_crm_context), db: S
     # 음수 금액 방지
     if (req.amount or 0) < 0:
         raise HTTPException(400, "금액은 0 이상이어야 합니다")
+    _assert_staff_in_merchant(db, ctx, req.staff_id)
     staff_id = req.staff_id if req.staff_id is not None else (ctx.staff_id if ctx.is_designer else None)
     v = CrmVisit(merchant_id=ctx.merchant_id, customer_id=req.customer_id, staff_id=staff_id,
                  service_name=req.service_name, amount=req.amount or 0, memo=req.memo,
@@ -577,6 +583,7 @@ def create_reservation(req: ReservationIn, ctx: CrmContext = Depends(get_crm_con
             raise HTTPException(404, "고객을 찾을 수 없습니다")
         cname = cname or c.name
         phone = phone or c.phone
+    _assert_staff_in_merchant(db, ctx, req.staff_id)
     staff_id = req.staff_id if req.staff_id is not None else (ctx.staff_id if ctx.is_designer else None)
     start = _parse_dt(req.reserved_at)
     dur = req.duration_min or 60
@@ -598,6 +605,7 @@ def update_reservation(rid: int, req: ReservationUpdate, ctx: CrmContext = Depen
     if not r:
         raise HTTPException(404, "예약을 찾을 수 없습니다")
     payload = req.model_dump(exclude_unset=True)
+    _assert_staff_in_merchant(db, ctx, payload.get("staff_id"))
     if payload.get("status"):
         try:
             r.status = ReservationStatus(payload.pop("status"))

@@ -31,24 +31,28 @@ def list_owner_transactions(
     staff_id: Optional[int] = None,
     db: Session = Depends(get_db),
     user: User = Depends(require_owner),
+    merchant_id: Optional[int] = Query(None, description="최고관리자 전용: 대상 가맹점 ID"),
 ):
-    merchant = _get_owner_merchant(user, db)
+    merchant = _get_owner_merchant(user, db, merchant_id)
     start, end = _date_range(range)
     q = db.query(Transaction).filter(
         Transaction.merchant_id == merchant.id,
         Transaction.created_at >= start,
         Transaction.created_at <= end,
+        # 취소된 결제는 매출이 아니므로 목록에서도 뺀다.
+        Transaction.status == TransactionStatus.APPROVED,
     )
     if staff_id:
         q = q.filter(Transaction.staff_id == staff_id)
     txns = q.order_by(Transaction.created_at.desc()).all()
 
+    # 직원 이름은 건마다 조회하지 않고 한 번에 읽는다.
+    staff_names = dict(
+        db.query(Staff.id, Staff.name).filter(Staff.merchant_id == merchant.id).all()
+    )
     results = []
     for t in txns:
-        staff_name = None
-        if t.staff_id:
-            staff = db.query(Staff).filter(Staff.id == t.staff_id).first()
-            staff_name = staff.name if staff else None
+        staff_name = staff_names.get(t.staff_id) if t.staff_id else None
         results.append({
             "id": t.id, "amount": float(t.amount),
             "installment_months": t.installment_months,
@@ -70,9 +74,10 @@ def calendar_monthly_data(
     month: int = Query(...),
     db: Session = Depends(get_db),
     user: User = Depends(require_owner),
+    merchant_id: Optional[int] = Query(None, description="최고관리자 전용: 대상 가맹점 ID"),
 ):
     """Get daily aggregated sales for a given month (calendar view)."""
-    merchant = _get_owner_merchant(user, db)
+    merchant = _get_owner_merchant(user, db, merchant_id)
     from datetime import date as date_type
     from app.utils.kst import fmt_kst
     # KST 기준 월 경계를 UTC 로 변환해 비교한다.
@@ -111,9 +116,10 @@ def calendar_daily_data(
     date: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"),
     db: Session = Depends(get_db),
     user: User = Depends(require_owner),
+    merchant_id: Optional[int] = Query(None, description="최고관리자 전용: 대상 가맹점 ID"),
 ):
     """Get detailed transactions for a specific date."""
-    merchant = _get_owner_merchant(user, db)
+    merchant = _get_owner_merchant(user, db, merchant_id)
     from datetime import datetime
     # KST 기준 하루 경계를 UTC 로 변환해 비교한다.
     day_start = kst_day_start_utc(datetime.strptime(date, "%Y-%m-%d").date())
@@ -155,13 +161,14 @@ def owner_settlement_breakdown(
     range: str = Query("month", pattern="^(day|week|month|all)$"),
     db: Session = Depends(get_db),
     user: User = Depends(require_owner),
+    merchant_id: Optional[int] = Query(None, description="최고관리자 전용: 대상 가맹점 ID"),
 ):
     """기간별 디자이너/원장 분배 내역.
 
     결제액 → PG수수료 → 영업수수료 → 분배가능액 → 디자이너 몫 / 원장 몫.
     영업수수료(딜러 커미션) 항목은 표시 설정이 OFF 면 마스킹한다.
     """
-    merchant = _get_owner_merchant(user, db)
+    merchant = _get_owner_merchant(user, db, merchant_id)
     start, end = _date_range(range)
     txns = db.query(Transaction).filter(
         Transaction.merchant_id == merchant.id,
@@ -193,13 +200,14 @@ def list_owner_settlements(
     limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
     user: User = Depends(require_owner),
+    merchant_id: Optional[int] = Query(None, description="최고관리자 전용: 대상 가맹점 ID"),
 ):
     """최고관리자가 계산·확정한 우리 매장 정산 내역.
 
     금액은 결제액 → PG수수료 → 실지급액(net) 순으로 내려주고,
     영업수수료 항목은 표시 설정이 OFF 면 마스킹한다.
     """
-    merchant = _get_owner_merchant(user, db)
+    merchant = _get_owner_merchant(user, db, merchant_id)
     rows = db.query(Settlement).filter(
         Settlement.merchant_id == merchant.id,
     ).order_by(Settlement.period_start.desc(), Settlement.id.desc()).limit(limit).all()
@@ -222,8 +230,10 @@ def list_owner_settlements(
 # ─── Dashboard Stats ────────────────────────────────────────
 
 @router.get("/dashboard-stats")
-def owner_dashboard_stats(db: Session = Depends(get_db), user: User = Depends(require_owner)):
-    merchant = _get_owner_merchant(user, db)
+def owner_dashboard_stats(db: Session = Depends(get_db), user: User = Depends(require_owner),
+    merchant_id: Optional[int] = Query(None, description="최고관리자 전용: 대상 가맹점 ID"),
+):
+    merchant = _get_owner_merchant(user, db, merchant_id)
     _kst_today = today_kst()
     today_start = kst_day_start_utc(_kst_today)
     month_start = kst_day_start_utc(_kst_today.replace(day=1))
@@ -318,20 +328,18 @@ def owner_dashboard_stats(db: Session = Depends(get_db), user: User = Depends(re
     # 최근 결제 5건
     recent_txns = db.query(Transaction).filter(
         Transaction.merchant_id == merchant.id,
+        Transaction.status == TransactionStatus.APPROVED,
     ).order_by(Transaction.created_at.desc()).limit(5).all()
-    recent_list = []
-    for tx in recent_txns:
-        staff_name = None
-        if tx.staff_id:
-            s = db.query(Staff).filter(Staff.id == tx.staff_id).first()
-            if s: staff_name = s.name
-        recent_list.append({
-            "id": tx.id,
-            "amount": float(tx.amount),
-            "staff_name": staff_name,
-            "card_brand": tx.card_brand,
-            "created_at": str(tx.created_at),
-        })
+    recent_staff_names = dict(
+        db.query(Staff.id, Staff.name).filter(Staff.merchant_id == merchant.id).all()
+    )
+    recent_list = [{
+        "id": tx.id,
+        "amount": float(tx.amount),
+        "staff_name": recent_staff_names.get(tx.staff_id) if tx.staff_id else None,
+        "card_brand": tx.card_brand,
+        "created_at": str(tx.created_at),
+    } for tx in recent_txns]
 
     # 직원별 오늘 매출 TOP 5
     from sqlalchemy import desc as sa_desc

@@ -5,10 +5,11 @@ Split out of the original app/api/owner_routes.py.
 from decimal import Decimal
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.utils.kst import fmt_kst
 from app.models.user import User, UserRole
 from app.models.settlement import PayoutRequest
 from app.models.affiliate_mall import AffiliateMall
@@ -32,8 +33,9 @@ def list_owner_payout_requests(db: Session = Depends(get_db), user: User = Depen
         "id": r.id, "amount": float(r.amount),
         "bank_info": r.bank_info, "memo": r.memo,
         "status": r.status.value if r.status else None,
-        "created_at": str(r.created_at),
-        "reviewed_at": str(r.reviewed_at) if r.reviewed_at else None,
+        # DB 는 naive UTC 로 저장하고 화면에는 KST 로 내려준다.
+        "created_at": fmt_kst(r.created_at),
+        "reviewed_at": fmt_kst(r.reviewed_at),
     } for r in reqs]
 
 
@@ -62,9 +64,11 @@ def create_owner_payout_request(
 # ─── Merchant Info Update ──────────────────────────────────
 
 @router.get("/merchant-info")
-def get_merchant_info(db: Session = Depends(get_db), user: User = Depends(require_owner)):
+def get_merchant_info(db: Session = Depends(get_db), user: User = Depends(require_owner),
+    merchant_id: Optional[int] = Query(None, description="최고관리자 전용: 대상 가맹점 ID"),
+):
     """매장 상세 정보 조회"""
-    merchant = _get_owner_merchant(user, db)
+    merchant = _get_owner_merchant(user, db, merchant_id)
     return {
         "id": merchant.id,
         "name": merchant.name,

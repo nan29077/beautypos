@@ -10,9 +10,10 @@
 같은 테이블에 둔다. 관리자가 화면에서 바로 바꿀 수 있어야 재발급·명세 변경에
 서버 재시작이 필요 없다.
 
-[명세 확보 전 상태]
-create_order() 는 아직 요청 본문 규격을 모르므로 호출하면 SpecMissing 을 던진다.
-연결 테스트와 잔액 조회는 경로만 맞으면 동작하도록 만들어 두었다.
+드라이런
+    settings["dry_run"] 이 참이면 실제 호출 없이 요청 내용만 기록한다. 운영에서 실수로
+    켜지는 것을 막기 위해 환경변수 REWARDPOP_DRY_RUN 으로 강제 덮어쓸 수 있다
+    (true = 항상 드라이런, false = 항상 실제 전송, 미설정 = 화면 설정을 따름).
 """
 import json
 import logging
@@ -20,12 +21,14 @@ from typing import Any, Optional
 
 import httpx
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.models.system_config import (
     SystemConfig,
     REWARDPOP_API_KEY,
     REWARDPOP_SETTINGS,
 )
+from app.config import get_settings as get_app_settings
 from app.services.encryption import encrypt_value, decrypt_value
 
 logger = logging.getLogger(__name__)
@@ -177,6 +180,19 @@ def normalize_settings(raw: Optional[dict]) -> dict:
     }
 
 
+def dry_run_enabled(db: Session) -> bool:
+    """이번 전송을 실제로 보낼지 판단한다.
+
+    기본은 관리자 화면에 저장된 설정이지만, 환경변수 REWARDPOP_DRY_RUN 이 지정되면
+    그 값이 우선한다. 운영에서 화면 조작 실수로 실제 주문이 나가거나(false 강제),
+    반대로 조용히 드라이런에 머무는 것(true 강제)을 배포 설정으로 못박기 위한 것이다.
+    """
+    override = get_app_settings().REWARDPOP_DRY_RUN
+    if override is not None:
+        return bool(override)
+    return bool(get_settings(db).get("dry_run", True))
+
+
 def get_settings(db: Session) -> dict:
     cfg = _get_config(db, REWARDPOP_SETTINGS)
     if not cfg or not cfg.config_value:
@@ -216,6 +232,11 @@ def _auth_parts(api_key: str, settings: dict) -> tuple:
     return {}, {settings["auth_query"] or "api_key": api_key}
 
 
+def _request_context(db: Session) -> tuple:
+    """요청 한 건에 필요한 (API 키, 설정) 을 한 번에 읽는다."""
+    return get_api_key(db), get_settings(db)
+
+
 async def _request(
     db: Session,
     method: str,
@@ -229,13 +250,13 @@ async def _request(
     실패는 전부 RewardpopError 로 통일하며, 재시도해도 소용없는 오류
     (400, 401, 403)와 잠시 후 다시 시도할 값이 있는 오류(타임아웃, 5xx, 429)를 구분한다.
     """
-    api_key = get_api_key(db)
+    # 키·설정 조회는 동기 DB 호출이라 스레드풀에서 처리한다.
+    api_key, settings = await run_in_threadpool(_request_context, db)
     if not api_key:
         raise RewardpopError("리워드팝 API 키가 등록되지 않았습니다.")
     if not path:
         raise SpecMissing("호출 경로가 설정되지 않았습니다. 연동 설정에서 경로를 입력해주세요.")
 
-    settings = get_settings(db)
     headers, auth_params = _auth_parts(api_key, settings)
     headers["Accept"] = "application/json"
     merged_params = dict(auth_params)
@@ -292,9 +313,9 @@ def _error_detail(response: httpx.Response, status: int) -> str:
 
 async def test_connection(db: Session) -> dict:
     """저장된 키로 실제 요청을 보내 연동 상태를 확인한다."""
-    if not get_api_key(db):
+    api_key, settings = await run_in_threadpool(_request_context, db)
+    if not api_key:
         return {"ok": False, "detail": "등록된 API 키가 없습니다."}
-    settings = get_settings(db)
     if not settings["ping_path"]:
         return {
             "ok": False,
@@ -338,30 +359,78 @@ async def get_balance(db: Session) -> dict:
     응답 형태가 확정되지 않아, 흔한 이름의 숫자 필드를 찾아 balance 로 올려주고
     원본도 함께 돌려준다. 명세를 받으면 이 추정 로직을 정확한 매핑으로 바꾼다.
     """
-    settings = get_settings(db)
+    settings = await run_in_threadpool(get_settings, db)
     if not settings["balance_path"]:
         raise SpecMissing("잔액 조회 경로가 아직 설정되지 않았습니다.")
     body = await _request(db, "GET", settings["balance_path"])
     return {"balance": _find_number(body, BALANCE_KEYS), "raw": body}
 
 
+# 주문 생성 응답에서 외부 주문번호로 쓸 수 있는 필드 이름들.
+# 명세가 확정되면 첫 번째 값 하나만 남기면 된다.
+ORDER_ID_KEYS = (
+    "external_order_id", "order_id", "orderid", "orderno", "order_no",
+    "campaign_id", "campaignid", "id", "uid", "no",
+)
+
+
+def _find_identifier(node: Any, keys: tuple) -> Optional[str]:
+    """중첩된 응답에서 주문번호로 보이는 값을 찾는다 (문자열/정수 모두 허용)."""
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key.lower().replace("_", "") in keys and isinstance(value, (str, int)):
+                text = str(value).strip()
+                if text:
+                    return text
+        for value in node.values():
+            found = _find_identifier(value, keys)
+            if found is not None:
+                return found
+    elif isinstance(node, list):
+        for value in node:
+            found = _find_identifier(value, keys)
+            if found is not None:
+                return found
+    return None
+
+
 async def create_order(db: Session, ad_type: str, payload: dict) -> dict:
     """광고 주문을 접수한다.
 
-    [미구현] 요청 본문 규격과 응답의 주문 ID 위치를 아직 몰라 호출할 수 없다.
-    명세를 확보하면 이 함수 안에서만 매핑을 채우면 되고,
-    호출부(ad_dispatch)는 손대지 않아도 된다.
+    호출부(ad_dispatch)가 만든 요청 본문을 그대로 보내고, 응답에서 외부 주문번호와
+    상태를 뽑아 돌려준다. 리워드팝이 어떤 이름으로 주문번호를 주는지는 명세에 따라
+    다를 수 있어 흔한 이름들(ORDER_ID_KEYS)을 훑는다.
 
-    돌려줄 형태:
+    돌려주는 형태:
         {"external_order_id": str, "status": str, "raw": dict}
+
+    실패는 전부 RewardpopError(또는 하위 SpecMissing)로 올라간다.
+    키가 없으면 _request() 안에서 "API 키가 등록되지 않았습니다" 로 막힌다.
     """
-    settings = get_settings(db)
+    settings = await run_in_threadpool(get_settings, db)
     if not settings["order_path"]:
-        raise SpecMissing("주문 생성 경로가 아직 설정되지 않았습니다.")
-    raise SpecMissing(
-        "주문 생성 규격이 아직 확정되지 않았습니다. "
-        "리워드팝 API 문서를 확보한 뒤 rewardpop.create_order() 의 매핑을 채워야 합니다."
-    )
+        raise SpecMissing(
+            "주문 생성 경로가 아직 설정되지 않았습니다. 연동 설정에서 경로를 입력해주세요."
+        )
+
+    body = await _request(db, "POST", settings["order_path"], json_body=payload)
+
+    external_order_id = _find_identifier(body, ORDER_ID_KEYS)
+    if not external_order_id:
+        # 주문은 접수됐을 수 있으므로 재시도 대상으로 두지 않는다.
+        # 같은 주문이 두 번 나가는 것보다 사람이 확인하는 편이 낫다.
+        logger.error("리워드팝 주문 응답에서 주문번호를 찾지 못했습니다: %s", body)
+        raise RewardpopError(
+            "주문은 전송했지만 응답에서 주문번호를 찾지 못했습니다. "
+            "리워드팝 관리자 화면에서 접수 여부를 확인해주세요."
+        )
+
+    status, _raw_status = map_external_status(body)
+    return {
+        "external_order_id": external_order_id,
+        "status": status or "running",
+        "raw": body,
+    }
 
 
 # 외부 상태 문자열을 우리 상태로 옮기는 표.
@@ -411,7 +480,7 @@ async def get_order_status(db: Session, external_order_id: str) -> dict:
 
     경로에 {id} 자리를 두면 외부 주문번호로 채운다. 예) /v1/campaigns/{id}
     """
-    settings = get_settings(db)
+    settings = await run_in_threadpool(get_settings, db)
     path = settings["status_path"]
     if not path:
         raise SpecMissing("상태 조회 경로가 아직 설정되지 않았습니다.")
@@ -439,12 +508,16 @@ def status_summary(db: Session) -> dict:
             ("상태 조회", settings["status_path"]),
         ) if not value
     ]
+    effective_dry_run = dry_run_enabled(db)
     return {
         "configured": key is not None,
         "enabled": is_enabled(db),
         "masked_key": mask_api_key(key) if key else None,
         "settings": settings,
+        # 환경변수로 덮어쓴 경우 화면에 저장값과 실효값을 함께 보여준다.
+        "effective_dry_run": effective_dry_run,
+        "dry_run_forced_by_env": get_app_settings().REWARDPOP_DRY_RUN is not None,
         "auth_styles": [{"code": c, "label": l} for c, l in AUTH_STYLES],
         "missing_paths": missing,
-        "ready_for_dispatch": key is not None and not missing and not settings["dry_run"],
+        "ready_for_dispatch": key is not None and not missing and not effective_dry_run,
     }

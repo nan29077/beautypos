@@ -85,7 +85,8 @@ def build_plan(db: Session, target_date: Optional[date_cls] = None,
     target_date = target_date or today_kst()
     pricing = ad_pricing.get_ad_pricing(db)
     integration_on = rewardpop.is_enabled(db)
-    settings = rewardpop.get_settings(db)
+    # 화면 설정 + 환경변수(REWARDPOP_DRY_RUN) 를 합친 실효값
+    dry_run_on = rewardpop.dry_run_enabled(db)
 
     q = db.query(Merchant).filter(Merchant.is_active == True)  # noqa: E712
     if merchant_id:
@@ -155,7 +156,7 @@ def build_plan(db: Session, target_date: Optional[date_cls] = None,
     to_dispatch = [i for i in items if i["action"] == "dispatch"]
     return {
         "date": str(target_date),
-        "dry_run": bool(settings.get("dry_run", True)),
+        "dry_run": dry_run_on,
         "integration_enabled": integration_on,
         "items": items,
         "dispatch_count": len(to_dispatch),

@@ -96,13 +96,12 @@ def list_dispatches(
         q = q.filter(AdDispatch.merchant_id == merchant_id)
     rows = q.order_by(AdDispatch.id.desc()).limit(limit).all()
 
-    settings = rewardpop.get_settings(db)
     return {
         "date": str(_parse_date(date)),
         "dispatches": _with_merchant_names(db, rows),
         "statuses": [{"code": c, "label": l} for c, l in DISPATCH_STATUSES],
         "skip_reason_labels": SKIP_REASON_LABELS,
-        "dry_run": bool(settings.get("dry_run", True)),
+        "dry_run": rewardpop.dry_run_enabled(db),
         "integration_enabled": rewardpop.is_enabled(db),
     }
 

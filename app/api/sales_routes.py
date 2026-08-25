@@ -9,7 +9,7 @@ from sqlalchemy import func
 from typing import Optional
 
 from app.database import get_db
-from app.utils.kst import today_kst, kst_day_start_utc, now_kst
+from app.utils.kst import today_kst, kst_day_start_utc, now_kst, fmt_kst
 from app.models.user import User, UserRole
 from app.models.merchant import Merchant
 from app.models.transaction import Transaction, TransactionStatus
@@ -179,8 +179,9 @@ def list_my_payout_requests(db: Session = Depends(get_db), user: User = Depends(
         "id": r.id, "amount": float(r.amount),
         "bank_info": r.bank_info, "memo": r.memo,
         "status": r.status.value if r.status else None,
-        "created_at": str(r.created_at),
-        "reviewed_at": str(r.reviewed_at) if r.reviewed_at else None,
+        # DB 는 naive UTC 로 저장하고 화면에는 KST 로 내려준다.
+        "created_at": fmt_kst(r.created_at),
+        "reviewed_at": fmt_kst(r.reviewed_at),
     } for r in reqs]
 
 

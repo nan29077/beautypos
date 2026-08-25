@@ -31,6 +31,27 @@ LONG_ABSENCE_DAYS = 90               # 장기미방문 태그 기준
 BIRTHDAY_SOON_DAYS = 7               # 생일임박 기준(연도 무시)
 
 
+def _assert_staff_in_merchant(db: Session, ctx: "CrmContext", *staff_ids) -> None:
+    """넘어온 staff_id 들이 모두 이 미용실 소속인지 확인한다.
+
+    검증이 없으면 다른 미용실의 staff.id 를 그대로 넣어 고객·방문·예약을
+    남의 직원에게 붙일 수 있다 (매출 귀속과 예약 충돌 검사가 어긋난다).
+    None 은 '미지정'이라 통과시킨다.
+    """
+    wanted = {int(sid) for sid in staff_ids if sid is not None}
+    if not wanted:
+        return
+    found = {
+        row[0] for row in db.query(Staff.id).filter(
+            Staff.id.in_(wanted), Staff.merchant_id == ctx.merchant_id
+        ).all()
+    }
+    missing = wanted - found
+    if missing:
+        raise HTTPException(400, "해당 미용실 소속 직원이 아닙니다 "
+                                 f"(staff_id={', '.join(str(i) for i in sorted(missing))})")
+
+
 # ─── Context ────────────────────────────────────────────────
 
 class CrmContext:

@@ -36,22 +36,55 @@ logger = logging.getLogger(__name__)
 MAX_CHARGE_AMOUNT = 100_000_000
 
 
+# 행 잠금(SELECT ... FOR UPDATE)을 지원하는 백엔드.
+# SQLite 는 문법 자체가 없어 그대로 걸면 OperationalError 가 난다.
+_ROW_LOCK_DIALECTS = {"mysql", "mariadb", "postgresql"}
+
+
 def _money(value) -> Decimal:
     return Decimal(str(value or 0))
+
+
+def _supports_row_lock(db: Session) -> bool:
+    bind = db.get_bind()
+    return bool(bind is not None and bind.dialect.name in _ROW_LOCK_DIALECTS)
 
 
 # ─── 잔액 ───────────────────────────────────────────────────
 
 def get_or_create(db: Session, merchant_id: int) -> MerchantAdCredit:
+    """잔액 행을 가져오고, 없으면 만든다.
+
+    커밋하지 않고 flush 만 한다. 주문 행을 만들다가 차감하는 경로에서 여기가
+    커밋해 버리면, 뒤이어 잔액 부족으로 실패해도 주문만 남는다.
+    """
     credit = db.query(MerchantAdCredit).filter(
         MerchantAdCredit.merchant_id == merchant_id
     ).first()
     if credit is None:
         credit = MerchantAdCredit(merchant_id=merchant_id, balance=0)
         db.add(credit)
-        db.commit()
-        db.refresh(credit)
+        db.flush()
     return credit
+
+
+def lock_credit(db: Session, merchant_id: int) -> MerchantAdCredit:
+    """잔액 행을 잠근 채로 읽는다.
+
+    두 요청이 동시에 "잔액 확인 → 차감"을 하면 잔액보다 많이 나갈 수 있다.
+    행을 먼저 잠가 뒤 요청이 앞 요청의 커밋을 기다리게 만든다.
+    잠금은 이 트랜잭션이 커밋/롤백될 때 풀린다 (_apply() 끝의 commit).
+
+    SQLite 에는 FOR UPDATE 가 없다. 로컬 개발용 단일 프로세스라 경합이 사실상
+    없으므로 잠금 없이 같은 행을 돌려준다.
+    """
+    if _supports_row_lock(db):
+        credit = db.query(MerchantAdCredit).filter(
+            MerchantAdCredit.merchant_id == merchant_id
+        ).with_for_update().first()
+        if credit is not None:
+            return credit
+    return get_or_create(db, merchant_id)
 
 
 def balance_of(db: Session, merchant_id: int) -> float:
@@ -63,9 +96,15 @@ def balance_of(db: Session, merchant_id: int) -> float:
 
 def _apply(db: Session, merchant_id: int, entry_type: str, delta,
            memo: Optional[str], actor_id: Optional[int],
-           order_id: Optional[int] = None) -> AdCreditLedger:
-    """잔액을 움직이고 원장에 남긴다. 잔액 변경의 유일한 통로다."""
-    credit = get_or_create(db, merchant_id)
+           order_id: Optional[int] = None,
+           credit: Optional[MerchantAdCredit] = None) -> AdCreditLedger:
+    """잔액을 움직이고 원장에 남긴다. 잔액 변경의 유일한 통로다.
+
+    credit 을 넘기지 않으면 여기서 행을 잠그고 읽는다. 호출부가 이미 잠근 행을
+    넘기면(use 처럼 잔액 검사를 먼저 해야 하는 경우) 그 행을 그대로 쓴다.
+    """
+    if credit is None:
+        credit = lock_credit(db, merchant_id)
     new_balance = _money(credit.balance) + _money(delta)
     if new_balance < 0:
         raise HTTPException(status_code=400, detail="잔액이 부족합니다")
@@ -102,17 +141,23 @@ def charge(db: Session, merchant_id: int, amount, memo: Optional[str],
 
 def use(db: Session, merchant_id: int, amount, order_id: Optional[int],
         memo: Optional[str], actor_id: Optional[int]) -> AdCreditLedger:
-    """주문 시 차감한다. 잔액이 모자라면 주문 자체를 막는다."""
+    """주문 시 차감한다. 잔액이 모자라면 주문 자체를 막는다.
+
+    잔액 확인과 차감이 같은 잠금 안에서 일어나야 동시 주문 두 건이 같은 잔액을
+    보고 둘 다 통과하는 사고가 나지 않는다.
+    """
     value = _money(amount)
     if value <= 0:
         raise HTTPException(status_code=400, detail="차감 금액이 올바르지 않습니다")
-    if _money(balance_of(db, merchant_id)) < value:
-        shortfall = value - _money(balance_of(db, merchant_id))
+    credit = lock_credit(db, merchant_id)
+    current = _money(credit.balance)
+    if current < value:
+        shortfall = value - current
         raise HTTPException(
             status_code=400,
             detail=f"광고비 잔액이 부족합니다. {int(shortfall):,}원을 더 충전해주세요",
         )
-    return _apply(db, merchant_id, ENTRY_USE, -value, memo, actor_id, order_id)
+    return _apply(db, merchant_id, ENTRY_USE, -value, memo, actor_id, order_id, credit=credit)
 
 
 def reverse(db: Session, merchant_id: int, amount, order_id: Optional[int],
@@ -179,7 +224,8 @@ def approve_refund(db: Session, refund: AdCreditRefund, admin: User,
     if refund.status != REFUND_PENDING:
         raise HTTPException(status_code=400, detail="이미 처리된 환불 신청입니다")
 
-    balance = _money(balance_of(db, refund.merchant_id))
+    credit = lock_credit(db, refund.merchant_id)
+    balance = _money(credit.balance)
     amount = _money(refund.amount)
     if balance < amount:
         # 신청 후 주문으로 잔액이 줄어든 경우 — 남은 만큼만 환불한다.
@@ -189,7 +235,7 @@ def approve_refund(db: Session, refund: AdCreditRefund, admin: User,
         raise HTTPException(status_code=400, detail="환불할 잔액이 남아 있지 않습니다")
 
     _apply(db, refund.merchant_id, ENTRY_REFUND, -amount,
-           f"환불 신청 #{refund.id} 처리", admin.id)
+           f"환불 신청 #{refund.id} 처리", admin.id, credit=credit)
     refund.status = REFUND_APPROVED
     refund.processed_by = admin.id
     refund.processed_at = datetime.utcnow()

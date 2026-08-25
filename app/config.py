@@ -1,3 +1,5 @@
+from typing import Optional
+
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
@@ -47,6 +49,14 @@ class Settings(BaseSettings):
 
     # 광고 자동 집행 스케줄러. 집행 시각은 관리자 화면(리워드팝 연동 설정)에서 정한다.
     AD_DISPATCH_SCHEDULER_ENABLED: bool = True
+
+    # 리워드팝 드라이런 강제 스위치.
+    # 미설정(None)이면 관리자 화면에 저장된 값을 따르고, true/false 를 주면 그 값이 우선한다.
+    REWARDPOP_DRY_RUN: Optional[bool] = None
+
+    # 로그인 실패 제한 — 같은 계정/IP 로 N 회 연속 실패하면 일정 시간 잠근다.
+    LOGIN_MAX_ATTEMPTS: int = 5
+    LOGIN_LOCKOUT_SECONDS: int = 300
 
     @property
     def cors_origins(self) -> list[str]:

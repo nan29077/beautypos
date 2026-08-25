@@ -9,7 +9,6 @@ from fastapi import APIRouter, Depends, HTTPException, Header, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from passlib.context import CryptContext
 
 from app.database import get_db
 from app.models.terminal import TerminalDevice
@@ -20,42 +19,22 @@ from app.models.merchant import Merchant
 from app.models.user import User, UserRole
 from app.auth.jwt_handler import decode_token
 from app.schemas.schemas import TerminalTransactionCreate, TransactionCancelRequest
+from app.services import terminal_auth
 
 router = APIRouter(prefix="/api/terminal", tags=["terminal"])
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 bearer_scheme = HTTPBearer(auto_error=False)
 
 
 def _auth_terminal(api_key: str, db: Session, serial: str = None) -> TerminalDevice:
     """Authenticate terminal by API key.
 
-    M-6: serial 이 있으면 해당 단말기만 bcrypt 검증 (불필요한 해시 연산 방지).
-    serial 이 없으면 기존처럼 활성 단말기 전체를 순회한다.
+    serial 이 있으면 그 단말기 한 대만, 없으면 지문(api_key_fingerprint) 으로 찾은
+    한 대만 bcrypt 로 검증한다. 자세한 내용은 app/services/terminal_auth.py 참고.
     """
-    if serial:
-        t = db.query(TerminalDevice).filter(
-            TerminalDevice.terminal_serial == serial,
-            TerminalDevice.is_active == True,
-        ).first()
-        if t:
-            try:
-                if t.api_key_hash and pwd_context.verify(api_key, t.api_key_hash):
-                    return t
-            except ValueError:
-                pass
+    terminal = terminal_auth.find_terminal(db, api_key, serial=serial)
+    if terminal is None:
         raise HTTPException(status_code=401, detail="Invalid terminal API key")
-
-    # serial 미제공: 전체 활성 단말기를 순회 (하위 호환)
-    terminals = db.query(TerminalDevice).filter(TerminalDevice.is_active == True).all()
-    for t in terminals:
-        # 해시 형식이 깨진 행이 하나라도 있으면 verify 가 예외를 던져 전체 인증이 500 이 된다.
-        # 그런 행은 건너뛰고 나머지 단말기로 계속 대조한다.
-        try:
-            if t.api_key_hash and pwd_context.verify(api_key, t.api_key_hash):
-                return t
-        except ValueError:
-            continue
-    raise HTTPException(status_code=401, detail="Invalid terminal API key")
+    return terminal
 
 
 def _duplicate_response(txn: Transaction) -> dict:
@@ -195,7 +174,11 @@ def _auth_cancel_actor(
 ) -> str:
     """취소 요청자를 검증한다. 단말기 키 또는 ADMIN/OWNER 토큰만 허용."""
     if x_terminal_key:
-        terminal = _auth_terminal(x_terminal_key, db)
+        # 거래에 달린 단말기를 이미 아는 상황이라 그 한 대만 대조한다.
+        own = db.query(TerminalDevice).filter(TerminalDevice.id == txn.terminal_id).first()
+        terminal = _auth_terminal(
+            x_terminal_key, db, serial=own.terminal_serial if own else None
+        )
         if txn.terminal_id != terminal.id:
             raise HTTPException(status_code=403, detail="해당 단말기의 거래가 아닙니다")
         return "terminal"

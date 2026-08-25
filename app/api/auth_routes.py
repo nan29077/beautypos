@@ -1,7 +1,7 @@
 """
 Authentication routes: register, login, OAuth stubs, test-login, /me
 """
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, Request, status, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -16,7 +16,7 @@ from app.auth.dependencies import get_current_user
 from app.schemas.schemas import (
     RegisterRequest, LoginRequest, TokenResponse, RefreshRequest, ChangePasswordRequest,
 )
-from app.services import plan_service
+from app.services import login_guard, plan_service
 from app.config import get_settings
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -110,14 +110,24 @@ def register(req: RegisterRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/login")
-def login(req: LoginRequest, db: Session = Depends(get_db)):
+def login(request: Request, req: LoginRequest, db: Session = Depends(get_db)):
+    """로그인.
+
+    연속 실패가 쌓이면 잠시 막는다(기본 5회 실패 → 5분). 계정이 있는지 없는지가
+    응답으로 새어 나가지 않도록 실패 사유는 모두 같은 문구로 돌려준다.
+    """
+    ip = login_guard.client_ip(request)
+    login_guard.check(req.email, ip)
+
     user = db.query(User).filter(User.email == req.email).first()
-    if not user or not user.password_hash:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    if not verify_password(req.password, user.password_hash):
+    if not user or not user.password_hash or not verify_password(req.password, user.password_hash):
+        login_guard.record_failure(req.email, ip)
         raise HTTPException(status_code=401, detail="Invalid credentials")
     if not user.is_active:
+        # 비밀번호는 맞았으므로 대입 시도로 세지 않는다.
         raise HTTPException(status_code=403, detail="Account is disabled")
+
+    login_guard.record_success(req.email, ip)
     return _issue_tokens(user)
 
 

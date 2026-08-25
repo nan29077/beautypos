@@ -365,6 +365,7 @@ class RewardpopSettingsUpdate(BaseModel):
     ping_path: Optional[str] = None       # 연결 확인용 GET 경로
     balance_path: Optional[str] = None    # 포인트 잔액 조회 GET 경로
     order_path: Optional[str] = None      # 주문 생성 POST 경로
+    status_path: Optional[str] = None     # 주문 상태 조회 GET 경로 ({id} 자리에 외부 주문번호)
     dispatch_hour: Optional[int] = Field(default=None, ge=0, le=23)
     dispatch_minute: Optional[int] = Field(default=None, ge=0, le=59)
     dry_run: Optional[bool] = None
@@ -373,6 +374,25 @@ class RewardpopSettingsUpdate(BaseModel):
 
 class RewardpopApiKeyUpdate(BaseModel):
     api_key: str
+
+
+# ─── 단말기 관리 (Admin) ─────────────────────────────────────
+
+class TerminalCreate(BaseModel):
+    """단말기 등록. API 키를 비워두면 서버가 생성해 한 번만 돌려준다."""
+    merchant_id: int
+    terminal_serial: str = Field(min_length=1, max_length=100)
+    api_key: Optional[str] = Field(default=None, min_length=16, max_length=200)
+    memo: Optional[str] = None
+    is_active: bool = True
+
+
+class TerminalUpdate(BaseModel):
+    """단말기 수정. 보내지 않은 항목은 그대로 둔다."""
+    merchant_id: Optional[int] = None
+    terminal_serial: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    memo: Optional[str] = None
+    is_active: Optional[bool] = None
 
 
 # ─── 광고 집행 키워드 (Admin / Owner) ────────────────────────
