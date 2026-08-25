@@ -32,6 +32,21 @@ if defined LOCAL_IP (
 echo   - Same Wi-Fi/LAN devices can open the Network address.
 echo.
 
+REM --- Apply pending database migrations --------------------------------
+REM  create_all is only able to create NEW tables. Columns added to an
+REM  existing table never appear, and the server answers 500 with
+REM  "Unknown column". deploy.sh does this on the server; do it here too.
+REM  Kept non-fatal: a migration problem should not block local work.
+echo [INFO] Applying database migrations...
+%PYEXE% -m alembic upgrade head
+if errorlevel 1 (
+    echo.
+    echo [WARN] Migration failed. Pages that use new columns may return 500.
+    echo        Check the current revision with:
+    echo            %PYEXE% -m alembic current
+    echo.
+)
+
 REM --- Refuse to start when the port is already taken ---------------------
 REM  A leftover server keeps serving OLD code: new menus show up (static files
 REM  are read from disk) but new API routes answer 404. Starting a second
