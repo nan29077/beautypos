@@ -77,16 +77,16 @@ def test_blog_order_saves_quantity_and_server_calculated_budget(client):
         json={
             "campaign_name": "여름 헤어 캠페인",
             "main_keywords": ["강남 미용실"],
-            "order_count": 3,
+            "order_count": 10,
             "unit_price": 1,
         },
         headers=_auth(client, "owner"),
     )
     assert response.status_code == 200
     assert response.json()["estimate"] == {
-        "order_count": 3,
+        "order_count": 10,
         "unit_price": 45000,
-        "total_cost": 135000,
+        "total_cost": 450000,
     }
 
     orders = client.get(
@@ -94,9 +94,9 @@ def test_blog_order_saves_quantity_and_server_calculated_budget(client):
         headers=_auth(client, "owner"),
     ).json()
     detail = next(row["blog_detail"] for row in orders if row["type"] == "blog")
-    assert detail["order_count"] == 3
+    assert detail["order_count"] == 10
     assert float(detail["unit_price"]) == 45000
-    assert float(detail["est_total_cost"]) == 135000
+    assert float(detail["est_total_cost"]) == 450000
 
 
 def test_place_order_saves_quantity_and_server_calculated_budget(client):
@@ -105,16 +105,16 @@ def test_place_order_saves_quantity_and_server_calculated_budget(client):
         json={
             "place_name_or_id": "뷰티헤어살롱 강남점",
             "search_keywords": ["강남 미용실"],
-            "order_count": 20,
+            "order_count": 100,
             "unit_price": 1,
         },
         headers=_auth(client, "owner"),
     )
     assert response.status_code == 200
     assert response.json()["estimate"] == {
-        "order_count": 20,
+        "order_count": 100,
         "unit_price": 700,
-        "total_cost": 14000,
+        "total_cost": 70000,
     }
 
 

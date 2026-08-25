@@ -219,8 +219,46 @@ def _ensure_shorts_ad_support():
         print(f"   ⚠️ Could not ensure shorts ad support: {e}")
 
 
+def _warn_if_remote_db():
+    """개발 모드인데 원격 DB 에 붙어 있으면 눈에 띄게 알린다.
+
+    로컬에서 서버를 띄웠는데 실제로는 원격 DB 를 건드리고 있으면 실험한 결과가
+    그대로 남고, 기동 시 create_all 이 그 DB 에 테이블을 만든다.
+    비밀번호는 출력하지 않고 호스트와 DB 이름만 보여준다.
+    """
+    settings = get_settings()
+    url = settings.DATABASE_URL
+    if url.startswith("sqlite"):
+        return
+    if settings.APP_ENV.lower() in {"production", "prod"}:
+        return
+    try:
+        from urllib.parse import urlparse
+
+        parsed = urlparse(url)
+        host = (parsed.hostname or "").lower()
+        name = (parsed.path or "").lstrip("/")
+    except Exception:  # noqa: BLE001 — 경고가 기동을 막으면 안 된다
+        return
+    if not host or host in {"localhost", "127.0.0.1", "::1", "db"}:
+        return
+
+    print("")
+    print("=" * 72)
+    print("[주의] 개발 모드인데 원격 DB 에 접속합니다")
+    print(f"   호스트   : {host}")
+    print(f"   데이터베이스: {name}")
+    print("   이 서버의 모든 변경이 원격 DB 에 그대로 남고,")
+    print("   기동할 때마다 create_all 이 그 DB 에 테이블을 만듭니다.")
+    print("   로컬에서만 돌리려면 .env 에 아래를 넣으세요:")
+    print("       DATABASE_URL_OVERRIDE=sqlite:///./adpay.db")
+    print("=" * 72)
+    print("")
+
+
 def init_db():
     _make_console_lenient()
+    _warn_if_remote_db()
     if not wait_for_db():
         sys.exit(1)
 

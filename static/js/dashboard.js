@@ -8798,10 +8798,14 @@ function planDailyDescription(plan, code) {
 async function loadAdminPlans(c, t) {
     t.textContent = '플랜 관리';
 
-    const [plans, merchants] = await Promise.all([
+    const [plans, merchants, pricing] = await Promise.all([
         apiGet('/api/admin/plans'),
         apiGet('/api/admin/merchants'),
+        // 목표 건수를 입력할 때 월 예상 비용을 바로 보여주기 위해 단가를 함께 읽는다.
+        apiGet('/api/admin/ad-pricing').catch(() => ({})),
     ]);
+    window._planPricing = pricing || {};
+    window._planMerchantCount = merchants.length;
 
     if (!plans.length) {
         c.innerHTML = `<div class="alert alert-warning"><i class="fas fa-exclamation-triangle me-2"></i>
@@ -8822,9 +8826,9 @@ async function loadAdminPlans(c, t) {
     c.innerHTML = `
     <div class="alert alert-info mb-3">
         <i class="fas fa-info-circle me-2"></i><strong>플랜 관리:</strong>
-        플랜별 부가세 별도 수수료율과 5종 광고의 월 목표 건수를 설정합니다.
-        일별 목표는 해당 월의 날짜 수에 맞춰 자동 배분됩니다.
-        신규 가맹점은 <strong>베이직</strong> 플랜으로 자동 배정됩니다.
+        여기에 입력한 <strong>월 목표 건수가 그대로 매일 자동 집행되는 양</strong>이 됩니다.
+        일별 목표는 해당 월의 날짜 수에 맞춰 자동 배분되며, <strong>0으로 두면 집행되지 않습니다.</strong>
+        수수료율은 부가세 별도 기준이고, 신규 가맹점은 <strong>베이직</strong> 플랜으로 자동 배정됩니다.
     </div>
 
     <div class="row g-3 mb-4">
@@ -8908,6 +8912,9 @@ function _planCard(p) {
                             일별 자동 배분 · ${escapeHtml(planDailyDescription(p, code))}
                             <span class="ms-1">(하루 평균 ${planDailyAverage(p, code).toFixed(2)}건)</span>
                         </div>
+                        <div class="small text-end" id="plan_${p.id}_${code}_cost">
+                            ${planCostLine(code, p[code + '_monthly'])}
+                        </div>
                     </div>
                 </div>`).join('')}
 
@@ -8926,6 +8933,25 @@ function updatePlanVatPreview(planId) {
     preview.innerHTML = Number.isFinite(value)
         ? `실제 적용 <strong class="text-primary">${(value * 1.1).toFixed(2)}%</strong><span class="ms-1">(부가세 10% 포함)</span>`
         : '수수료율을 입력해 주세요.';
+}
+
+// 광고 종류별 단가 키. 자동 집행 대상만 비용이 발생한다.
+const PLAN_COST_KEYS = { blog_review: 'blog_unit_price', place_traffic: 'place_traffic_unit_price' };
+
+function planUnitPrice(code) {
+    const key = PLAN_COST_KEYS[code];
+    return key ? planNumber(window._planPricing?.[key]) : 0;
+}
+
+function planCostLine(code, monthly) {
+    const unit = planUnitPrice(code);
+    if (!PLAN_COST_KEYS[code]) return '<span class="text-muted">외부 집행 대상 아님</span>';
+    if (!unit) return '<span class="text-warning">단가 미설정 — 집행 보류됩니다</span>';
+    const per = unit * Math.max(0, parseInt(monthly, 10) || 0);
+    if (!per) return '<span class="text-muted">집행 없음</span>';
+    const count = window._planMerchantCount || 0;
+    return `매장당 월 <strong>${per.toLocaleString()}원</strong>`
+        + (count ? ` · 가맹점 ${count}곳 전체 <strong>${(per * count).toLocaleString()}원</strong>` : '');
 }
 
 function planTargetPreview(monthlyValue) {
@@ -8948,6 +8974,8 @@ function updatePlanTargetPreview(planId, code) {
     const days = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
     preview.innerHTML = `일별 자동 배분 · ${planTargetPreview(monthly)}
         <span class="ms-1">(하루 평균 ${(monthly / days).toFixed(2)}건)</span>`;
+    const cost = document.getElementById(`plan_${planId}_${code}_cost`);
+    if (cost) cost.innerHTML = planCostLine(code, monthly);
 }
 
 async function savePlan(planId) {

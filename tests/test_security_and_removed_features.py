@@ -108,6 +108,8 @@ def test_owner_sales_ads_and_crm_flows(client):
         "links": [],
         "main_keywords": ["강남 미용실"],
         "hashtags": ["헤어"],
+        # 블로그 배포는 최소 10건부터 주문할 수 있다.
+        "order_count": 10,
     }
     assert client.post("/api/owner/ad/blog-orders", json=blog_payload, headers=owner).status_code == 403
 
@@ -116,6 +118,21 @@ def test_owner_sales_ads_and_crm_flows(client):
         "ad_order_mgmt_enabled=true&ad_blog_enabled=true&ad_place_traffic_enabled=true"
     )
     assert client.put(flags_url, headers=admin).status_code == 200
+
+    # 단가가 0원이면 주문 자체가 거절되므로 관리자 단가를 먼저 설정한다.
+    assert client.put(
+        "/api/admin/ad-pricing",
+        json={
+            "blog_unit_price": 45000,
+            "place_traffic_unit_price": 700,
+            "shorts_distribution_unit_price": 18000,
+            "shorts_duration_prices": {
+                "15s": 12000, "30s": 17000, "60s": 27000, "90s": 39000,
+            },
+        },
+        headers=admin,
+    ).status_code == 200
+
     created = client.post("/api/owner/ad/blog-orders", json=blog_payload, headers=owner)
     assert created.status_code == 200
     order_id = created.json()["id"]
