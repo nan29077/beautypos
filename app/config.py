@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     RANK_SCHEDULER_HOUR: int = 12
     RANK_SCHEDULER_MINUTE: int = 0
 
+    # 광고 자동 집행 스케줄러. 집행 시각은 관리자 화면(리워드팝 연동 설정)에서 정한다.
+    AD_DISPATCH_SCHEDULER_ENABLED: bool = True
+
     @property
     def cors_origins(self) -> list[str]:
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]

@@ -124,3 +124,32 @@ async def retry_dispatch(
         )
     row = await ad_dispatch.retry(db, row, admin.id)
     return ad_dispatch.to_dict(row, row.merchant.name if row.merchant else None)
+
+
+@router.post("/ad-dispatch/refresh-status")
+async def refresh_dispatch_status(
+    req: AdDispatchRun,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """접수된 주문의 최종 상태를 리워드팝에서 받아 채운다.
+
+    웹훅이 붙기 전까지 관리자가 눌러서 맞추는 용도다.
+    상태를 읽지 못한 건은 그대로 둔다 — 모르는 값을 완료로 바꾸면 실적이 부풀려진다.
+    """
+    return await ad_dispatch.refresh_statuses(db, req.execution_date)
+
+
+@router.get("/ad-dispatch/report")
+def dispatch_report(
+    start: Optional[str] = Query(default=None, description="시작일 (YYYY-MM-DD, 기본 이번 달 1일)"),
+    end: Optional[str] = Query(default=None, description="종료일 (YYYY-MM-DD, 기본 오늘)"),
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """기간별 집행 건수·비용 집계. 드라이런과 실패·보류는 실적에서 제외한다."""
+    end_date = _parse_date(end)
+    start_date = _parse_date(start) if start else end_date.replace(day=1)
+    if start_date > end_date:
+        raise HTTPException(status_code=400, detail="시작일이 종료일보다 늦습니다")
+    return ad_dispatch.report(db, start_date, end_date)

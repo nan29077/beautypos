@@ -38,7 +38,7 @@ asset_versions: AssetVersions | None = None
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     from app.init_db import init_db
-    from app.services import rank_scheduler
+    from app.services import ad_dispatch_scheduler, rank_scheduler
 
     init_db()
     # 정적 파일 해시 계산 — HTML 의 CSS/JS 링크에 ?v=<해시> 를 붙이기 위한 것
@@ -47,10 +47,13 @@ async def lifespan(_app: FastAPI):
         print(f"   Static cache busting: {count} files hashed")
     # 매일 낮 12시(KST) 플레이스 순위 자동 수집 — 광고 자동 집행(14시) 전에 기준선을 남긴다
     rank_scheduler.start(_app)
+    # 관리자가 정한 시각(기본 14시 KST)에 플랜 목표만큼 광고를 자동 집행
+    ad_dispatch_scheduler.start(_app)
     try:
         yield
     finally:
         await rank_scheduler.stop(_app)
+        await ad_dispatch_scheduler.stop(_app)
 
 
 app = FastAPI(

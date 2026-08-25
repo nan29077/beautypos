@@ -31,7 +31,9 @@ from app.models.ad_dispatch import (
     SOURCE_AUTO,
     STATUS_DRY_RUN,
     STATUS_FAILED,
+    STATUS_DONE,
     STATUS_PENDING,
+    STATUS_RUNNING,
     STATUS_SENT,
     STATUS_SKIPPED,
     build_idempotency_key,
@@ -350,6 +352,120 @@ async def retry(db: Session, row: AdDispatch, actor_id: Optional[int] = None) ->
     row.retry_count = int(row.retry_count or 0) + 1
     db.commit()
     return await _dispatch_one(db, item, row.execution_date, False, actor_id)
+
+
+# ─── 상태 추적 ──────────────────────────────────────────────
+
+async def refresh_statuses(db: Session, target_date: Optional[date_cls] = None,
+                           limit: int = 50) -> dict:
+    """접수된 주문의 최종 상태를 리워드팝에서 받아 채운다.
+
+    웹훅이 있으면 그쪽이 낫지만, 명세를 확인하기 전까지는 조회로 맞춘다.
+    상태를 읽지 못한 건은 손대지 않는다 — 모르는 값을 완료로 바꾸면
+    집행 실적이 부풀려진다.
+    """
+    q = db.query(AdDispatch).filter(
+        AdDispatch.status.in_([STATUS_SENT, STATUS_RUNNING]),
+        AdDispatch.dry_run == False,  # noqa: E712
+        AdDispatch.external_order_id.isnot(None),
+    )
+    if target_date:
+        q = q.filter(AdDispatch.execution_date == target_date)
+    rows = q.order_by(AdDispatch.id.asc()).limit(limit).all()
+
+    updated, unchanged, errors = 0, 0, []
+    for row in rows:
+        try:
+            result = await rewardpop.get_order_status(db, row.external_order_id)
+        except rewardpop.SpecMissing as exc:
+            # 경로가 없으면 나머지도 마찬가지다. 한 번만 알리고 그만둔다.
+            return {"checked": 0, "updated": 0, "unchanged": 0,
+                    "spec_missing": True, "detail": exc.message}
+        except rewardpop.RewardpopError as exc:
+            errors.append({"dispatch_id": row.id, "detail": exc.message})
+            continue
+
+        new_status = result.get("status")
+        if not new_status or new_status == row.status:
+            unchanged += 1
+            continue
+
+        row.status = STATUS_DONE if new_status == "done" else (
+            STATUS_FAILED if new_status == "failed" else STATUS_RUNNING
+        )
+        if new_status == "failed":
+            row.error_message = f"리워드팝 상태: {result.get('raw_status')}"[:500]
+            # 접수까지 됐다가 실패한 건은 자동 재시도 대상으로 두지 않는다.
+            row.retry_count = MAX_RETRY
+        row.response_json = json.dumps(result.get("raw"), ensure_ascii=False, default=str)
+        db.commit()
+        sync_execution(db, row.merchant_id, row.ad_type, row.execution_date)
+        updated += 1
+
+    return {
+        "checked": len(rows), "updated": updated, "unchanged": unchanged,
+        "errors": errors,
+    }
+
+
+# ─── 집행·비용 집계 ─────────────────────────────────────────
+
+def report(db: Session, start: date_cls, end: date_cls) -> dict:
+    """기간별 집행 건수와 비용. 드라이런과 보류·실패는 제외한다."""
+    rows = db.query(AdDispatch).filter(
+        AdDispatch.execution_date >= start,
+        AdDispatch.execution_date <= end,
+        AdDispatch.status.in_(list(EXECUTED_STATUSES)),
+        AdDispatch.dry_run == False,  # noqa: E712
+    ).all()
+
+    names = dict(db.query(Merchant.id, Merchant.name).all())
+    by_merchant, by_type = {}, {}
+    for row in rows:
+        count = int(row.requested_count or 0)
+        cost = float(row.cost_amount or 0)
+
+        m = by_merchant.setdefault(row.merchant_id, {
+            "merchant_id": row.merchant_id,
+            "merchant_name": names.get(row.merchant_id, "-"),
+            "count": 0, "cost": 0.0, "dispatches": 0,
+        })
+        m["count"] += count
+        m["cost"] += cost
+        m["dispatches"] += 1
+
+        t = by_type.setdefault(row.ad_type, {
+            "ad_type": row.ad_type,
+            "ad_type_label": AD_EXECUTION_TYPE_LABELS.get(row.ad_type, row.ad_type),
+            "count": 0, "cost": 0.0, "dispatches": 0,
+        })
+        t["count"] += count
+        t["cost"] += cost
+        t["dispatches"] += 1
+
+    # 실패·보류는 따로 세어 얼마나 새고 있는지 보여준다.
+    problem_rows = db.query(AdDispatch).filter(
+        AdDispatch.execution_date >= start,
+        AdDispatch.execution_date <= end,
+        AdDispatch.status.in_([STATUS_FAILED, STATUS_SKIPPED]),
+    ).all()
+    problems = {}
+    for row in problem_rows:
+        key = row.skip_reason or ("failed" if row.status == STATUS_FAILED else "unknown")
+        label = SKIP_REASON_LABELS.get(key, "집행 실패" if key == "failed" else key)
+        entry = problems.setdefault(key, {"reason": key, "label": label, "count": 0})
+        entry["count"] += 1
+
+    return {
+        "start": str(start),
+        "end": str(end),
+        "total_count": sum(m["count"] for m in by_merchant.values()),
+        "total_cost": sum(m["cost"] for m in by_merchant.values()),
+        "total_dispatches": len(rows),
+        "by_merchant": sorted(by_merchant.values(), key=lambda x: x["cost"], reverse=True),
+        "by_ad_type": sorted(by_type.values(), key=lambda x: x["cost"], reverse=True),
+        "problems": sorted(problems.values(), key=lambda x: x["count"], reverse=True),
+    }
 
 
 # ─── 직렬화 ─────────────────────────────────────────────────

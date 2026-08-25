@@ -8430,8 +8430,25 @@ function dispatchMarkup(plan, history) {
                     <i class="fas fa-vial me-1"></i>드라이런 실행</button>
                 <button class="btn btn-primary btn-sm" onclick="runDispatch(false)" ${plan.integration_enabled ? '' : 'disabled'}>
                     <i class="fas fa-paper-plane me-1"></i>지금 집행</button>
+                <button class="btn btn-outline-secondary btn-sm" onclick="refreshDispatchStatus()">
+                    <i class="fas fa-arrows-rotate me-1"></i>상태 갱신</button>
             </div>
             <div id="dispatchResult" class="mt-3"></div>
+        </div>
+    </div>
+
+    <div class="card data-card mb-3" id="dispatchReportCard">
+        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h5 class="mb-0"><i class="fas fa-chart-column me-2"></i>기간별 집행·비용</h5>
+            <div class="d-flex gap-2 align-items-center">
+                <input type="date" class="form-control form-control-sm" style="width:auto" id="reportStart">
+                <span class="text-muted small">~</span>
+                <input type="date" class="form-control form-control-sm" style="width:auto" id="reportEnd">
+                <button class="btn btn-sm btn-outline-primary" onclick="loadDispatchReport()">조회</button>
+            </div>
+        </div>
+        <div class="card-body" id="dispatchReportBody">
+            <div class="text-muted small">기간을 정하고 조회를 눌러주세요. 드라이런과 실패·보류는 실적에서 빠집니다.</div>
         </div>
     </div>
 
@@ -8442,6 +8459,82 @@ function dispatchMarkup(plan, history) {
                 <thead><tr><th>가맹점</th><th>광고</th><th class="text-end">수량</th><th>키워드</th>
                     <th>상태</th><th>외부 주문번호</th><th></th></tr></thead>
                 <tbody>${histRows || '<tr><td colspan="7" class="text-center text-muted py-4">기록이 없습니다</td></tr>'}</tbody>
+            </table></div>
+        </div>
+    </div>`;
+}
+
+async function refreshDispatchStatus() {
+    const box = document.getElementById('dispatchResult');
+    box.innerHTML = '<div class="alert alert-secondary py-2 mb-0 small"><i class="fas fa-spinner fa-spin me-1"></i>상태를 확인하는 중...</div>';
+    try {
+        const r = await apiPost('/api/admin/ad-dispatch/refresh-status', { execution_date: dispatchDate });
+        if (r.spec_missing) {
+            box.innerHTML = `<div class="alert alert-warning py-2 mb-0 small">${escapeHtml(r.detail)}</div>`;
+            return;
+        }
+        box.innerHTML = `<div class="alert alert-success py-2 mb-0 small">
+            확인 ${r.checked}건 · 갱신 ${r.updated}건 · 변화 없음 ${r.unchanged}건</div>`;
+        if (r.updated) setTimeout(() => navigate('admin-ad-dispatch'), 1200);
+    } catch (e) {
+        box.innerHTML = `<div class="alert alert-danger py-2 mb-0 small">${escapeHtml(e.message)}</div>`;
+    }
+}
+
+async function loadDispatchReport() {
+    const body = document.getElementById('dispatchReportBody');
+    const start = document.getElementById('reportStart').value;
+    const end = document.getElementById('reportEnd').value;
+    body.innerHTML = adpayLoadingMarkup('집계하는 중입니다');
+    try {
+        const qs = [];
+        if (start) qs.push(`start=${encodeURIComponent(start)}`);
+        if (end) qs.push(`end=${encodeURIComponent(end)}`);
+        const r = await apiGet('/api/admin/ad-dispatch/report' + (qs.length ? '?' + qs.join('&') : ''));
+        body.innerHTML = dispatchReportMarkup(r);
+    } catch (e) {
+        body.innerHTML = `<div class="alert alert-danger mb-0">${escapeHtml(e.message)}</div>`;
+    }
+}
+
+function dispatchReportMarkup(r) {
+    const typeRows = (r.by_ad_type || []).map(t => `<tr>
+        <td><span class="badge bg-light text-dark border">${escapeHtml(t.ad_type_label)}</span></td>
+        <td class="text-end">${Number(t.count).toLocaleString()}</td>
+        <td class="text-end fw-bold">${Number(t.cost).toLocaleString()}원</td>
+    </tr>`).join('');
+
+    const merchantRows = (r.by_merchant || []).map(m => `<tr>
+        <td>${escapeHtml(m.merchant_name)}</td>
+        <td class="text-end">${Number(m.count).toLocaleString()}</td>
+        <td class="text-end fw-bold">${Number(m.cost).toLocaleString()}원</td>
+    </tr>`).join('');
+
+    const problemRows = (r.problems || []).map(p => `
+        <span class="badge bg-warning text-dark me-1 mb-1">${escapeHtml(p.label)} ${p.count}건</span>`).join('');
+
+    return `
+    <div class="row g-3 mb-3">
+        ${kpiCard('집행 수량', `${Number(r.total_count).toLocaleString()}`, 'fas fa-layer-group', 'primary')}
+        ${kpiCard('집행 비용', `${Number(r.total_cost).toLocaleString()}원`, 'fas fa-won-sign', 'success')}
+        ${kpiCard('집행 건', `${Number(r.total_dispatches).toLocaleString()}건`, 'fas fa-paper-plane', 'secondary')}
+    </div>
+    <div class="small text-muted mb-3">${escapeHtml(r.start)} ~ ${escapeHtml(r.end)}</div>
+    ${problemRows ? `<div class="mb-3"><div class="small fw-bold mb-1">나가지 못한 건</div>${problemRows}</div>` : ''}
+    <div class="row g-3">
+        <div class="col-lg-5">
+            <div class="fw-bold small mb-2">광고 종류별</div>
+            <div class="table-responsive"><table class="table table-sm table-hover align-middle">
+                <thead><tr><th>광고</th><th class="text-end">수량</th><th class="text-end">비용</th></tr></thead>
+                <tbody>${typeRows || '<tr><td colspan="3" class="text-center text-muted py-3">집행 없음</td></tr>'}</tbody>
+            </table></div>
+        </div>
+        <div class="col-lg-7">
+            <div class="fw-bold small mb-2">가맹점별</div>
+            <div class="table-responsive" style="max-height:40vh;overflow:auto">
+                <table class="table table-sm table-hover align-middle">
+                <thead><tr><th>가맹점</th><th class="text-end">수량</th><th class="text-end">비용</th></tr></thead>
+                <tbody>${merchantRows || '<tr><td colspan="3" class="text-center text-muted py-3">집행 없음</td></tr>'}</tbody>
             </table></div>
         </div>
     </div>`;
@@ -8852,6 +8945,11 @@ function rewardpopMarkup(d) {
                     <label class="form-label small fw-bold">주문 생성 경로 (POST)</label>
                     <input class="form-control" id="rpOrderPath" value="${escapeHtml(s.order_path || '')}" placeholder="/v1/campaigns">
                 </div>
+                <div class="col-md-4">
+                    <label class="form-label small fw-bold">상태 조회 경로 (GET)</label>
+                    <input class="form-control" id="rpStatusPath" value="${escapeHtml(s.status_path || '')}" placeholder="/v1/campaigns/{id}">
+                    <div class="form-text small">{id} 자리에 외부 주문번호가 들어갑니다.</div>
+                </div>
             </div>
 
             <hr class="my-4">
@@ -8972,6 +9070,7 @@ async function saveRewardpopSettings() {
             ping_path: document.getElementById('rpPingPath').value.trim(),
             balance_path: document.getElementById('rpBalancePath').value.trim(),
             order_path: document.getElementById('rpOrderPath').value.trim(),
+            status_path: document.getElementById('rpStatusPath').value.trim(),
             dispatch_hour: Number(document.getElementById('rpHour').value),
             dispatch_minute: Number(document.getElementById('rpMinute').value),
             dry_run: document.getElementById('rpDryRun').checked,

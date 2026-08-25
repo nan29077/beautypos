@@ -48,6 +48,7 @@ DEFAULT_SETTINGS = {
     "ping_path": "",                 # 연결 확인용 GET 경로 (명세 확인 후 입력)
     "balance_path": "",              # 포인트 잔액 조회 GET 경로
     "order_path": "",                # 주문 생성 POST 경로
+    "status_path": "",               # 주문 상태 조회 GET 경로 ({id} 자리에 외부 주문번호가 들어간다)
     "dispatch_hour": 14,             # 자동 집행 시각 (KST)
     "dispatch_minute": 0,
     "dry_run": True,                 # 참이면 실제 호출 없이 요청 내용만 기록한다
@@ -169,6 +170,7 @@ def normalize_settings(raw: Optional[dict]) -> dict:
         "ping_path": _clean_path(raw.get("ping_path")),
         "balance_path": _clean_path(raw.get("balance_path")),
         "order_path": _clean_path(raw.get("order_path")),
+        "status_path": _clean_path(raw.get("status_path")),
         "dispatch_hour": _clean_int(raw.get("dispatch_hour"), DEFAULT_SETTINGS["dispatch_hour"], 0, 23),
         "dispatch_minute": _clean_int(raw.get("dispatch_minute"), DEFAULT_SETTINGS["dispatch_minute"], 0, 59),
         "dry_run": bool(raw.get("dry_run", DEFAULT_SETTINGS["dry_run"])),
@@ -362,6 +364,69 @@ async def create_order(db: Session, ad_type: str, payload: dict) -> dict:
     )
 
 
+# 외부 상태 문자열을 우리 상태로 옮기는 표.
+# 명세를 받으면 실제 값에 맞춰 채운다. 모르는 값은 '진행 중'으로 두어
+# 완료로 잘못 처리하지 않는다.
+EXTERNAL_STATUS_MAP = {
+    "done": "done", "complete": "done", "completed": "done", "finished": "done",
+    "success": "done", "succeeded": "done",
+    "running": "running", "progress": "running", "in_progress": "running",
+    "processing": "running", "pending": "running", "waiting": "running",
+    "fail": "failed", "failed": "failed", "error": "failed",
+    "cancel": "failed", "cancelled": "failed", "canceled": "failed", "rejected": "failed",
+}
+STATUS_KEYS = ("status", "state", "order_status", "campaign_status", "result")
+
+
+def map_external_status(body) -> tuple:
+    """외부 응답에서 상태 문자열을 찾아 우리 상태로 옮긴다.
+
+    돌려주는 값: (우리 상태 또는 None, 찾아낸 원본 문자열 또는 None)
+    상태를 찾지 못하면 (None, None) — 호출부가 기존 상태를 그대로 둔다.
+    """
+    def _find(node):
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key.lower() in STATUS_KEYS and isinstance(value, str) and value.strip():
+                    return value.strip()
+            for value in node.values():
+                found = _find(value)
+                if found:
+                    return found
+        elif isinstance(node, list):
+            for value in node:
+                found = _find(value)
+                if found:
+                    return found
+        return None
+
+    raw = _find(body)
+    if not raw:
+        return None, None
+    return EXTERNAL_STATUS_MAP.get(raw.lower().replace("-", "_"), "running"), raw
+
+
+async def get_order_status(db: Session, external_order_id: str) -> dict:
+    """접수된 주문의 진행 상태를 조회한다.
+
+    경로에 {id} 자리를 두면 외부 주문번호로 채운다. 예) /v1/campaigns/{id}
+    """
+    settings = get_settings(db)
+    path = settings["status_path"]
+    if not path:
+        raise SpecMissing("상태 조회 경로가 아직 설정되지 않았습니다.")
+    if not external_order_id:
+        raise RewardpopError("외부 주문번호가 없어 상태를 조회할 수 없습니다.")
+
+    if "{id}" in path:
+        body = await _request(db, "GET", path.replace("{id}", str(external_order_id)))
+    else:
+        body = await _request(db, "GET", path, params={"id": external_order_id})
+
+    status, raw_status = map_external_status(body)
+    return {"status": status, "raw_status": raw_status, "raw": body}
+
+
 def status_summary(db: Session) -> dict:
     """화면에 뿌릴 연동 상태 요약."""
     key = get_api_key(db)
@@ -371,6 +436,7 @@ def status_summary(db: Session) -> dict:
             ("연결 확인", settings["ping_path"]),
             ("잔액 조회", settings["balance_path"]),
             ("주문 생성", settings["order_path"]),
+            ("상태 조회", settings["status_path"]),
         ) if not value
     ]
     return {
