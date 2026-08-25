@@ -40,8 +40,9 @@ class Settings(BaseSettings):
     DATABASE_URL_OVERRIDE: str = ""
 
     # 플레이스 순위 자동 수집 스케줄러 (한국 시간 기준)
+    # 광고 자동 집행(14시)보다 먼저 돌아야 그날의 기준선이 남는다.
     RANK_SCHEDULER_ENABLED: bool = True
-    RANK_SCHEDULER_HOUR: int = 14
+    RANK_SCHEDULER_HOUR: int = 12
     RANK_SCHEDULER_MINUTE: int = 0
 
     @property

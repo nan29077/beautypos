@@ -10,11 +10,14 @@ Covers: merchants CRUD, PG config, transactions, payout requests,
 - ad_routes.py — 광고 주문/지표/단가/플랜/집행 관련
 - payout_routes.py — 페이아웃(출금) 요청 관련
 - misc_routes.py — 대시보드 통계, AI 설정 등
+- rewardpop_routes.py — 리워드팝 광고 자동집행 연동 설정
+- keyword_routes.py — 광고 집행 키워드 관리·승인
 """
 from fastapi import APIRouter
 
 from app.api.admin import (
     merchant_routes, pg_routes, settlement_routes, ad_routes, payout_routes, misc_routes,
+    rewardpop_routes, keyword_routes,
 )
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -24,3 +27,5 @@ router.include_router(settlement_routes.router)
 router.include_router(ad_routes.router)
 router.include_router(payout_routes.router)
 router.include_router(misc_routes.router)
+router.include_router(rewardpop_routes.router)
+router.include_router(keyword_routes.router)

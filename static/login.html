@@ -163,7 +163,7 @@
                 </div>
             </div>
 
-            <div class="test-card text-white" style="display:none">
+            <div class="test-card text-white" id="testAccountCard" style="display:none">
                 <div class="d-flex align-items-center justify-content-between mb-2">
                     <strong class="small"><i class="fas fa-flask me-1 text-warning"></i>테스트 계정 바로 로그인</strong>
                     <span class="badge bg-warning text-dark">개발 전용</span>
@@ -258,6 +258,18 @@
                 handleAuthSuccess(data);
             } catch (e) { showAlert('서버 연결 오류', 'danger'); }
         }
+
+        // 테스트 계정 버튼은 DEV_MODE 일 때만 보여준다.
+        // 서버가 결정하므로 개발·운영을 오가며 파일을 고치지 않아도 된다.
+        (async () => {
+            try {
+                const res = await fetch(API + '/api/public/app-config');
+                if (!res.ok) return;
+                const cfg = await res.json();
+                const card = document.getElementById('testAccountCard');
+                if (cfg.dev_mode && card) card.style.display = '';
+            } catch (e) { /* 설정을 못 받으면 감춘 상태로 둔다 */ }
+        })();
 
         async function testLogin(role) {
             try {

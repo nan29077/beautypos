@@ -13,16 +13,28 @@ from sqlalchemy.orm import relationship
 from app.database import Base
 
 
-# 5종 광고 타입 — (code, 표시명) 순서가 화면 노출 순서다.
-AD_EXECUTION_TYPES = [
+# 광고 타입 — (code, 표시명) 순서가 화면 노출 순서다.
+# _ALL 은 DB 에 존재하는 전체 목록, AD_EXECUTION_TYPES 는 화면에 노출되는 목록이다.
+AD_EXECUTION_TYPES_ALL = [
     ("blog_review", "블로그 리뷰"),
     ("receipt_review", "영수증 리뷰"),
-    ("place_traffic", "플레이스 트래픽"),
+    ("place_traffic", "플레이스 방문"),
     ("place_save", "플레이스 저장"),
     ("shorts", "쇼츠"),
 ]
+
+# 화면에서 감추는 광고 종류. 컬럼과 기존 데이터는 그대로 두고 노출만 막는다.
+# place_save 는 2026-08-25 자로 '플레이스 방문'에 통합됐다.
+# 플랜의 목표 건수는 alembic 리비전이 place_traffic 쪽으로 합산 이관한다.
+# 다시 분리하려면 이 집합을 비우기만 하면 된다.
+HIDDEN_AD_EXECUTION_TYPES = {"place_save"}
+
+AD_EXECUTION_TYPES = [
+    item for item in AD_EXECUTION_TYPES_ALL if item[0] not in HIDDEN_AD_EXECUTION_TYPES
+]
 AD_EXECUTION_TYPE_CODES = [code for code, _ in AD_EXECUTION_TYPES]
-AD_EXECUTION_TYPE_LABELS = dict(AD_EXECUTION_TYPES)
+# 레이블은 전체 목록에서 만든다 — 이미 쌓인 place_save 기록도 이름이 나와야 한다.
+AD_EXECUTION_TYPE_LABELS = dict(AD_EXECUTION_TYPES_ALL)
 
 # 플랜 코드 → 표시명
 PLAN_CODES = [("basic", "베이직"), ("standard", "스탠다드"), ("premium", "프리미엄")]

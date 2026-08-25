@@ -1,9 +1,10 @@
 """
 플레이스 순위/리뷰 자동 수집 스케줄러.
 
-매일 한국시간 오후 2시에 모든 가맹점의 지표를 수집한다.
+매일 한국시간 낮 12시에 모든 가맹점의 지표를 수집한다.
 - 외부 스케줄러 라이브러리 없이 asyncio 만 사용한다 (FastAPI lifespan 에 등록).
-- 당일 수동 조회 기록이 있어도 오후 2시 시점의 최신 순위로 다시 갱신한다.
+- 당일 수동 조회 기록이 있어도 낮 12시 시점의 최신 순위로 다시 갱신한다.
+- 광고 자동 집행(14시)보다 먼저 돌아 집행 전 기준선을 남긴다.
 - 화면의 '광고 분석하기' 수동 버튼과는 완전히 독립적으로 동작한다.
 """
 import asyncio
@@ -39,7 +40,7 @@ def _merchant_ids_with_targets(db) -> list:
 
 
 async def collect_all_merchants() -> dict:
-    """등록된 모든 가맹점·플레이스의 오후 2시 최신 지표를 순차 수집한다."""
+    """등록된 모든 가맹점·플레이스의 낮 12시 최신 지표를 순차 수집한다."""
     from app.database import SessionLocal
     from app.services import naver_place
 
@@ -54,7 +55,7 @@ async def collect_all_merchants() -> dict:
     for index, merchant_id in enumerate(merchant_ids):
         db = SessionLocal()
         try:
-            # 오전 또는 오후 2시 이전에 수동 조회했더라도 예약 시점의 실제 순위로
+            # 낮 12시 이전에 수동 조회했더라도 예약 시점의 실제 순위로
             # 당일 스냅샷을 갱신해야 하므로 캐시를 사용하지 않는다.
             result = await naver_place.fetch_all_for_merchant(merchant_id, db=db, force=True)
             collected += result.get("collected", 0)

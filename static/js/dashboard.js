@@ -52,6 +52,8 @@ const mobilePageMeta = {
     'admin-sales-assign': ['영업관리자 연결', 'fas fa-handshake'],
     'admin-users': ['사용자 목록', 'fas fa-users-cog'],
     'admin-ai-settings': ['AI 설정', 'fas fa-robot'],
+    'admin-rewardpop': ['리워드팝 연동', 'fas fa-plug'],
+    'admin-ad-keywords': ['광고 키워드 승인', 'fas fa-key'],
     'sales-merchants': ['담당 가맹점', 'fas fa-store'],
     'sales-commission': ['커미션 현황', 'fas fa-coins'],
     'sales-payouts': ['출금요청', 'fas fa-money-bill-wave'],
@@ -67,6 +69,7 @@ const mobilePageMeta = {
     'owner-analysis': ['광고 분석', 'fas fa-chart-line'],
     'owner-adorders': ['광고 주문 내역', 'fas fa-bullhorn'],
     'owner-adorder-new': ['새 광고 주문', 'fas fa-plus-circle'],
+    'owner-ad-keywords': ['광고 키워드', 'fas fa-key'],
     crm: ['미용실 관리', 'fas fa-user-friends'],
     'owner-info': ['매장 정보', 'fas fa-store'],
     'designer-transactions': ['결제 내역', 'fas fa-receipt'],
@@ -285,7 +288,7 @@ function ownerMobilePages() {
         pages.push('owner-staff', 'owner-staff-sales', 'owner-settlement');
     }
     pages.push('owner-settlements', 'owner-payouts',
-               'owner-receipt-review', 'owner-analysis');
+               'owner-receipt-review', 'owner-analysis', 'owner-ad-keywords');
     if (adFeatureFlags.ad_order_mgmt_enabled) {
         pages.push('owner-adorders', 'owner-adorder-new');
     }
@@ -562,6 +565,7 @@ function buildSidebar() {
         <a class="nav-link" href="#" data-page="admin-adorders"><i class="fas fa-bullhorn"></i>광고주문 관리</a>
         <a class="nav-link" href="#" data-page="admin-metrics"><i class="fas fa-chart-bar"></i>광고 분석 관리</a>
         <a class="nav-link" href="#" data-page="admin-ad-executions"><i class="fas fa-tasks"></i>광고 실행 현황</a>
+        <a class="nav-link" href="#" data-page="admin-ad-keywords"><i class="fas fa-key"></i>광고 키워드 승인</a>
         <div class="nav-section"><i class="fas fa-layer-group me-1" style="font-size:.6rem"></i>플랜</div>
         <a class="nav-link" href="#" data-page="admin-plans"><i class="fas fa-layer-group"></i>플랜 관리</a>
         <div class="nav-section"><i class="fas fa-user-tie me-1" style="font-size:.6rem"></i>ADPAY 영업 · 인력</div>
@@ -569,7 +573,8 @@ function buildSidebar() {
         <a class="nav-link" href="#" data-page="admin-sales-assign"><i class="fas fa-handshake"></i>영업관리자 연결</a>
         <a class="nav-link" href="#" data-page="admin-users"><i class="fas fa-users-cog"></i>사용자 목록</a>
         <div class="nav-section"><i class="fas fa-gear me-1" style="font-size:.6rem"></i>시스템 설정</div>
-        <a class="nav-link" href="#" data-page="admin-ai-settings"><i class="fas fa-robot"></i>AI 설정</a>`;
+        <a class="nav-link" href="#" data-page="admin-ai-settings"><i class="fas fa-robot"></i>AI 설정</a>
+        <a class="nav-link" href="#" data-page="admin-rewardpop"><i class="fas fa-plug"></i>리워드팝 연동</a>`;
     } else if (role === 'sales') {
         html += `
         <div class="nav-section">영업 관리</div>
@@ -599,7 +604,8 @@ function buildSidebar() {
         <div class="nav-section">리뷰 관리</div>
         <a class="nav-link" href="#" data-page="owner-receipt-review"><i class="fas fa-qrcode"></i>영수증 리뷰관리</a>
         <div class="nav-section">광고/마케팅</div>
-        <a class="nav-link" href="#" data-page="owner-analysis"><i class="fas fa-chart-line"></i>광고 분석</a>`;
+        <a class="nav-link" href="#" data-page="owner-analysis"><i class="fas fa-chart-line"></i>광고 분석</a>
+        <a class="nav-link" href="#" data-page="owner-ad-keywords"><i class="fas fa-key"></i>광고 키워드</a>`;
         if (masterOn) {
             html += `
         <a class="nav-link" href="#" data-page="owner-adorders"><i class="fas fa-bullhorn"></i>내 광고 주문</a>
@@ -687,6 +693,8 @@ async function loadPage(page) {
             case 'admin-sales-assign': await loadAdminSalesAssign(c, t); break;
             case 'admin-users': await loadAdminUsers(c, t); break;
             case 'admin-ai-settings': await loadAdminAiSettings(c, t); break;
+            case 'admin-rewardpop': await loadAdminRewardpop(c, t); break;
+            case 'admin-ad-keywords': await loadAdminAdKeywords(c, t); break;
             // Sales
             case 'sales-merchants': await loadSalesMerchants(c, t); break;
             case 'sales-commission': await loadSalesCommission(c, t); break;
@@ -703,6 +711,7 @@ async function loadPage(page) {
             case 'owner-analysis': await loadOwnerAnalysis(c, t); break;
             case 'owner-adorders': await loadOwnerAdOrders(c, t); break;
             case 'owner-adorder-new': await loadOwnerAdOrderNew(c, t); break;
+            case 'owner-ad-keywords': await loadOwnerAdKeywords(c, t); break;
             case 'owner-info': await loadOwnerInfo(c, t); break;
             case 'owner-receipt-review': await loadOwnerReceiptReview(c, t); break;
             case 'owner-crm':
@@ -2509,7 +2518,7 @@ async function loadAdminAdOrders(c, t) {
                                     <i class="fas fa-map-marker-alt text-white"></i>
                                 </div>
                                 <div>
-                                    <div class="fw-bold" style="font-size:.92rem">플레이스 유입</div>
+                                    <div class="fw-bold" style="font-size:.92rem">플레이스 방문</div>
                                     <div class="ad-feature-description" style="font-size:.72rem;color:#888">플레이스 주문 탭 표시</div>
                                 </div>
                             </div>
@@ -2554,7 +2563,7 @@ async function loadAdminAdOrders(c, t) {
                     <div class="input-group"><input type="number" min="0" step="100" class="form-control" id="adPriceBlog" value="${pricing.blog_unit_price}"><span class="input-group-text">원</span></div>
                 </div>
                 <div class="col-md-4">
-                    <label class="form-label">플레이스 유입 1건 단가</label>
+                    <label class="form-label">플레이스 방문 1건 단가</label>
                     <div class="input-group"><input type="number" min="0" step="100" class="form-control" id="adPricePlace" value="${pricing.place_traffic_unit_price}"><span class="input-group-text">원</span></div>
                 </div>
                 <div class="col-md-4">
@@ -2824,7 +2833,7 @@ async function showAdOrderDetail(orderId) {
             const d = o.place_traffic_detail;
             detailHtml = `
             <div class="border rounded p-3 mb-3" style="background:#f8f9fa">
-                <h6 class="fw-bold mb-2"><i class="fas fa-map-marker-alt me-1 text-secondary"></i>플레이스 트래픽 상세</h6>
+                <h6 class="fw-bold mb-2"><i class="fas fa-map-marker-alt me-1 text-secondary"></i>플레이스 방문 상세</h6>
                 <div class="row g-2">
                     <div class="col-md-6"><label class="small text-muted">플레이스명/ID</label><div class="fw-bold">${escapeHtml(d.place_name_or_id) || '-'}</div></div>
                     <div class="col-md-6"><label class="small text-muted">검색 키워드</label><div>${(d.search_keywords && d.search_keywords.length) ? escapeHtml(d.search_keywords.join(', ')) : '-'}</div></div>
@@ -5241,9 +5250,9 @@ async function generateAIRecommendation() {
                     icon: 'fas fa-trophy', color: '#ef4444', category: '플레이스 순위',
                     status: 'danger',
                     title: `순위가 경쟁업체보다 낮습니다 (${myBestRank}위 vs ${compBestRank}위)`,
-                    desc: '플레이스 순위는 리뷰 수, 평점, 방문 트래픽에 영향을 받습니다',
+                    desc: '플레이스 순위는 리뷰 수, 평점, 방문자 수에 영향을 받습니다',
                     actions: [
-                        '플레이스 트래픽 광고를 통해 방문자 수를 늘리세요',
+                        '플레이스 방문 광고를 통해 방문자 수를 늘리세요',
                         '매장 정보(사진, 메뉴, 영업시간 등)를 정확히 업데이트하세요',
                         '네이버/카카오 키워드 광고와 병행하세요',
                         '정기적인 소식글/이벤트 게시로 활성도를 높이세요'
@@ -5281,8 +5290,8 @@ async function generateAIRecommendation() {
                 actions: [
                     '1단계: 매장 기본 정보 최신화 (사진, 메뉴, 영업시간)',
                     '2단계: 방문자 리뷰 확보 (현재 고객 활용)',
-                    '3단계: 블로그 체험단 운영 (신규 고객 유입)',
-                    '4단계: 플레이스 트래픽 광고 (순위 향상)',
+                    '3단계: 블로그 체험단 운영 (신규 고객 확보)',
+                    '4단계: 플레이스 방문 광고 (순위 향상)',
                     '5단계: SNS 마케팅 병행 (브랜드 인지도 강화)'
                 ]
             });
@@ -5559,7 +5568,7 @@ async function loadOwnerAdOrderNew(c, t) {
         c.innerHTML = `<div class="card border-0 shadow-sm"><div class="card-body text-center py-5">
             <i class="fas fa-exclamation-triangle text-warning" style="font-size:3rem"></i>
             <h5 class="mt-3 mb-2">현재 사용 가능한 광고 주문 유형이 없습니다</h5>
-            <p class="text-muted mb-0">관리자에게 문의하여 블로그 배포 · 플레이스 유입 · 쇼츠 배포 기능을 활성화해 주세요.</p>
+            <p class="text-muted mb-0">관리자에게 문의하여 블로그 배포 · 플레이스 방문 · 쇼츠 배포 기능을 활성화해 주세요.</p>
         </div></div>`;
         return;
     }
@@ -5568,7 +5577,7 @@ async function loadOwnerAdOrderNew(c, t) {
     const defaultTab = blogOn ? 'blog' : (placeOn ? 'place' : 'shorts');
     let tabsHtml = '<ul class="nav nav-tabs ad-order-tabs mb-4" id="adOrderTabs" role="tablist">';
     if (blogOn) tabsHtml += `<li class="nav-item" role="presentation"><button type="button" class="nav-link ${defaultTab==='blog'?'active':''}" data-adtab="blog" role="tab" aria-selected="${defaultTab==='blog'}" onclick="showAdTab('blog')"><i class="fas fa-blog"></i><span>블로그 배포</span></button></li>`;
-    if (placeOn) tabsHtml += `<li class="nav-item" role="presentation"><button type="button" class="nav-link ${defaultTab==='place'?'active':''}" data-adtab="place" role="tab" aria-selected="${defaultTab==='place'}" onclick="showAdTab('place')"><i class="fas fa-map-marker-alt"></i><span>플레이스 유입</span></button></li>`;
+    if (placeOn) tabsHtml += `<li class="nav-item" role="presentation"><button type="button" class="nav-link ${defaultTab==='place'?'active':''}" data-adtab="place" role="tab" aria-selected="${defaultTab==='place'}" onclick="showAdTab('place')"><i class="fas fa-map-marker-alt"></i><span>플레이스 방문</span></button></li>`;
     if (shortsOn) tabsHtml += `<li class="nav-item" role="presentation"><button type="button" class="nav-link ${defaultTab==='shorts'?'active':''}" data-adtab="shorts" role="tab" aria-selected="${defaultTab==='shorts'}" onclick="showAdTab('shorts')"><i class="fab fa-youtube"></i><span>쇼츠 배포</span></button></li>`;
     tabsHtml += '</ul>';
 
@@ -5596,7 +5605,7 @@ async function loadOwnerAdOrderNew(c, t) {
     }
     if (placeOn) {
         bodyHtml += `<div id="adTabPlace" style="display:${defaultTab==='place'?'':'none'}">
-        <div class="card data-card"><div class="card-header"><h5><i class="fas fa-map-marker-alt text-success me-2"></i>플레이스 유입 요청</h5></div><div class="card-body">
+        <div class="card data-card"><div class="card-header"><h5><i class="fas fa-map-marker-alt text-success me-2"></i>플레이스 방문 요청</h5></div><div class="card-body">
             <div class="row g-3">
                 <div class="col-md-6"><label class="form-label">플레이스명 또는 ID <span class="text-danger">*</span></label><input class="form-control" id="placeName" maxlength="300"></div>
                 <div class="col-md-6"><label class="form-label">검색 키워드 (최대 3) <span class="text-danger">*</span></label><input class="form-control" id="placeKeywords" placeholder="쉼표로 구분"></div>
@@ -5626,7 +5635,7 @@ function simpleAdEstimateData(type, count) {
 
 function simpleAdEstimateMarkup(type, count) {
     const est = simpleAdEstimateData(type, count);
-    const label = type === 'blog' ? '블로그 배포' : '플레이스 유입';
+    const label = type === 'blog' ? '블로그 배포' : '플레이스 방문';
     const unsetNotice = est.unitPrice === 0
         ? '<div class="text-warning mt-2" style="font-size:.78rem"><i class="fas fa-exclamation-triangle me-1"></i>관리자 단가가 아직 설정되지 않았습니다.</div>'
         : '';
@@ -8045,12 +8054,542 @@ async function deleteAiApiKey() {
     }
 }
 
+// ─── 광고 집행 키워드 (관리자 승인 / 매장 등록) ─────────────
+const KEYWORD_STATUS_BADGE = {
+    pending: ['warning text-dark', 'clock', '승인 대기'],
+    approved: ['success', 'circle-check', '승인됨'],
+    rejected: ['danger', 'circle-xmark', '반려됨'],
+};
+
+function keywordStatusBadge(k) {
+    const [cls, icon, label] = KEYWORD_STATUS_BADGE[k.status] || ['secondary', 'circle', k.status];
+    return `<span class="badge bg-${cls}"><i class="fas fa-${icon} me-1"></i>${escapeHtml(label)}</span>`;
+}
+
+function keywordAdTypeOptions(adTypes, selected) {
+    const opts = [`<option value="" ${selected ? '' : 'selected'}>모든 광고 공통</option>`];
+    (adTypes || []).forEach(t => {
+        opts.push(`<option value="${escapeHtml(t.code)}" ${selected === t.code ? 'selected' : ''}>${escapeHtml(t.label)}</option>`);
+    });
+    return opts.join('');
+}
+
+// ── ADMIN: 키워드 승인 ──────────────────────────────────────
+let adminKeywordData = null;
+let adminKeywordFilter = '';
+
+async function loadAdminAdKeywords(c, t) {
+    t.textContent = '광고 키워드 승인';
+    c.innerHTML = adpayLoadingMarkup('키워드를 불러오는 중입니다');
+    try {
+        const [data, merchants] = await Promise.all([
+            apiGet('/api/admin/ad-keywords' + (adminKeywordFilter ? `?status=${adminKeywordFilter}` : '')),
+            apiGet('/api/admin/merchants'),
+        ]);
+        adminKeywordData = data;
+        c.innerHTML = adminKeywordMarkup(data, merchants);
+    } catch (e) {
+        c.innerHTML = `<div class="alert alert-danger">${escapeHtml(e.message)}</div>`;
+    }
+}
+
+function adminKeywordMarkup(d, merchants) {
+    const filters = [['', '전체'], ['pending', '승인 대기'], ['approved', '승인됨'], ['rejected', '반려됨']]
+        .map(([code, label]) => `<button class="btn btn-sm ${adminKeywordFilter === code ? 'btn-primary' : 'btn-outline-secondary'}"
+            onclick="filterAdminKeywords('${code}')">${escapeHtml(label)}</button>`).join('');
+
+    const rows = (d.keywords || []).map(k => `<tr>
+        <td>${escapeHtml(k.merchant_name)}</td>
+        <td class="fw-bold">${escapeHtml(k.keyword)}</td>
+        <td><span class="badge bg-light text-dark border">${escapeHtml(k.ad_type_label)}</span></td>
+        <td class="text-center">${k.priority}</td>
+        <td>${keywordStatusBadge(k)}${k.reject_reason
+            ? `<div class="small text-muted mt-1">${escapeHtml(k.reject_reason)}</div>` : ''}</td>
+        <td class="small text-muted">${k.created_by_role === 'admin' ? '관리자' : '매장'}<br>${escapeHtml(k.created_at || '')}</td>
+        <td class="text-nowrap">
+            ${k.status !== 'approved' ? `<button class="btn btn-sm btn-success me-1" onclick="approveKeyword(${k.id})"><i class="fas fa-check"></i></button>` : ''}
+            ${k.status !== 'rejected' ? `<button class="btn btn-sm btn-outline-warning me-1" onclick="rejectKeyword(${k.id})"><i class="fas fa-ban"></i></button>` : ''}
+            <button class="btn btn-sm btn-outline-danger" onclick="deleteAdminKeyword(${k.id})"><i class="fas fa-trash"></i></button>
+        </td>
+    </tr>`).join('');
+
+    const merchantOptions = (merchants || [])
+        .filter(m => m.is_active)
+        .map(m => `<option value="${m.id}">${escapeHtml(m.name)}</option>`).join('');
+
+    return `
+    <div class="card data-card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h5 class="mb-0"><i class="fas fa-key me-2"></i>매장 광고 키워드</h5>
+            ${d.pending_count > 0
+                ? `<span class="badge bg-warning text-dark">승인 대기 ${d.pending_count}건</span>`
+                : '<span class="badge bg-success">대기 중인 승인 없음</span>'}
+        </div>
+        <div class="card-body">
+            <div class="alert alert-light border small mb-3"><i class="fas fa-info-circle text-primary me-1"></i>
+                매장이 등록한 키워드는 <b>승인해야 자동 집행에 쓰입니다.</b>
+                승인된 키워드가 하나도 없는 매장은 그날 집행이 보류됩니다.</div>
+            <div class="d-flex gap-2 mb-3 flex-wrap">${filters}</div>
+            <div class="table-responsive"><table class="table table-hover align-middle">
+                <thead><tr><th>가맹점</th><th>키워드</th><th>광고 종류</th><th class="text-center">순위</th><th>상태</th><th>등록</th><th>액션</th></tr></thead>
+                <tbody>${rows || '<tr><td colspan="7" class="text-center text-muted py-4">등록된 키워드가 없습니다</td></tr>'}</tbody>
+            </table></div>
+        </div>
+    </div>
+
+    <div class="card data-card">
+        <div class="card-header"><h5 class="mb-0"><i class="fas fa-plus me-2"></i>관리자 직접 등록</h5></div>
+        <div class="card-body">
+            <div class="small text-muted mb-3">관리자가 등록한 키워드는 승인 절차 없이 바로 사용됩니다.</div>
+            <div class="row g-2 align-items-end">
+                <div class="col-md-4">
+                    <label class="form-label small fw-bold">가맹점</label>
+                    <select class="form-select" id="akMerchant">${merchantOptions}</select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small fw-bold">키워드</label>
+                    <input class="form-control" id="akKeyword" maxlength="60" placeholder="예) 강남 미용실">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small fw-bold">광고 종류</label>
+                    <select class="form-select" id="akAdType">${keywordAdTypeOptions(d.ad_types, '')}</select>
+                </div>
+                <div class="col-md-2">
+                    <button class="btn btn-primary w-100" onclick="addAdminKeyword()"><i class="fas fa-plus me-1"></i>추가</button>
+                </div>
+            </div>
+            <div id="akResult" class="mt-3"></div>
+        </div>
+    </div>`;
+}
+
+function filterAdminKeywords(status) {
+    adminKeywordFilter = status;
+    navigate('admin-ad-keywords');
+}
+
+function showKeywordResult(boxId, ok, message) {
+    const box = document.getElementById(boxId);
+    if (!box) return;
+    box.innerHTML = `<div class="alert alert-${ok ? 'success' : 'danger'} py-2 mb-0 small">
+        <i class="fas fa-${ok ? 'circle-check' : 'circle-exclamation'} me-1"></i>${escapeHtml(message)}</div>`;
+}
+
+async function addAdminKeyword() {
+    const merchantId = document.getElementById('akMerchant').value;
+    const keyword = document.getElementById('akKeyword').value.trim();
+    if (!merchantId) { showKeywordResult('akResult', false, '가맹점을 선택해주세요.'); return; }
+    if (!keyword) { showKeywordResult('akResult', false, '키워드를 입력해주세요.'); return; }
+    try {
+        await apiPost(`/api/admin/merchants/${merchantId}/ad-keywords`, {
+            keyword,
+            ad_type: document.getElementById('akAdType').value,
+        });
+        navigate('admin-ad-keywords');
+    } catch (e) {
+        showKeywordResult('akResult', false, e.message);
+    }
+}
+
+async function approveKeyword(id) {
+    try {
+        await apiPost(`/api/admin/ad-keywords/${id}/approve`, {});
+        navigate('admin-ad-keywords');
+    } catch (e) { alert(e.message); }
+}
+
+async function rejectKeyword(id) {
+    const reason = prompt('반려 사유를 입력해주세요 (매장에 그대로 보입니다)');
+    if (reason === null) return;
+    try {
+        await apiPost(`/api/admin/ad-keywords/${id}/reject`, { reason });
+        navigate('admin-ad-keywords');
+    } catch (e) { alert(e.message); }
+}
+
+async function deleteAdminKeyword(id) {
+    if (!confirm('이 키워드를 삭제하시겠습니까?')) return;
+    try {
+        await apiDelete(`/api/admin/ad-keywords/${id}`);
+        navigate('admin-ad-keywords');
+    } catch (e) { alert(e.message); }
+}
+
+// ── OWNER: 내 광고 키워드 ───────────────────────────────────
+async function loadOwnerAdKeywords(c, t) {
+    t.textContent = '광고 키워드';
+    c.innerHTML = adpayLoadingMarkup('키워드를 불러오는 중입니다');
+    try {
+        c.innerHTML = ownerKeywordMarkup(await apiGet('/api/owner/ad/keywords'));
+    } catch (e) {
+        c.innerHTML = `<div class="alert alert-danger">${escapeHtml(e.message)}</div>`;
+    }
+}
+
+function ownerKeywordMarkup(d) {
+    const rows = (d.keywords || []).map(k => `<tr class="${k.usable ? '' : 'text-muted'}">
+        <td class="fw-bold">${escapeHtml(k.keyword)}</td>
+        <td><span class="badge bg-light text-dark border">${escapeHtml(k.ad_type_label)}</span></td>
+        <td>${keywordStatusBadge(k)}${k.reject_reason
+            ? `<div class="small text-danger mt-1"><i class="fas fa-comment-dots me-1"></i>${escapeHtml(k.reject_reason)}</div>` : ''}</td>
+        <td class="text-center">
+            <div class="form-check form-switch d-inline-block">
+                <input class="form-check-input" type="checkbox" ${k.is_active ? 'checked' : ''}
+                    onchange="toggleMyKeyword(${k.id}, this.checked)">
+            </div>
+        </td>
+        <td class="text-nowrap">
+            <button class="btn btn-sm btn-outline-danger" onclick="deleteMyKeyword(${k.id})"><i class="fas fa-trash"></i></button>
+        </td>
+    </tr>`).join('');
+
+    const blockedNotice = d.dispatch_blocked
+        ? `<div class="alert alert-warning mb-3"><i class="fas fa-triangle-exclamation me-1"></i>
+             <b>승인된 키워드가 없어 광고 자동 집행이 보류됩니다.</b>
+             키워드를 등록하면 관리자 승인 후 집행이 시작됩니다.</div>`
+        : `<div class="alert alert-success mb-3 py-2 small"><i class="fas fa-circle-check me-1"></i>
+             사용 중인 키워드 ${d.usable_count}개로 광고가 집행됩니다.</div>`;
+
+    return `
+    <div class="card data-card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h5 class="mb-0"><i class="fas fa-key me-2"></i>내 광고 키워드</h5>
+            ${d.pending_count > 0 ? `<span class="badge bg-warning text-dark">승인 대기 ${d.pending_count}건</span>` : ''}
+        </div>
+        <div class="card-body">
+            ${blockedNotice}
+            <div class="row g-2 align-items-end mb-3">
+                <div class="col-md-5">
+                    <label class="form-label small fw-bold">키워드</label>
+                    <input class="form-control" id="okKeyword" maxlength="60" placeholder="예) 강남 미용실">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label small fw-bold">광고 종류</label>
+                    <select class="form-select" id="okAdType">${keywordAdTypeOptions(d.ad_types, '')}</select>
+                </div>
+                <div class="col-md-3">
+                    <button class="btn btn-primary w-100" onclick="addMyKeyword()"><i class="fas fa-plus me-1"></i>등록</button>
+                </div>
+            </div>
+            <div id="okResult" class="mb-3"></div>
+            <div class="table-responsive"><table class="table table-hover align-middle">
+                <thead><tr><th>키워드</th><th>광고 종류</th><th>상태</th><th class="text-center">사용</th><th></th></tr></thead>
+                <tbody>${rows || '<tr><td colspan="5" class="text-center text-muted py-4">등록된 키워드가 없습니다</td></tr>'}</tbody>
+            </table></div>
+            <div class="small text-muted mt-2">
+                키워드는 최대 ${d.max_per_merchant}개까지 등록할 수 있습니다.
+                등록·수정한 키워드는 관리자 승인 후 집행에 쓰입니다.
+            </div>
+        </div>
+    </div>`;
+}
+
+async function addMyKeyword() {
+    const keyword = document.getElementById('okKeyword').value.trim();
+    if (!keyword) { showKeywordResult('okResult', false, '키워드를 입력해주세요.'); return; }
+    try {
+        await apiPost('/api/owner/ad/keywords', {
+            keyword,
+            ad_type: document.getElementById('okAdType').value,
+        });
+        navigate('owner-ad-keywords');
+    } catch (e) {
+        showKeywordResult('okResult', false, e.message);
+    }
+}
+
+async function toggleMyKeyword(id, isActive) {
+    try {
+        await apiPut(`/api/owner/ad/keywords/${id}`, { is_active: isActive });
+        navigate('owner-ad-keywords');
+    } catch (e) { alert(e.message); }
+}
+
+async function deleteMyKeyword(id) {
+    if (!confirm('이 키워드를 삭제하시겠습니까?')) return;
+    try {
+        await apiDelete(`/api/owner/ad/keywords/${id}`);
+        navigate('owner-ad-keywords');
+    } catch (e) { alert(e.message); }
+}
+
+// ─── ADMIN: 리워드팝 연동 ──────────────────────────────────
+let rewardpopState = null;
+
+async function loadAdminRewardpop(c, t) {
+    t.textContent = '리워드팝 연동';
+    c.innerHTML = adpayLoadingMarkup('연동 정보를 불러오는 중입니다');
+    try {
+        rewardpopState = await apiGet('/api/admin/rewardpop/config');
+    } catch (e) {
+        c.innerHTML = `<div class="alert alert-danger">${escapeHtml(e.message)}</div>`;
+        return;
+    }
+    c.innerHTML = rewardpopMarkup(rewardpopState);
+}
+
+function rewardpopStatusBadge(d) {
+    if (!d.configured) return '<span class="badge bg-secondary"><i class="fas fa-circle-minus me-1"></i>미연결</span>';
+    if (!d.enabled) return '<span class="badge bg-warning text-dark"><i class="fas fa-pause me-1"></i>사용 중지</span>';
+    if (d.settings.dry_run) return '<span class="badge bg-info text-dark"><i class="fas fa-vial me-1"></i>드라이런</span>';
+    return '<span class="badge bg-success"><i class="fas fa-circle-check me-1"></i>연동 중</span>';
+}
+
+function rewardpopMarkup(d) {
+    const s = d.settings || {};
+    const styles = (d.auth_styles || []).map(o =>
+        `<option value="${escapeHtml(o.code)}" ${s.auth_style === o.code ? 'selected' : ''}>${escapeHtml(o.label)}</option>`
+    ).join('');
+    const missing = (d.missing_paths || []);
+    const missingNotice = missing.length
+        ? `<div class="alert alert-warning small mb-3"><i class="fas fa-triangle-exclamation me-1"></i>
+             <b>아직 설정되지 않은 경로:</b> ${escapeHtml(missing.join(' · '))}<br>
+             리워드팝 API 문서를 확인한 뒤 아래 경로란에 입력해야 자동 집행이 동작합니다.</div>`
+        : '';
+
+    return `
+    <div class="card data-card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h5 class="mb-0"><i class="fas fa-plug me-2"></i>리워드팝 API 키</h5>
+            <span id="rpStatusBadge">${rewardpopStatusBadge(d)}</span>
+        </div>
+        <div class="card-body">
+            ${missingNotice}
+            <label class="form-label fw-bold small">API 키</label>
+            <div class="input-group mb-2">
+                <span class="input-group-text"><i class="fas fa-key"></i></span>
+                <input type="password" class="form-control" id="rpApiKey" placeholder="리워드팝 [API 관리] 에서 발급한 키" autocomplete="off">
+                <button class="btn btn-outline-secondary" type="button" onclick="toggleRewardpopKeyVisible()" id="rpKeyEye" title="입력값 보기">
+                    <i class="fas fa-eye"></i>
+                </button>
+            </div>
+            <div class="small text-muted mb-3" id="rpCurrentKey">${d.configured
+                ? `현재 등록된 키: <code>${escapeHtml(d.masked_key || '')}</code>`
+                : '등록된 키가 없습니다.'}</div>
+            <div class="d-flex gap-2 flex-wrap">
+                <button class="btn btn-primary btn-sm" onclick="saveRewardpopKey()" id="rpSaveKeyBtn"><i class="fas fa-floppy-disk me-1"></i>키 저장</button>
+                <button class="btn btn-outline-primary btn-sm" onclick="testRewardpopConnection()" id="rpTestBtn" ${d.configured ? '' : 'disabled'}><i class="fas fa-plug me-1"></i>연결 테스트</button>
+                <button class="btn btn-outline-success btn-sm" onclick="checkRewardpopBalance()" id="rpBalanceBtn" ${d.configured ? '' : 'disabled'}><i class="fas fa-coins me-1"></i>포인트 잔액</button>
+                <button class="btn btn-outline-danger btn-sm" onclick="deleteRewardpopKey()" id="rpDeleteBtn" ${d.configured ? '' : 'disabled'}><i class="fas fa-trash me-1"></i>키 삭제</button>
+            </div>
+            <div id="rpResult" class="mt-3"></div>
+        </div>
+    </div>
+
+    <div class="card data-card">
+        <div class="card-header"><h5 class="mb-0"><i class="fas fa-sliders-h me-2"></i>연동 설정</h5></div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label small fw-bold">기준 URL</label>
+                    <input class="form-control" id="rpBaseUrl" value="${escapeHtml(s.base_url || '')}" placeholder="https://api.rewardpop.kr">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label small fw-bold">인증 방식</label>
+                    <select class="form-select" id="rpAuthStyle" onchange="toggleRewardpopAuthFields()">${styles}</select>
+                </div>
+                <div class="col-md-6" id="rpAuthHeaderWrap">
+                    <label class="form-label small fw-bold">인증 헤더 이름</label>
+                    <input class="form-control" id="rpAuthHeader" value="${escapeHtml(s.auth_header || '')}" placeholder="X-API-KEY">
+                </div>
+                <div class="col-md-6" id="rpAuthQueryWrap">
+                    <label class="form-label small fw-bold">인증 쿼리 이름</label>
+                    <input class="form-control" id="rpAuthQuery" value="${escapeHtml(s.auth_query || '')}" placeholder="api_key">
+                </div>
+            </div>
+
+            <hr class="my-4">
+            <div class="small text-muted mb-2"><i class="fas fa-info-circle me-1"></i>아래 경로는 리워드팝 API 문서의 엔드포인트를 그대로 입력합니다. 예) <code>/v1/campaigns</code></div>
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label small fw-bold">연결 확인 경로 (GET)</label>
+                    <input class="form-control" id="rpPingPath" value="${escapeHtml(s.ping_path || '')}" placeholder="/v1/me">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label small fw-bold">잔액 조회 경로 (GET)</label>
+                    <input class="form-control" id="rpBalancePath" value="${escapeHtml(s.balance_path || '')}" placeholder="/v1/points">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label small fw-bold">주문 생성 경로 (POST)</label>
+                    <input class="form-control" id="rpOrderPath" value="${escapeHtml(s.order_path || '')}" placeholder="/v1/campaigns">
+                </div>
+            </div>
+
+            <hr class="my-4">
+            <div class="row g-3 align-items-end">
+                <div class="col-md-3">
+                    <label class="form-label small fw-bold">자동 집행 시각 (KST)</label>
+                    <div class="input-group">
+                        <input type="number" min="0" max="23" class="form-control" id="rpHour" value="${planNumber(s.dispatch_hour, 14)}">
+                        <span class="input-group-text">시</span>
+                        <input type="number" min="0" max="59" class="form-control" id="rpMinute" value="${planNumber(s.dispatch_minute, 0)}">
+                        <span class="input-group-text">분</span>
+                    </div>
+                </div>
+                <div class="col-md-9">
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="rpDryRun" ${s.dry_run ? 'checked' : ''}>
+                        <label class="form-check-label" for="rpDryRun">
+                            <b>드라이런</b> — 실제 주문을 보내지 않고 요청 내용만 기록합니다. 처음 켤 때는 반드시 켜두세요.
+                        </label>
+                    </div>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="rpEnabled" ${d.enabled ? 'checked' : ''} ${d.configured ? '' : 'disabled'}>
+                        <label class="form-check-label" for="rpEnabled">
+                            <b>연동 사용</b> — 꺼두면 자동 집행이 전혀 일어나지 않습니다.
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-4">
+                <button class="btn btn-primary btn-sm" onclick="saveRewardpopSettings()" id="rpSaveBtn"><i class="fas fa-floppy-disk me-1"></i>설정 저장</button>
+            </div>
+        </div>
+    </div>`;
+}
+
+function toggleRewardpopAuthFields() {
+    const style = document.getElementById('rpAuthStyle').value;
+    const headerWrap = document.getElementById('rpAuthHeaderWrap');
+    const queryWrap = document.getElementById('rpAuthQueryWrap');
+    if (headerWrap) headerWrap.style.display = style === 'header' ? '' : 'none';
+    if (queryWrap) queryWrap.style.display = style === 'query' ? '' : 'none';
+}
+
+function toggleRewardpopKeyVisible() {
+    const input = document.getElementById('rpApiKey');
+    const icon = document.querySelector('#rpKeyEye i');
+    const show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    icon.className = show ? 'fas fa-eye-slash' : 'fas fa-eye';
+}
+
+function showRewardpopResult(ok, message) {
+    const box = document.getElementById('rpResult');
+    if (!box) return;
+    box.innerHTML = `<div class="alert alert-${ok ? 'success' : 'danger'} py-2 mb-0 small">
+        <i class="fas fa-${ok ? 'circle-check' : 'circle-exclamation'} me-1"></i>${escapeHtml(message)}</div>`;
+}
+
+function applyRewardpopState(data) {
+    rewardpopState = data;
+    const badge = document.getElementById('rpStatusBadge');
+    if (badge) badge.innerHTML = rewardpopStatusBadge(data);
+    const cur = document.getElementById('rpCurrentKey');
+    if (cur) cur.innerHTML = data.configured
+        ? `현재 등록된 키: <code>${escapeHtml(data.masked_key || '')}</code>`
+        : '등록된 키가 없습니다.';
+    ['rpTestBtn', 'rpBalanceBtn', 'rpDeleteBtn'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.disabled = !data.configured;
+    });
+    const enabled = document.getElementById('rpEnabled');
+    if (enabled) { enabled.disabled = !data.configured; enabled.checked = !!data.enabled; }
+}
+
+async function saveRewardpopKey() {
+    const input = document.getElementById('rpApiKey');
+    const key = input.value.trim();
+    if (!key) { showRewardpopResult(false, 'API 키를 입력해주세요.'); return; }
+    const btn = document.getElementById('rpSaveKeyBtn');
+    btn.disabled = true;
+    try {
+        const res = await apiPost('/api/admin/rewardpop/api-key', { api_key: key });
+        input.value = '';
+        input.type = 'password';
+        document.querySelector('#rpKeyEye i').className = 'fas fa-eye';
+        applyRewardpopState(res);
+        showRewardpopResult(true, '키를 저장했습니다. 연결 테스트로 확인해보세요.');
+    } catch (e) {
+        showRewardpopResult(false, e.message);
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+async function deleteRewardpopKey() {
+    if (!confirm('등록된 리워드팝 API 키를 삭제하시겠습니까?\n삭제하면 광고 자동 집행이 중단됩니다.')) return;
+    const btn = document.getElementById('rpDeleteBtn');
+    btn.disabled = true;
+    try {
+        applyRewardpopState(await apiDelete('/api/admin/rewardpop/api-key'));
+        showRewardpopResult(true, '키를 삭제했습니다.');
+    } catch (e) {
+        showRewardpopResult(false, e.message);
+        btn.disabled = false;
+    }
+}
+
+async function saveRewardpopSettings() {
+    const btn = document.getElementById('rpSaveBtn');
+    btn.disabled = true;
+    try {
+        const res = await apiPut('/api/admin/rewardpop/config', {
+            base_url: document.getElementById('rpBaseUrl').value.trim(),
+            auth_style: document.getElementById('rpAuthStyle').value,
+            auth_header: document.getElementById('rpAuthHeader').value.trim(),
+            auth_query: document.getElementById('rpAuthQuery').value.trim(),
+            ping_path: document.getElementById('rpPingPath').value.trim(),
+            balance_path: document.getElementById('rpBalancePath').value.trim(),
+            order_path: document.getElementById('rpOrderPath').value.trim(),
+            dispatch_hour: Number(document.getElementById('rpHour').value),
+            dispatch_minute: Number(document.getElementById('rpMinute').value),
+            dry_run: document.getElementById('rpDryRun').checked,
+            enabled: document.getElementById('rpEnabled').checked,
+        });
+        applyRewardpopState(res);
+        showRewardpopResult(true, '설정을 저장했습니다.');
+    } catch (e) {
+        showRewardpopResult(false, e.message);
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+async function testRewardpopConnection() {
+    const btn = document.getElementById('rpTestBtn');
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>확인 중...';
+    try {
+        const res = await apiGet('/api/admin/rewardpop/test');
+        showRewardpopResult(res.ok, res.detail);
+    } catch (e) {
+        showRewardpopResult(false, e.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = original;
+    }
+}
+
+async function checkRewardpopBalance() {
+    const btn = document.getElementById('rpBalanceBtn');
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>조회 중...';
+    try {
+        const res = await apiGet('/api/admin/rewardpop/balance');
+        if (!res.ok) {
+            showRewardpopResult(false, res.detail);
+        } else if (res.balance === null || res.balance === undefined) {
+            showRewardpopResult(false, '응답에서 잔액을 찾지 못했습니다. 응답 형태를 확인해야 합니다.');
+        } else {
+            showRewardpopResult(true, `현재 포인트 잔액: ${Number(res.balance).toLocaleString()}`);
+        }
+    } catch (e) {
+        showRewardpopResult(false, e.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = original;
+    }
+}
+
 // ─── ADMIN: 플랜 관리 ──────────────────────────────────────
 const AD_TYPE_META = [
     ['blog_review', '블로그 리뷰', 'fas fa-blog'],
     ['receipt_review', '영수증 리뷰', 'fas fa-receipt'],
-    ['place_traffic', '플레이스 트래픽', 'fas fa-map-marker-alt'],
-    ['place_save', '플레이스 저장', 'fas fa-bookmark'],
+    ['place_traffic', '플레이스 방문', 'fas fa-map-marker-alt'],
     ['shorts', '쇼츠', 'fas fa-video'],
 ];
 const PLAN_ACCENTS = { basic: 'secondary', standard: 'primary', premium: 'warning' };

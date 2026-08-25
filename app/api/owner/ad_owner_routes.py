@@ -1054,7 +1054,7 @@ def create_place_traffic_order(req: AdPlaceTrafficOrderCreate, db: Session = Dep
     merchant = _get_owner_merchant(user, db)
     _require_ad_order_feature(db, AD_PLACE_TRAFFIC_ENABLED)
     if req.order_count < 100:
-        raise HTTPException(status_code=400, detail="플레이스 유입 최소 주문 수량은 100건입니다")
+        raise HTTPException(status_code=400, detail="플레이스 방문 최소 주문 수량은 100건입니다")
     _require_plan_ad_quota(
         db, merchant.id, AdOrderType.PLACE_TRAFFIC, "place_traffic", req.order_count
     )

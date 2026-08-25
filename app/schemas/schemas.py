@@ -352,3 +352,43 @@ class AdExecutionCreate(BaseModel):
     executed_count: int = Field(ge=0)
     execution_date: Optional[date] = None  # 미지정 시 오늘
     note: Optional[str] = None
+
+
+# ─── 리워드팝 연동 (Admin) ───────────────────────────────────
+
+class RewardpopSettingsUpdate(BaseModel):
+    """리워드팝 연동 설정. 값을 보내지 않은 항목은 기존 값을 유지한다."""
+    base_url: Optional[str] = None
+    auth_style: Optional[str] = None      # bearer | header | query
+    auth_header: Optional[str] = None
+    auth_query: Optional[str] = None
+    ping_path: Optional[str] = None       # 연결 확인용 GET 경로
+    balance_path: Optional[str] = None    # 포인트 잔액 조회 GET 경로
+    order_path: Optional[str] = None      # 주문 생성 POST 경로
+    dispatch_hour: Optional[int] = Field(default=None, ge=0, le=23)
+    dispatch_minute: Optional[int] = Field(default=None, ge=0, le=59)
+    dry_run: Optional[bool] = None
+    enabled: Optional[bool] = None        # 연동 사용 스위치
+
+
+class RewardpopApiKeyUpdate(BaseModel):
+    api_key: str
+
+
+# ─── 광고 집행 키워드 (Admin / Owner) ────────────────────────
+
+class AdKeywordCreate(BaseModel):
+    keyword: str
+    ad_type: Optional[str] = None          # 비우면 모든 광고 공통
+    priority: Optional[int] = Field(default=None, ge=0)
+
+
+class AdKeywordUpdate(BaseModel):
+    keyword: Optional[str] = None
+    ad_type: Optional[str] = None
+    priority: Optional[int] = Field(default=None, ge=0)
+    is_active: Optional[bool] = None
+
+
+class AdKeywordReject(BaseModel):
+    reason: Optional[str] = None

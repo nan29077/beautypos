@@ -45,7 +45,7 @@ async def lifespan(_app: FastAPI):
     if asset_versions is not None:
         count = asset_versions.refresh()
         print(f"   Static cache busting: {count} files hashed")
-    # 매일 오후 2시(KST) 플레이스 순위 자동 수집
+    # 매일 낮 12시(KST) 플레이스 순위 자동 수집 — 광고 자동 집행(14시) 전에 기준선을 남긴다
     rank_scheduler.start(_app)
     try:
         yield
@@ -151,6 +151,16 @@ def root():
     from fastapi.responses import RedirectResponse
 
     return RedirectResponse(url="/static/landing/index.html")
+
+
+@app.get("/api/public/app-config")
+def public_app_config():
+    """로그인 화면이 테스트 계정 버튼을 노출할지 판단하기 위한 공개 설정.
+
+    테스트 로그인 API 자체가 DEV_MODE 에서만 동작하므로,
+    같은 값으로 화면 노출까지 한꼴로 맞춘다. 운영에서는 False 가 내려간다.
+    """
+    return {"dev_mode": bool(settings.DEV_MODE)}
 
 
 @app.get("/health")

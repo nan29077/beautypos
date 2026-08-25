@@ -30,7 +30,7 @@ from app.schemas.schemas import (
 )
 from app.models.plan import (
     Plan, MerchantPlan, AdExecution,
-    AD_EXECUTION_TYPE_CODES, AD_EXECUTION_TYPE_LABELS,
+    AD_EXECUTION_TYPES, AD_EXECUTION_TYPE_CODES, AD_EXECUTION_TYPE_LABELS,
 )
 from app.services import plan_service
 from app.api.admin._helpers import (
@@ -354,7 +354,7 @@ def execute_ad_order(
 
 
 # ═══════════════════════════════════════════════════════════
-# 광고 기능 스위치 (블로그 배포 / 플레이스 유입 ON/OFF)
+# 광고 기능 스위치 (블로그 배포 / 플레이스 방문 ON/OFF)
 # ═══════════════════════════════════════════════════════════
 
 def _get_config(db: Session, key: str) -> SystemConfig:
@@ -633,7 +633,8 @@ def ad_execution_summary(
         "date": str(target),
         "month_start": str(month_start),
         "month_end": str(month_end),
-        "ad_types": [{"code": c, "label": l} for c, l in AD_EXECUTION_TYPE_LABELS.items()],
+        # 숨김 처리된 광고 종류는 목록에서 제외한다 (레이블 조회는 전체 목록을 쓴다)
+        "ad_types": [{"code": c, "label": l} for c, l in AD_EXECUTION_TYPES],
         "merchants": plan_service.build_summary(db, target, merchants),
     }
 

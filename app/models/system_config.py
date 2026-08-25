@@ -23,7 +23,7 @@ class SystemConfig(Base):
 # ─── 기본 설정 키 정의 ─────────────────────────────────────
 AD_ORDER_MGMT_ENABLED = "ad_order_mgmt_enabled"       # 광고 주문 관리 마스터 스위치 ON/OFF
 AD_BLOG_ENABLED = "ad_blog_enabled"                    # 블로그 배포 광고 ON/OFF
-AD_PLACE_TRAFFIC_ENABLED = "ad_place_traffic_enabled"  # 플레이스 유입 광고 ON/OFF
+AD_PLACE_TRAFFIC_ENABLED = "ad_place_traffic_enabled"  # 플레이스 방문 광고 ON/OFF
 AD_SHORTS_ENABLED = "ad_shorts_enabled"                # 쇼츠(숏폼) 배포 광고 ON/OFF
 AD_PRICING_CONFIG = "ad_pricing_config"                # 광고 유형별 관리자 설정 단가(JSON)
 
@@ -36,3 +36,7 @@ COMMISSION_VISIBLE_TO_DESIGNER = "commission_visible_to_designer"  # 디자이�
 
 # ─── 외부 서비스 연동 ───────────────────────────────────────
 OPENAI_API_KEY = "openai_api_key"  # AI 마케팅 추천용 (Fernet 암호화 저장)
+
+# 리워드팝 — 광고 자동 집행 연동
+REWARDPOP_API_KEY = "rewardpop_api_key"      # 리워드팝 API 키 (Fernet 암호화 저장)
+REWARDPOP_SETTINGS = "rewardpop_settings"    # 연동 설정 JSON (기준 URL·인증 방식·경로·집행 시각·드라이런)

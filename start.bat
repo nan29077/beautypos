@@ -32,6 +32,28 @@ if defined LOCAL_IP (
 echo   - Same Wi-Fi/LAN devices can open the Network address.
 echo.
 
+REM --- Refuse to start when the port is already taken ---------------------
+REM  A leftover server keeps serving OLD code: new menus show up (static files
+REM  are read from disk) but new API routes answer 404. Starting a second
+REM  instance just fails to bind and hides the real problem.
+REM  The check connects to the port with Python so it does not depend on the
+REM  wording of netstat output.
+%PYEXE% -c "import socket,sys; s=socket.socket(); s.settimeout(1); r=s.connect_ex(('127.0.0.1',%SERVER_PORT%)); s.close(); sys.exit(1 if r==0 else 0)"
+if errorlevel 1 (
+    echo.
+    echo [ERROR] Port %SERVER_PORT% is already in use - an older server is still running.
+    echo         It keeps serving OLD code, so new API routes will return 404.
+    echo         Find the process id in the last column below and close it:
+    echo.
+    netstat -ano ^| findstr ":%SERVER_PORT%"
+    echo.
+    echo             taskkill /PID ^<process id^> /F
+    echo.
+    echo         Then run this file again.
+    pause
+    exit /b 1
+)
+
 REM --- Open preview in browser after 8s ---
 start "" /b cmd /c "timeout /t 8 /nobreak >nul && start http://localhost:%SERVER_PORT%/"
 
