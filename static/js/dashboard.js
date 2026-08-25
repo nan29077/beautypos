@@ -55,6 +55,7 @@ const mobilePageMeta = {
     'admin-rewardpop': ['리워드팝 연동', 'fas fa-plug'],
     'admin-ad-keywords': ['광고 키워드 승인', 'fas fa-key'],
     'admin-ad-dispatch': ['광고 자동 집행', 'fas fa-paper-plane'],
+    'admin-ad-credits': ['광고비 크레딧', 'fas fa-wallet'],
     'sales-merchants': ['담당 가맹점', 'fas fa-store'],
     'sales-commission': ['커미션 현황', 'fas fa-coins'],
     'sales-payouts': ['출금요청', 'fas fa-money-bill-wave'],
@@ -71,6 +72,7 @@ const mobilePageMeta = {
     'owner-adorders': ['광고 주문 내역', 'fas fa-bullhorn'],
     'owner-adorder-new': ['새 광고 주문', 'fas fa-plus-circle'],
     'owner-ad-keywords': ['광고 키워드', 'fas fa-key'],
+    'owner-ad-credit': ['광고비', 'fas fa-wallet'],
     crm: ['미용실 관리', 'fas fa-user-friends'],
     'owner-info': ['매장 정보', 'fas fa-store'],
     'designer-transactions': ['결제 내역', 'fas fa-receipt'],
@@ -289,7 +291,8 @@ function ownerMobilePages() {
         pages.push('owner-staff', 'owner-staff-sales', 'owner-settlement');
     }
     pages.push('owner-settlements', 'owner-payouts',
-               'owner-receipt-review', 'owner-analysis', 'owner-ad-keywords');
+               'owner-receipt-review', 'owner-analysis', 'owner-ad-keywords',
+               'owner-ad-credit');
     if (adFeatureFlags.ad_order_mgmt_enabled) {
         pages.push('owner-adorders', 'owner-adorder-new');
     }
@@ -562,6 +565,7 @@ function buildSidebar() {
         <a class="nav-link" href="#" data-page="admin-fee-policies"><i class="fas fa-percentage"></i>가맹점별 수수료</a>
         <a class="nav-link" href="#" data-page="admin-commission-visibility"><i class="fas fa-eye"></i>수수료 표시 설정</a>
         <a class="nav-link" href="#" data-page="admin-payouts"><i class="fas fa-money-bill-wave"></i>출금요청 관리</a>
+        <a class="nav-link" href="#" data-page="admin-ad-credits"><i class="fas fa-wallet"></i>광고비 크레딧</a>
         <div class="nav-section"><i class="fas fa-bullhorn me-1" style="font-size:.6rem"></i>광고 · 마케팅</div>
         <a class="nav-link" href="#" data-page="admin-adorders"><i class="fas fa-bullhorn"></i>광고주문 관리</a>
         <a class="nav-link" href="#" data-page="admin-metrics"><i class="fas fa-chart-bar"></i>광고 분석 관리</a>
@@ -607,7 +611,8 @@ function buildSidebar() {
         <a class="nav-link" href="#" data-page="owner-receipt-review"><i class="fas fa-qrcode"></i>영수증 리뷰관리</a>
         <div class="nav-section">광고/마케팅</div>
         <a class="nav-link" href="#" data-page="owner-analysis"><i class="fas fa-chart-line"></i>광고 분석</a>
-        <a class="nav-link" href="#" data-page="owner-ad-keywords"><i class="fas fa-key"></i>광고 키워드</a>`;
+        <a class="nav-link" href="#" data-page="owner-ad-keywords"><i class="fas fa-key"></i>광고 키워드</a>
+        <a class="nav-link" href="#" data-page="owner-ad-credit"><i class="fas fa-wallet"></i>광고비</a>`;
         if (masterOn) {
             html += `
         <a class="nav-link" href="#" data-page="owner-adorders"><i class="fas fa-bullhorn"></i>내 광고 주문</a>
@@ -698,6 +703,7 @@ async function loadPage(page) {
             case 'admin-rewardpop': await loadAdminRewardpop(c, t); break;
             case 'admin-ad-keywords': await loadAdminAdKeywords(c, t); break;
             case 'admin-ad-dispatch': await loadAdminAdDispatch(c, t); break;
+            case 'admin-ad-credits': await loadAdminAdCredits(c, t); break;
             // Sales
             case 'sales-merchants': await loadSalesMerchants(c, t); break;
             case 'sales-commission': await loadSalesCommission(c, t); break;
@@ -715,6 +721,7 @@ async function loadPage(page) {
             case 'owner-adorders': await loadOwnerAdOrders(c, t); break;
             case 'owner-adorder-new': await loadOwnerAdOrderNew(c, t); break;
             case 'owner-ad-keywords': await loadOwnerAdKeywords(c, t); break;
+            case 'owner-ad-credit': await loadOwnerAdCredit(c, t); break;
             case 'owner-info': await loadOwnerInfo(c, t); break;
             case 'owner-receipt-review': await loadOwnerReceiptReview(c, t); break;
             case 'owner-crm':
@@ -8055,6 +8062,260 @@ async function deleteAiApiKey() {
         showAiResult(false, e.message);
         btn.disabled = false;
     }
+}
+
+// ─── 광고비 크레딧 (관리자 충전 / 매장 조회·환불) ───────────
+const CREDIT_ENTRY_STYLE = {
+    charge: ['success', 'plus'],
+    use: ['secondary', 'minus'],
+    reverse: ['info text-dark', 'rotate-left'],
+    refund: ['warning text-dark', 'arrow-right-from-bracket'],
+    adjust: ['dark', 'pen'],
+};
+
+function creditAmount(value) {
+    const n = Number(value) || 0;
+    const cls = n > 0 ? 'text-success' : (n < 0 ? 'text-danger' : 'text-muted');
+    const sign = n > 0 ? '+' : '';
+    return `<span class="${cls} fw-bold">${sign}${n.toLocaleString()}원</span>`;
+}
+
+function creditLedgerRows(ledger) {
+    return (ledger || []).map(e => {
+        const [cls] = CREDIT_ENTRY_STYLE[e.entry_type] || ['secondary'];
+        return `<tr>
+            <td class="small text-muted text-nowrap">${escapeHtml(e.created_at || '')}</td>
+            <td><span class="badge bg-${cls}">${escapeHtml(e.entry_label)}</span></td>
+            <td class="text-end">${creditAmount(e.amount)}</td>
+            <td class="text-end">${Number(e.balance_after).toLocaleString()}원</td>
+            <td class="small">${escapeHtml(e.memo || '-')}</td>
+        </tr>`;
+    }).join('');
+}
+
+const CREDIT_LEDGER_HEAD = '<thead><tr><th>일시</th><th>구분</th><th class="text-end">금액</th>'
+    + '<th class="text-end">잔액</th><th>메모</th></tr></thead>';
+
+// ── ADMIN: 광고비 크레딧 ────────────────────────────────────
+async function loadAdminAdCredits(c, t) {
+    t.textContent = '광고비 크레딧';
+    c.innerHTML = adpayLoadingMarkup('잔액을 불러오는 중입니다');
+    try {
+        const [credits, refunds] = await Promise.all([
+            apiGet('/api/admin/ad-credits'),
+            apiGet('/api/admin/ad-credit-refunds'),
+        ]);
+        c.innerHTML = adminCreditMarkup(credits, refunds);
+    } catch (e) {
+        c.innerHTML = `<div class="alert alert-danger">${escapeHtml(e.message)}</div>`;
+    }
+}
+
+function adminCreditMarkup(d, r) {
+    const rows = (d.credits || []).map(m => `<tr>
+        <td class="fw-bold">${escapeHtml(m.merchant_name)}</td>
+        <td class="text-end">${Number(m.balance).toLocaleString()}원</td>
+        <td>${m.balance_matches === false
+            ? '<span class="badge bg-danger"><i class="fas fa-triangle-exclamation me-1"></i>원장과 불일치</span>'
+            : '<span class="badge bg-light text-muted border">정상</span>'}</td>
+        <td class="text-nowrap">
+            <button class="btn btn-sm btn-primary me-1" onclick="showCreditCharge(${m.merchant_id}, '${escapeHtml(m.merchant_name)}')">
+                <i class="fas fa-plus me-1"></i>충전</button>
+            <button class="btn btn-sm btn-outline-secondary" onclick="showCreditLedger(${m.merchant_id}, '${escapeHtml(m.merchant_name)}')">
+                <i class="fas fa-list"></i></button>
+        </td>
+    </tr>`).join('');
+
+    const refundRows = (r.refunds || []).map(f => `<tr>
+        <td class="fw-bold">${escapeHtml(f.merchant_name || '-')}</td>
+        <td class="text-end fw-bold">${Number(f.amount).toLocaleString()}원</td>
+        <td class="small">${escapeHtml(f.reason || '-')}</td>
+        <td><span class="badge bg-${f.status === 'pending' ? 'warning text-dark' : (f.status === 'approved' ? 'success' : 'secondary')}">${escapeHtml(f.status_label)}</span>
+            ${f.admin_memo ? `<div class="small text-muted mt-1">${escapeHtml(f.admin_memo)}</div>` : ''}</td>
+        <td class="small text-muted">${escapeHtml(f.created_at || '')}</td>
+        <td class="text-nowrap">${f.status === 'pending'
+            ? `<button class="btn btn-sm btn-success me-1" onclick="processRefund(${f.id}, 'approve')"><i class="fas fa-check"></i></button>
+               <button class="btn btn-sm btn-outline-danger" onclick="processRefund(${f.id}, 'reject')"><i class="fas fa-ban"></i></button>`
+            : ''}</td>
+    </tr>`).join('');
+
+    return `
+    <div class="row g-3 mb-3">
+        ${kpiCard('전체 잔액', `${Number(d.total_balance).toLocaleString()}원`, 'fas fa-wallet', 'primary')}
+        ${kpiCard('환불 대기', `${d.pending_refunds}건`, 'fas fa-arrow-right-from-bracket', d.pending_refunds ? 'warning' : 'secondary')}
+    </div>
+
+    <div class="card data-card mb-3">
+        <div class="card-header"><h5 class="mb-0"><i class="fas fa-wallet me-2"></i>매장별 광고비 잔액</h5></div>
+        <div class="card-body">
+            <div class="alert alert-light border small mb-3"><i class="fas fa-info-circle text-primary me-1"></i>
+                매장이 입금하면 여기서 충전을 반영합니다. 플랜 한도를 넘는 광고 주문은 이 잔액에서 차감되고,
+                잔액이 모자라면 주문이 거절됩니다. 환불은 잔액이
+                <b>${Number(d.min_refund_amount).toLocaleString()}원 이상</b>일 때 매장이 신청할 수 있습니다.</div>
+            <div class="table-responsive"><table class="table table-hover align-middle">
+                <thead><tr><th>가맹점</th><th class="text-end">잔액</th><th>원장 정합성</th><th>관리</th></tr></thead>
+                <tbody>${rows || '<tr><td colspan="4" class="text-center text-muted py-4">가맹점이 없습니다</td></tr>'}</tbody>
+            </table></div>
+        </div>
+    </div>
+
+    <div class="card data-card">
+        <div class="card-header"><h5 class="mb-0"><i class="fas fa-arrow-right-from-bracket me-2"></i>환불 신청</h5></div>
+        <div class="card-body">
+            <div class="small text-muted mb-3">승인하면 <b>그 시점에 잔액에서 차감</b>됩니다. 송금을 마친 뒤 승인해 주세요.</div>
+            <div class="table-responsive"><table class="table table-hover align-middle">
+                <thead><tr><th>가맹점</th><th class="text-end">금액</th><th>사유</th><th>상태</th><th>신청일</th><th></th></tr></thead>
+                <tbody>${refundRows || '<tr><td colspan="6" class="text-center text-muted py-4">환불 신청이 없습니다</td></tr>'}</tbody>
+            </table></div>
+        </div>
+    </div>`;
+}
+
+function showCreditCharge(merchantId, merchantName) {
+    resetFormModalFooter(false);
+    document.getElementById('formModalBody').innerHTML = `
+        <h6 class="fw-bold mb-3">${escapeHtml(merchantName)} 광고비 충전</h6>
+        <label class="form-label small fw-bold">충전 금액</label>
+        <div class="input-group mb-3">
+            <input type="number" class="form-control" id="creditAmount" min="1" step="10000" placeholder="예) 500000">
+            <span class="input-group-text">원</span>
+        </div>
+        <label class="form-label small fw-bold">메모</label>
+        <input class="form-control mb-3" id="creditMemo" maxlength="200" placeholder="입금자명 · 입금일 등">
+        <div id="creditResult"></div>
+        <button class="btn btn-primary w-100" onclick="submitCreditCharge(${merchantId})">
+            <i class="fas fa-plus me-1"></i>충전 반영</button>`;
+    new bootstrap.Modal(document.getElementById('formModal')).show();
+}
+
+async function submitCreditCharge(merchantId) {
+    const amount = parseFloat(document.getElementById('creditAmount').value);
+    if (!amount || amount <= 0) {
+        document.getElementById('creditResult').innerHTML =
+            '<div class="alert alert-danger py-2 small">충전 금액을 입력해주세요.</div>';
+        return;
+    }
+    try {
+        await apiPost(`/api/admin/merchants/${merchantId}/ad-credit/charge`, {
+            amount, memo: document.getElementById('creditMemo').value.trim() || null,
+        });
+        bootstrap.Modal.getInstance(document.getElementById('formModal')).hide();
+        navigate('admin-ad-credits');
+    } catch (e) {
+        document.getElementById('creditResult').innerHTML =
+            `<div class="alert alert-danger py-2 small">${escapeHtml(e.message)}</div>`;
+    }
+}
+
+async function showCreditLedger(merchantId, merchantName) {
+    resetFormModalFooter(false);
+    document.getElementById('formModalBody').innerHTML = adpayLoadingMarkup('내역을 불러오는 중입니다');
+    new bootstrap.Modal(document.getElementById('formModal')).show();
+    try {
+        const d = await apiGet(`/api/admin/merchants/${merchantId}/ad-credit`);
+        document.getElementById('formModalBody').innerHTML = `
+            <h6 class="fw-bold mb-1">${escapeHtml(merchantName)} 크레딧 원장</h6>
+            <div class="mb-3 small">현재 잔액 <b>${Number(d.balance).toLocaleString()}원</b>
+                ${d.balance_matches === false
+                    ? `<span class="badge bg-danger ms-2">원장 합계 ${Number(d.ledger_total).toLocaleString()}원과 불일치</span>`
+                    : ''}</div>
+            <div class="table-responsive" style="max-height:55vh;overflow:auto">
+                <table class="table table-sm table-hover align-middle">${CREDIT_LEDGER_HEAD}
+                <tbody>${creditLedgerRows(d.ledger) || '<tr><td colspan="5" class="text-center text-muted py-4">내역이 없습니다</td></tr>'}</tbody>
+                </table></div>`;
+    } catch (e) {
+        document.getElementById('formModalBody').innerHTML =
+            `<div class="alert alert-danger">${escapeHtml(e.message)}</div>`;
+    }
+}
+
+async function processRefund(refundId, action) {
+    const isApprove = action === 'approve';
+    const memo = prompt(isApprove
+        ? '송금을 마치셨나요? 처리 메모를 남겨주세요 (선택)'
+        : '반려 사유를 입력해주세요 (매장에 표시됩니다)');
+    if (memo === null) return;
+    if (isApprove && !confirm('승인하면 매장 잔액에서 즉시 차감됩니다.\n계속할까요?')) return;
+    try {
+        await apiPost(`/api/admin/ad-credit-refunds/${refundId}/${action}`, { memo });
+        navigate('admin-ad-credits');
+    } catch (e) { alert(e.message); }
+}
+
+// ── OWNER: 광고비 충전 ──────────────────────────────────────
+async function loadOwnerAdCredit(c, t) {
+    t.textContent = '광고비';
+    c.innerHTML = adpayLoadingMarkup('잔액을 불러오는 중입니다');
+    try {
+        c.innerHTML = ownerCreditMarkup(await apiGet('/api/owner/ad/credit'));
+    } catch (e) {
+        c.innerHTML = `<div class="alert alert-danger">${escapeHtml(e.message)}</div>`;
+    }
+}
+
+function ownerCreditMarkup(d) {
+    const refundRows = (d.refunds || []).map(f => `<tr>
+        <td class="small text-muted">${escapeHtml(f.created_at || '')}</td>
+        <td class="text-end fw-bold">${Number(f.amount).toLocaleString()}원</td>
+        <td><span class="badge bg-${f.status === 'pending' ? 'warning text-dark' : (f.status === 'approved' ? 'success' : 'secondary')}">${escapeHtml(f.status_label)}</span>
+            ${f.admin_memo ? `<div class="small text-muted mt-1">${escapeHtml(f.admin_memo)}</div>` : ''}</td>
+    </tr>`).join('');
+
+    let refundBox;
+    if (d.has_pending_refund) {
+        refundBox = `<div class="alert alert-info small mb-0"><i class="fas fa-clock me-1"></i>
+            환불 신청이 접수되어 처리를 기다리고 있습니다.</div>`;
+    } else if (d.refundable) {
+        refundBox = `<button class="btn btn-outline-warning btn-sm" onclick="requestCreditRefund()">
+            <i class="fas fa-arrow-right-from-bracket me-1"></i>잔액 전액 환불 신청</button>`;
+    } else {
+        refundBox = `<div class="small text-muted"><i class="fas fa-circle-info me-1"></i>
+            환불은 잔액이 <b>${Number(d.min_refund_amount).toLocaleString()}원 이상</b>일 때 신청할 수 있습니다.</div>`;
+    }
+
+    return `
+    <div class="card data-card mb-3">
+        <div class="card-header"><h5 class="mb-0"><i class="fas fa-wallet me-2"></i>광고비 잔액</h5></div>
+        <div class="card-body">
+            <div class="display-6 fw-bold mb-2">${Number(d.balance).toLocaleString()}<span class="fs-5 ms-1">원</span></div>
+            <div class="alert alert-light border small">
+                <i class="fas fa-info-circle text-primary me-1"></i>
+                플랜에 포함된 집행량을 넘겨 광고를 더 주문할 때 이 잔액에서 차감됩니다.
+                <b>충전은 관리자에게 입금 후 요청</b>해 주세요. 반영되면 아래 내역에 표시됩니다.
+            </div>
+            ${refundBox}
+        </div>
+    </div>
+
+    <div class="card data-card mb-3">
+        <div class="card-header"><h5 class="mb-0"><i class="fas fa-list me-2"></i>사용 내역</h5></div>
+        <div class="card-body">
+            <div class="table-responsive"><table class="table table-hover align-middle">${CREDIT_LEDGER_HEAD}
+                <tbody>${creditLedgerRows(d.ledger) || '<tr><td colspan="5" class="text-center text-muted py-4">아직 내역이 없습니다</td></tr>'}</tbody>
+            </table></div>
+        </div>
+    </div>
+
+    ${(d.refunds || []).length ? `
+    <div class="card data-card">
+        <div class="card-header"><h5 class="mb-0"><i class="fas fa-arrow-right-from-bracket me-2"></i>환불 신청 이력</h5></div>
+        <div class="card-body">
+            <div class="table-responsive"><table class="table table-hover align-middle">
+                <thead><tr><th>신청일</th><th class="text-end">금액</th><th>상태</th></tr></thead>
+                <tbody>${refundRows}</tbody>
+            </table></div>
+        </div>
+    </div>` : ''}`;
+}
+
+async function requestCreditRefund() {
+    const reason = prompt('환불 사유를 입력해주세요 (선택)');
+    if (reason === null) return;
+    if (!confirm('남은 잔액 전액을 환불 신청합니다.\n계속할까요?')) return;
+    try {
+        await apiPost('/api/owner/ad/credit/refund', { reason });
+        navigate('owner-ad-credit');
+    } catch (e) { alert(e.message); }
 }
 
 // ─── ADMIN: 광고 자동 집행 ─────────────────────────────────

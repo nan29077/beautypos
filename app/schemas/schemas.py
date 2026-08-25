@@ -401,3 +401,25 @@ class AdDispatchRun(BaseModel):
     execution_date: Optional[date] = None
     merchant_id: Optional[int] = None
     dry_run: Optional[bool] = None     # 저장된 설정을 이번 실행에만 덮어쓴다
+
+
+# ─── 광고비 크레딧 (Admin / Owner) ──────────────────────────
+
+class AdCreditCharge(BaseModel):
+    """관리자가 입금을 확인하고 크레딧을 올린다."""
+    amount: float = Field(gt=0)
+    memo: Optional[str] = None       # 입금자명·입금일 등
+
+
+class AdCreditAdjust(BaseModel):
+    """관리자 수동 조정. 사유는 필수다."""
+    delta: float                     # 양수 증액, 음수 감액
+    memo: str
+
+
+class AdCreditRefundRequest(BaseModel):
+    reason: Optional[str] = None
+
+
+class AdCreditRefundProcess(BaseModel):
+    memo: Optional[str] = None       # 처리 메모 또는 반려 사유

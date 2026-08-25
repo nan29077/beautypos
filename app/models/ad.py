@@ -103,6 +103,9 @@ class AdOrder(Base):
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
     assigned_admin_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     admin_memo = Column(Text, nullable=True)
+    # 플랜 한도 안이면 "plan", 한도를 넘겨 크레딧에서 차감하면 "credit"
+    payment_source = Column(String(20), nullable=False, default="plan", server_default="plan")
+    credit_amount = Column(Numeric(14, 2), nullable=False, default=0, server_default="0")  # 크레딧에서 선점한 금액
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

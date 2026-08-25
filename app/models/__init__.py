@@ -24,6 +24,11 @@ from app.models.ad_dispatch import (
     AdDispatch, DISPATCH_STATUSES, DISPATCH_STATUS_CODES, DISPATCH_STATUS_LABELS,
     SOURCE_AUTO, SOURCE_ORDER, SKIP_REASON_LABELS, MAX_RETRY, build_idempotency_key,
 )
+from app.models.ad_credit import (
+    MerchantAdCredit, AdCreditLedger, AdCreditRefund,
+    CREDIT_ENTRIES, CREDIT_ENTRY_LABELS, REFUND_STATUSES, REFUND_STATUS_LABELS,
+    MIN_REFUND_AMOUNT, PAYMENT_PLAN, PAYMENT_CREDIT,
+)
 from app.models.affiliate_mall import AffiliateMall
 from app.models.system_config import (
     SystemConfig, AD_ORDER_MGMT_ENABLED, AD_BLOG_ENABLED, AD_PLACE_TRAFFIC_ENABLED,
@@ -58,6 +63,9 @@ __all__ = [
     "AD_TYPE_ALL", "MAX_KEYWORDS_PER_MERCHANT", "KEYWORD_MAX_LENGTH",
     "AdDispatch", "DISPATCH_STATUSES", "DISPATCH_STATUS_CODES", "DISPATCH_STATUS_LABELS",
     "SOURCE_AUTO", "SOURCE_ORDER", "SKIP_REASON_LABELS", "MAX_RETRY", "build_idempotency_key",
+    "MerchantAdCredit", "AdCreditLedger", "AdCreditRefund",
+    "CREDIT_ENTRIES", "CREDIT_ENTRY_LABELS", "REFUND_STATUSES", "REFUND_STATUS_LABELS",
+    "MIN_REFUND_AMOUNT", "PAYMENT_PLAN", "PAYMENT_CREDIT",
     "AffiliateMall",
     "SystemConfig", "AD_ORDER_MGMT_ENABLED", "AD_BLOG_ENABLED", "AD_PLACE_TRAFFIC_ENABLED",
     "AD_SHORTS_ENABLED", "REWARDPOP_API_KEY", "REWARDPOP_SETTINGS",

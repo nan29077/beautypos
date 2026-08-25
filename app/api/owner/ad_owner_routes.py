@@ -25,6 +25,7 @@ from app.models.ad import (
     SHORTS_PLATFORMS, SHORTS_PLATFORM_CODES,
     SHORTS_MAX_COUNT,
 )
+from app.models.ad_credit import PAYMENT_CREDIT, PAYMENT_PLAN
 from app.models.plan import AD_EXECUTION_TYPES
 from app.models.system_config import (
     SystemConfig,
@@ -35,7 +36,7 @@ from app.models.system_config import (
 )
 from app.utils.kst import today_kst, kst_day_start_utc
 from app.services import naver_place
-from app.services import ad_pricing, ai_service
+from app.services import ad_credit, ad_pricing, ai_service
 from app.services import plan_service
 from app.schemas.schemas import (
     AdBlogOrderCreate, AdPlaceTrafficOrderCreate, AdShortsOrderCreate,
@@ -74,23 +75,25 @@ def _require_ad_order_feature(db: Session, type_key: str) -> None:
         raise HTTPException(status_code=403, detail="선택한 광고 상품이 현재 비활성화되어 있습니다")
 
 
-def _require_plan_ad_quota(
+def _resolve_payment_source(
     db: Session,
     merchant_id: int,
     order_type: AdOrderType,
     ad_type: str,
     requested_count: int = 1,
-) -> None:
-    """이번 달 광고 주문 건수가 배정 플랜의 월 한도를 넘지 않는지 검증한다.
+) -> str:
+    """이번 주문을 플랜 한도로 처리할지, 충전 크레딧으로 결제할지 정한다.
 
-    플랜이 배정되지 않았거나 해당 광고의 월 목표가 0이면 무제한으로 본다.
+    이번 달 주문 누계가 배정 플랜의 월 한도 안이면 "plan"(추가 비용 없음),
+    넘기면 "credit"(충전 잔액에서 차감)을 돌려준다.
+    플랜이 배정되지 않았거나 해당 광고의 월 목표가 0이면 한도를 두지 않는다.
     """
     plan = plan_service.get_current_plan(db, merchant_id)
     if not plan:
-        return
+        return PAYMENT_PLAN
     limit = plan.target(ad_type, "monthly")
     if limit <= 0:
-        return
+        return PAYMENT_PLAN
 
     # KST 기준 이번 달 경계를 UTC naive datetime 으로 변환하여 DB 필터에 사용
     month_start, month_end = plan_service.month_bounds(today_kst())
@@ -122,7 +125,24 @@ def _require_plan_ad_quota(
     else:
         used = db.query(func.count(AdOrder.id)).filter(*base_filters).scalar() or 0
     if int(used) + int(requested_count) > limit:
-        raise HTTPException(status_code=403, detail="플랜 한도를 초과했습니다")
+        # 한도를 넘겼다고 막지 않는다. 충전한 광고비로 결제하면 주문할 수 있다.
+        return PAYMENT_CREDIT
+    return PAYMENT_PLAN
+
+
+def _assert_credit_available(db: Session, merchant_id: int, amount) -> None:
+    """주문 행을 만들기 전에 잔액을 먼저 확인한다.
+
+    차감(ad_credit.use)은 내부에서 커밋하므로, 주문을 먼저 만들어 두면
+    잔액 부족으로 실패해도 주문만 남는 사고가 난다.
+    """
+    balance = ad_credit.balance_of(db, merchant_id)
+    if float(balance) < float(amount):
+        raise HTTPException(
+            status_code=400,
+            detail=(f"플랜 한도를 넘는 주문입니다. 광고비 잔액이 부족합니다 "
+                    f"(필요 {int(amount):,}원 · 잔액 {int(balance):,}원). 충전 후 다시 시도해주세요"),
+        )
 
 
 # ─── Ad Analysis ────────────────────────────────────────────
@@ -1003,7 +1023,7 @@ def create_blog_order(req: AdBlogOrderCreate, db: Session = Depends(get_db), use
     _require_ad_order_feature(db, AD_BLOG_ENABLED)
     if req.order_count < 10:
         raise HTTPException(status_code=400, detail="블로그 배포 최소 주문 수량은 10건입니다")
-    _require_plan_ad_quota(
+    payment_source = _resolve_payment_source(
         db, merchant.id, AdOrderType.BLOG, "blog_review", req.order_count
     )
     pricing = ad_pricing.get_ad_pricing(db)
@@ -1015,9 +1035,13 @@ def create_blog_order(req: AdBlogOrderCreate, db: Session = Depends(get_db), use
     if not keywords:
         raise HTTPException(status_code=400, detail="메인 키워드를 1개 이상 입력해주세요")
     links = [_normalize_place_url(item) for item in req.links]
+    if payment_source == PAYMENT_CREDIT:
+        _assert_credit_available(db, merchant.id, total_cost)
     order = AdOrder(
         merchant_id=merchant.id, type=AdOrderType.BLOG,
         status=AdOrderStatus.REQUESTED, created_by=user.id,
+        payment_source=payment_source,
+        credit_amount=total_cost if payment_source == PAYMENT_CREDIT else 0,
     )
     db.add(order)
     db.flush()
@@ -1036,11 +1060,16 @@ def create_blog_order(req: AdBlogOrderCreate, db: Session = Depends(get_db), use
         est_total_cost=total_cost,
     )
     db.add(detail)
+    if payment_source == PAYMENT_CREDIT:
+        ad_credit.use(db, merchant.id, total_cost, order.id,
+                      f"블로그 배포 주문 #{order.id} ({req.order_count}건)", user.id)
     db.commit()
     db.refresh(order)
     return {
         "id": order.id,
         "status": order.status.value,
+        "payment_source": payment_source,
+        "credit_balance": ad_credit.balance_of(db, merchant.id),
         "estimate": {
             "order_count": req.order_count,
             "unit_price": unit_price,
@@ -1055,7 +1084,7 @@ def create_place_traffic_order(req: AdPlaceTrafficOrderCreate, db: Session = Dep
     _require_ad_order_feature(db, AD_PLACE_TRAFFIC_ENABLED)
     if req.order_count < 100:
         raise HTTPException(status_code=400, detail="플레이스 방문 최소 주문 수량은 100건입니다")
-    _require_plan_ad_quota(
+    payment_source = _resolve_payment_source(
         db, merchant.id, AdOrderType.PLACE_TRAFFIC, "place_traffic", req.order_count
     )
     pricing = ad_pricing.get_ad_pricing(db)
@@ -1066,9 +1095,13 @@ def create_place_traffic_order(req: AdPlaceTrafficOrderCreate, db: Session = Dep
     keywords = [item.strip() for item in req.search_keywords if item.strip()]
     if not keywords:
         raise HTTPException(status_code=400, detail="검색 키워드를 1개 이상 입력해주세요")
+    if payment_source == PAYMENT_CREDIT:
+        _assert_credit_available(db, merchant.id, total_cost)
     order = AdOrder(
         merchant_id=merchant.id, type=AdOrderType.PLACE_TRAFFIC,
         status=AdOrderStatus.REQUESTED, created_by=user.id,
+        payment_source=payment_source,
+        credit_amount=total_cost if payment_source == PAYMENT_CREDIT else 0,
     )
     db.add(order)
     db.flush()
@@ -1082,11 +1115,16 @@ def create_place_traffic_order(req: AdPlaceTrafficOrderCreate, db: Session = Dep
         est_total_cost=total_cost,
     )
     db.add(detail)
+    if payment_source == PAYMENT_CREDIT:
+        ad_credit.use(db, merchant.id, total_cost, order.id,
+                      f"플레이스 방문 주문 #{order.id} ({req.order_count}건)", user.id)
     db.commit()
     db.refresh(order)
     return {
         "id": order.id,
         "status": order.status.value,
+        "payment_source": payment_source,
+        "credit_balance": ad_credit.balance_of(db, merchant.id),
         "estimate": {
             "order_count": req.order_count,
             "unit_price": unit_price,
@@ -1154,7 +1192,7 @@ def create_shorts_order(req: AdShortsOrderCreate, db: Session = Depends(get_db),
 
     # 플랜 한도 검증: 쇼츠 사용량은 sum(distribution_count) 로 집계되므로,
     # 주문 건수(1)가 아니라 이번 주문의 총 배포 건수를 요청량으로 넘긴다.
-    _require_plan_ad_quota(
+    payment_source = _resolve_payment_source(
         db, merchant.id, AdOrderType.SHORTS, "shorts",
         requested_count=int(req.distribution_count or 0) if uses["distribution"] else 0,
     )
@@ -1191,9 +1229,13 @@ def create_shorts_order(req: AdShortsOrderCreate, db: Session = Depends(get_db),
         if (req.brief_categories or {}).get(code, "").strip()
     }
 
+    if payment_source == PAYMENT_CREDIT:
+        _assert_credit_available(db, merchant.id, est["total_cost"])
     order = AdOrder(
         merchant_id=merchant.id, type=AdOrderType.SHORTS,
         status=AdOrderStatus.REQUESTED, created_by=user.id,
+        payment_source=payment_source,
+        credit_amount=est["total_cost"] if payment_source == PAYMENT_CREDIT else 0,
     )
     db.add(order)
     db.flush()
@@ -1242,12 +1284,17 @@ def create_shorts_order(req: AdShortsOrderCreate, db: Session = Depends(get_db),
         est_total_cost=est["total_cost"],
     )
     db.add(detail)
+    if payment_source == PAYMENT_CREDIT:
+        ad_credit.use(db, merchant.id, est["total_cost"], order.id,
+                      f"쇼츠 배포 주문 #{order.id}", user.id)
     db.commit()
     db.refresh(order)
     return {
         "id": order.id,
         "status": order.status.value,
         "campaign_type_label": SHORTS_CAMPAIGN_TYPE_LABELS[req.campaign_type],
+        "payment_source": payment_source,
+        "credit_balance": ad_credit.balance_of(db, merchant.id),
         "estimate": est,
     }
 
