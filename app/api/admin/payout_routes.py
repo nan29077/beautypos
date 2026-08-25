@@ -19,14 +19,19 @@ router = APIRouter()
 @router.get("/payout-requests")
 def list_payout_requests(db: Session = Depends(get_db), _=Depends(require_admin)):
     reqs = db.query(PayoutRequest).order_by(PayoutRequest.created_at.desc()).all()
+    # 신청자 이름은 한 번에 읽는다 (요청 수만큼 조회하지 않도록).
+    requester_names = dict(
+        db.query(User.id, User.name)
+        .filter(User.id.in_({r.requester_user_id for r in reqs})).all()
+    ) if reqs else {}
     results = []
     for r in reqs:
-        user = db.query(User).filter(User.id == r.requester_user_id).first()
+        requester_name = requester_names.get(r.requester_user_id)
         # 이 요청 자체는 차감에서 빼서, amount 와 바로 비교할 수 있는 잔액을 보여준다.
         available = get_available_payout(db, r.requester_user_id, r.role, exclude_payout_id=r.id)
         results.append({
             "id": r.id, "requester_user_id": r.requester_user_id,
-            "requester_name": user.name if user else None,
+            "requester_name": requester_name,
             "role": r.role, "amount": float(r.amount),
             "available_balance": float(available),
             "bank_info": r.bank_info, "memo": r.memo,

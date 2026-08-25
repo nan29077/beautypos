@@ -6,12 +6,15 @@ from decimal import Decimal
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.utils.kst import fmt_kst
 from app.models.user import User, UserRole
 from app.models.settlement import PayoutRequest
+from app.models.terminal import TerminalDevice
+from app.models.transaction import Transaction, TransactionStatus
 from app.models.affiliate_mall import AffiliateMall
 from app.services.settlement_service import get_available_payout
 from app.schemas.schemas import PayoutRequestCreate
@@ -121,6 +124,49 @@ def update_merchant_info(
         "display_category": merchant.display_category,
         "needs_staff_management": merchant.needs_staff_management,
     }
+
+
+# ─── Terminals (내 매장 단말기) ───────────────────────────────
+
+@router.get("/terminals")
+def list_owner_terminals(
+    db: Session = Depends(get_db),
+    user: User = Depends(require_owner),
+    merchant_id: Optional[int] = Query(None, description="최고관리자 전용: 대상 가맹점 ID"),
+):
+    """내 매장에 등록된 단말기 목록.
+
+    등록·수정·삭제는 최고관리자(/api/admin/terminals)가 한다. 원장은 어떤 단말기가
+    붙어 있고 마지막 결제가 언제였는지만 확인한다. API 키는 해시로만 보관하므로
+    어떤 경우에도 내보내지 않는다.
+    """
+    merchant = _get_owner_merchant(user, db, merchant_id)
+    terminals = db.query(TerminalDevice).filter(
+        TerminalDevice.merchant_id == merchant.id
+    ).order_by(TerminalDevice.id).all()
+
+    stats = {}
+    if terminals:
+        rows = db.query(
+            Transaction.terminal_id,
+            func.count(Transaction.id),
+            func.max(Transaction.created_at),
+        ).filter(
+            Transaction.terminal_id.in_([t.id for t in terminals]),
+            # 취소된 결제는 세지 않는다.
+            Transaction.status == TransactionStatus.APPROVED,
+        ).group_by(Transaction.terminal_id).all()
+        stats = {r[0]: (int(r[1] or 0), r[2]) for r in rows}
+
+    return [{
+        "id": t.id,
+        "terminal_serial": t.terminal_serial,
+        "memo": t.memo,
+        "is_active": t.is_active,
+        "transaction_count": stats.get(t.id, (0, None))[0],
+        "last_transaction_at": fmt_kst(stats.get(t.id, (0, None))[1]),
+        "created_at": fmt_kst(t.created_at),
+    } for t in terminals]
 
 
 # ═══════════════════════════════════════════════════════════

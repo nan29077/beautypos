@@ -27,6 +27,9 @@ env/
 # Database
 *.db
 *.sqlite3
+# DB 덤프에는 운영 데이터가 그대로 들어 있다. 저장소에 올리지 않는다.
+*dump.sql
+*.sql.gz
 
 # OS
 .DS_Store

@@ -72,16 +72,23 @@ def list_all_transactions(
     total_amount = float(amount_q.scalar())
 
     txns = q.order_by(Transaction.created_at.desc()).offset(offset).limit(limit).all()
+
+    # 거래마다 직원·가맹점을 다시 읽으면 목록 크기만큼 쿼리가 늘어난다.
+    staff_names = dict(
+        db.query(Staff.id, Staff.name)
+        .filter(Staff.id.in_({t.staff_id for t in txns if t.staff_id})).all()
+    ) if txns else {}
+    merchant_names = dict(
+        db.query(Merchant.id, Merchant.name)
+        .filter(Merchant.id.in_({t.merchant_id for t in txns})).all()
+    ) if txns else {}
+
     results = []
     for t in txns:
-        staff_name = None
-        if t.staff_id:
-            staff = db.query(Staff).filter(Staff.id == t.staff_id).first()
-            staff_name = staff.name if staff else None
-        m = db.query(Merchant).filter(Merchant.id == t.merchant_id).first()
+        staff_name = staff_names.get(t.staff_id) if t.staff_id else None
         results.append({
             "id": t.id, "merchant_id": t.merchant_id,
-            "merchant_name": m.name if m else f"가맹점#{t.merchant_id}",
+            "merchant_name": merchant_names.get(t.merchant_id, f"가맹점#{t.merchant_id}"),
             "terminal_id": t.terminal_id,
             "staff_id": t.staff_id, "staff_name": staff_name,
             "amount": float(t.amount), "installment_months": t.installment_months,

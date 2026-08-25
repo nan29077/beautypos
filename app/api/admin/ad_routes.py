@@ -50,23 +50,46 @@ router = APIRouter()
 @router.get("/ad/orders")
 def list_ad_orders(db: Session = Depends(get_db), _=Depends(require_admin)):
     orders = db.query(AdOrder).order_by(AdOrder.created_at.desc()).all()
+
+    # 주문마다 가맹점·작성자·상세를 따로 조회하면 주문 수만큼 쿼리가 늘어난다.
+    # 필요한 것들을 종류별로 한 번씩만 읽어 사전으로 들고 간다.
+    order_ids = [o.id for o in orders]
+    merchant_names = dict(
+        db.query(Merchant.id, Merchant.name)
+        .filter(Merchant.id.in_({o.merchant_id for o in orders})).all()
+    ) if orders else {}
+    creator_names = dict(
+        db.query(User.id, User.name)
+        .filter(User.id.in_({o.created_by for o in orders if o.created_by})).all()
+    ) if orders else {}
+    blog_details = {
+        d.order_id: d for d in db.query(AdOrderBlogDetail)
+        .filter(AdOrderBlogDetail.order_id.in_(order_ids)).all()
+    } if order_ids else {}
+    place_details = {
+        d.order_id: d for d in db.query(AdOrderPlaceTrafficDetail)
+        .filter(AdOrderPlaceTrafficDetail.order_id.in_(order_ids)).all()
+    } if order_ids else {}
+    shorts_details = {
+        d.order_id: d for d in db.query(AdOrderShortsDetail)
+        .filter(AdOrderShortsDetail.order_id.in_(order_ids)).all()
+    } if order_ids else {}
+
     results = []
     for o in orders:
-        merchant = db.query(Merchant).filter(Merchant.id == o.merchant_id).first()
-        creator = db.query(User).filter(User.id == o.created_by).first()
         item = {
             "id": o.id, "merchant_id": o.merchant_id,
-            "merchant_name": merchant.name if merchant else None,
+            "merchant_name": merchant_names.get(o.merchant_id),
             "type": o.type.value, "status": o.status.value,
             "created_by": o.created_by,
-            "creator_name": creator.name if creator else None,
+            "creator_name": creator_names.get(o.created_by),
             "admin_memo": o.admin_memo,
             "created_at": str(o.created_at),
             "allowed_statuses": _allowed_ad_order_statuses(o.status.value),
         }
         # attach details
         if o.type.value == "blog":
-            detail = db.query(AdOrderBlogDetail).filter(AdOrderBlogDetail.order_id == o.id).first()
+            detail = blog_details.get(o.id)
             if detail:
                 try:
                     links_val = json.loads(detail.links_json) if detail.links_json else []
@@ -87,7 +110,7 @@ def list_ad_orders(db: Session = Depends(get_db), _=Depends(require_admin)):
                     "est_total_cost": str(detail.est_total_cost or 0),
                 }
         elif o.type.value == "place_traffic":
-            detail = db.query(AdOrderPlaceTrafficDetail).filter(AdOrderPlaceTrafficDetail.order_id == o.id).first()
+            detail = place_details.get(o.id)
             if detail:
                 try:
                     sk_val = json.loads(detail.search_keywords_json) if detail.search_keywords_json else []
@@ -101,7 +124,7 @@ def list_ad_orders(db: Session = Depends(get_db), _=Depends(require_admin)):
                     "est_total_cost": str(detail.est_total_cost or 0),
                 }
         elif o.type.value == "shorts":
-            detail = db.query(AdOrderShortsDetail).filter(AdOrderShortsDetail.order_id == o.id).first()
+            detail = shorts_details.get(o.id)
             if detail:
                 item["shorts_detail"] = _shorts_detail_payload(detail)
         results.append(item)
