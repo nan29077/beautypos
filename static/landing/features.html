@@ -4,10 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ADPAY - 기능소개</title>
-    <link rel="icon" type="image/png" sizes="192x192" href="/static/favicon-192.png?v=2">
-    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
-    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
-    <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg?v=3">
+    <link rel="icon" type="image/png" sizes="192x192" href="/static/favicon-192.png?v=3">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png?v=3">
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico?v=3">
+    <link rel="apple-touch-icon" href="/static/apple-touch-icon.png?v=3">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
@@ -136,19 +137,19 @@
     <div class="container">
         <div class="row align-items-center g-5">
             <div class="col-lg-6 order-lg-2 fade-up">
-                <img src="https://images.unsplash.com/photo-1560066984-138dadb4c035?w=700&h=450&fit=crop&q=80" alt="헤어살롱" class="img-fluid rounded-4 shadow">
+                <img src="https://images.unsplash.com/photo-1560066984-138dadb4c035?w=700&h=450&fit=crop&q=80" alt="매장 운영" class="img-fluid rounded-4 shadow">
             </div>
             <div class="col-lg-6 order-lg-1 fade-up">
                 <span class="badge bg-success mb-3 px-3 py-2"><i class="fas fa-users-cog me-1"></i>매출 관리</span>
-                <h2 class="fw-bold mb-3">직원(디자이너)별 매출 자동 분리</h2>
-                <p class="text-muted fs-5 mb-4">단말기 결제 시 직원 코드를 입력하면 자동으로 해당 직원의 매출로 귀속됩니다. 코드 없이 결제하면 원장님 매출로 자동 처리됩니다.</p>
+                <h2 class="fw-bold mb-3">직원별 매출 자동 분리</h2>
+                <p class="text-muted fs-5 mb-4">단말기 결제 시 직원 코드를 입력하면 자동으로 해당 직원의 매출로 귀속됩니다. 코드 없이 결제하면 사장님 매출로 자동 처리됩니다.</p>
                 
                 <!-- Workflow -->
                 <div class="workflow-step">
                     <div class="step-num bg-primary text-white">1</div>
                     <div class="step-line"></div>
                     <h6 class="fw-bold">직원 코드 발급</h6>
-                    <p class="text-muted small">원장님이 각 직원에게 고유 staff_code를 부여합니다 (가맹점 단위 유니크)</p>
+                    <p class="text-muted small">사장님이 각 직원에게 고유 staff_code를 부여합니다 (가맹점 단위 유니크)</p>
                 </div>
                 <div class="workflow-step">
                     <div class="step-num bg-success text-white">2</div>
@@ -160,12 +161,12 @@
                     <div class="step-num bg-warning text-white">3</div>
                     <div class="step-line"></div>
                     <h6 class="fw-bold">자동 귀속</h6>
-                    <p class="text-muted small">유효한 코드면 해당 직원 매출, 없으면 원장 매출 + 로그 기록</p>
+                    <p class="text-muted small">유효한 코드면 해당 직원 매출, 없으면 사장님 매출 + 로그 기록</p>
                 </div>
                 <div class="workflow-step">
                     <div class="step-num bg-info text-white">4</div>
                     <h6 class="fw-bold">통계 확인</h6>
-                    <p class="text-muted small">원장님은 직원별 매출을 기간별로 조회하고 비교합니다</p>
+                    <p class="text-muted small">사장님은 직원별 매출을 기간별로 조회하고 비교합니다</p>
                 </div>
             </div>
         </div>
@@ -371,7 +372,7 @@
                         <div class="text-center mb-3">
                             <div class="bg-success bg-opacity-10 rounded-circle d-inline-flex align-items-center justify-content-center" style="width:64px;height:64px;"><i class="fas fa-store fa-2x text-success"></i></div>
                         </div>
-                        <h5 class="fw-bold text-center">원장님</h5>
+                        <h5 class="fw-bold text-center">사장님</h5>
                         <p class="text-muted small text-center">매장/직원/광고 관리</p>
                         <hr>
                         <ul class="list-unstyled small">
@@ -390,7 +391,7 @@
                         <div class="text-center mb-3">
                             <div class="bg-warning bg-opacity-10 rounded-circle d-inline-flex align-items-center justify-content-center" style="width:64px;height:64px;"><i class="fas fa-paint-brush fa-2x text-warning"></i></div>
                         </div>
-                        <h5 class="fw-bold text-center">디자이너</h5>
+                        <h5 class="fw-bold text-center">직원</h5>
                         <p class="text-muted small text-center">개인 매출 확인</p>
                         <hr>
                         <ul class="list-unstyled small">

@@ -53,7 +53,7 @@ def register(req: RegisterRequest, db: Session = Depends(get_db)):
     if role_str not in _ALLOWED_REGISTER_ROLES:
         raise HTTPException(
             status_code=400,
-            detail="공개 회원가입은 원장님 계정만 가능합니다. 관리자·영업관리자 계정은 최고관리자가 추가합니다.",
+            detail="공개 회원가입은 사장님 계정만 가능합니다. 관리자·영업관리자 계정은 최고관리자가 추가합니다.",
         )
 
     existing = db.query(User).filter(User.email == req.email).first()

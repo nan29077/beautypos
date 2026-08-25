@@ -42,7 +42,7 @@ def run_seed(db: Session):
 
     admin = User(email="admin@test.com", password_hash=pw_hash, name="최고관리자", role=UserRole.ADMIN)
     sales = User(email="sales@test.com", password_hash=pw_hash, name="김영업", role=UserRole.SALES)
-    owner = User(email="owner@test.com", password_hash=pw_hash, name="박원장", role=UserRole.OWNER)
+    owner = User(email="owner@test.com", password_hash=pw_hash, name="박사장", role=UserRole.OWNER)
     designer1 = User(email="designer@test.com", password_hash=pw_hash, name="홍길동", role=UserRole.DESIGNER)
     designer2 = User(email="designer2@test.com", password_hash=pw_hash, name="이디자", role=UserRole.DESIGNER)
 
@@ -51,7 +51,7 @@ def run_seed(db: Session):
 
     # ─── 2. Merchant ─────────────────────────────────────────
     merchant = Merchant(
-        name="뷰티헤어살롱 강남점",
+        name="애드페이 강남점",
         owner_user_id=owner.id,
         business_no="123-45-67890",
         address="서울 강남구 테헤란로 123",
@@ -146,12 +146,12 @@ def run_seed(db: Session):
         merchant_id=merchant.id,
         place_url="https://map.naver.com/v5/entry/place/12345",
         place_id="12345",
-        nickname="뷰티헤어살롱 강남",
+        nickname="애드페이 강남",
     )
     comp = AdCompetitor(
         merchant_id=merchant.id,
         competitor_place_url="https://map.naver.com/v5/entry/place/67890",
-        memo="길 건너편 경쟁 미용실",
+        memo="길 건너편 경쟁 매장",
     )
     db.add_all([profile, comp])
 
@@ -190,13 +190,13 @@ def run_seed(db: Session):
 
     blog_detail = AdOrderBlogDetail(
         order_id=order1.id,
-        campaign_name="뷰티헤어살롱 강남점 블로그 리뷰",
+        campaign_name="애드페이 강남점 블로그 리뷰",
         address="서울 강남구 테헤란로 123",
         contact="02-1234-5678",
         links_json=json.dumps(["https://map.naver.com/v5/entry/place/12345", "https://instagram.com/beauty_hair_gn"]),
-        main_keywords_json=json.dumps(["강남미용실", "강남헤어살롱", "강남펌", "강남염색", "테헤란로미용실"]),
-        hashtags_json=json.dumps(["#강남미용실", "#강남헤어살롱", "#강남펌추천"]),
-        description="강남역 5분 거리 프리미엄 헤어살롱. 트렌디한 스타일링과 친절한 서비스.",
+        main_keywords_json=json.dumps(["강남맛집", "강남추천", "테헤란로맛집", "역삼동가볼만한곳", "강남단골집"]),
+        hashtags_json=json.dumps(["#강남맛집", "#테헤란로", "#강남추천"]),
+        description="강남역 5분 거리 매장. 단골 손님이 많고 재방문율이 높습니다.",
     )
     db.add(blog_detail)
 
@@ -209,8 +209,8 @@ def run_seed(db: Session):
 
     place_detail = AdOrderPlaceTrafficDetail(
         order_id=order2.id,
-        place_name_or_id="뷰티헤어살롱 강남점",
-        search_keywords_json=json.dumps(["강남미용실", "강남헤어", "테헤란로미용실"]),
+        place_name_or_id="애드페이 강남점",
+        search_keywords_json=json.dumps(["강남맛집", "강남추천", "테헤란로맛집"]),
     )
     db.add(place_detail)
 

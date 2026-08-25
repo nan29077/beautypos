@@ -1,20 +1,31 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" role="img" aria-label="ADPAY 결제와 마케팅 심볼">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" role="img" aria-label="ADPAY 꽃 심볼">
   <defs>
-    <linearGradient id="adpayBlue" x1="24" y1="16" x2="168" y2="176" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#12B8ED"/>
-      <stop offset="1" stop-color="#2463D5"/>
+    <linearGradient id="adpayViolet" x1="20" y1="12" x2="172" y2="180" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#715fce"/>
+      <stop offset="1" stop-color="#443680"/>
     </linearGradient>
-    <linearGradient id="growthBlue" x1="58" y1="121" x2="118" y2="73" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#20B9EF"/>
-      <stop offset="1" stop-color="#225BC7"/>
+    <linearGradient id="adpayPetal" x1="66" y1="42" x2="126" y2="150" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#dcd3ff"/>
     </linearGradient>
+    <radialGradient id="adpayCore" cx="96" cy="92" r="22" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffc083"/>
+      <stop offset="1" stop-color="#ff8f7a"/>
+    </radialGradient>
   </defs>
-  <rect width="192" height="192" rx="46" fill="url(#adpayBlue)"/>
-  <rect x="34" y="47" width="124" height="99" rx="25" fill="#fff"/>
-  <path d="M34 72h124v15H34z" fill="#163454"/>
-  <rect x="55" y="110" width="14" height="18" rx="5" fill="#20B9EF"/>
-  <rect x="80" y="96" width="14" height="32" rx="5" fill="#168EDC"/>
-  <rect x="105" y="80" width="14" height="48" rx="5" fill="url(#growthBlue)"/>
-  <path d="m124 82 8-8 8 8" fill="none" stroke="#20B9EF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="140" cy="54" r="5" fill="#A7ECFF"/>
+
+  <rect width="192" height="192" rx="46" fill="url(#adpayViolet)"/>
+
+  <!-- 여섯 장의 꽃잎: 하나를 그려 중심(96,96) 기준으로 60도씩 돌린다 -->
+  <g fill="url(#adpayPetal)">
+    <ellipse cx="96" cy="59" rx="21" ry="31"/>
+    <ellipse cx="96" cy="59" rx="21" ry="31" transform="rotate(60 96 96)"/>
+    <ellipse cx="96" cy="59" rx="21" ry="31" transform="rotate(120 96 96)"/>
+    <ellipse cx="96" cy="59" rx="21" ry="31" transform="rotate(180 96 96)"/>
+    <ellipse cx="96" cy="59" rx="21" ry="31" transform="rotate(240 96 96)"/>
+    <ellipse cx="96" cy="59" rx="21" ry="31" transform="rotate(300 96 96)"/>
+  </g>
+
+  <circle cx="96" cy="96" r="20" fill="url(#adpayCore)"/>
+  <circle cx="90" cy="90" r="6" fill="#ffffff" opacity=".55"/>
 </svg>

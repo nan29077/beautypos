@@ -50,7 +50,7 @@ def create_merchant(req: MerchantCreate, db: Session = Depends(get_db), _=Depend
     if owner.role != UserRole.OWNER:
         raise HTTPException(
             status_code=400,
-            detail=f"사장님(원장) 역할의 계정만 가맹점 소유자가 될 수 있습니다. (현재: {owner.role.value})",
+            detail=f"사장님 역할의 계정만 가맹점 소유자가 될 수 있습니다. (현재: {owner.role.value})",
         )
     existing = db.query(Merchant).filter(Merchant.owner_user_id == req.owner_user_id).first()
     if existing:

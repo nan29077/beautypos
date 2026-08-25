@@ -36,7 +36,7 @@ def test_public_registration_only_allows_owner(client, requested_role):
         },
     )
     assert response.status_code == 400
-    assert "원장님 계정만" in response.json()["detail"]
+    assert "사장님 계정만" in response.json()["detail"]
 
 
 @pytest.mark.parametrize("role", ["admin", "sales", "owner", "designer"])

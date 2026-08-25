@@ -74,7 +74,7 @@ class CouponBulkIn(BaseModel):
 
 @router.post("/customers/{cid}/points")
 def adjust_points(cid: int, req: PointAdjust, ctx: CrmContext = Depends(get_crm_context), db: Session = Depends(get_db)):
-    _require_owner_admin(ctx, "포인트 적립/차감은 원장 계정에서만 가능합니다.")
+    _require_owner_admin(ctx, "포인트 적립/차감은 사장님 계정에서만 가능합니다.")
     c = db.query(CrmCustomer).filter(CrmCustomer.id == cid, CrmCustomer.merchant_id == ctx.merchant_id).first()
     if not c:
         raise HTTPException(404, "고객을 찾을 수 없습니다")
@@ -186,7 +186,7 @@ def create_coupon(req: CouponIn, ctx: CrmContext = Depends(get_crm_context), db:
 
 @router.post("/coupons/bulk")
 def issue_coupons_bulk(req: CouponBulkIn, ctx: CrmContext = Depends(get_crm_context), db: Session = Depends(get_db)):
-    _require_owner_admin(ctx, "쿠폰 일괄 발급은 원장 계정에서만 가능합니다.")
+    _require_owner_admin(ctx, "쿠폰 일괄 발급은 사장님 계정에서만 가능합니다.")
     targets = _segment_customers(db, ctx, req.segment)
     exp = _parse_date(req.expires_at)
     n = 0
@@ -286,7 +286,7 @@ def list_messages(limit: int = Query(100, ge=1, le=500), ctx: CrmContext = Depen
 def send_messages(req: SendMessageIn, ctx: CrmContext = Depends(get_crm_context), db: Session = Depends(get_db)):
     # 세그먼트(전체/휴면/생일/VIP) 일괄 발송은 원장/관리자만
     if req.segment and not req.customer_ids:
-        _require_owner_admin(ctx, "고객 일괄 문자 발송은 원장 계정에서만 가능합니다.")
+        _require_owner_admin(ctx, "고객 일괄 문자 발송은 사장님 계정에서만 가능합니다.")
 
     # 발송 대상 결정
     targets = []

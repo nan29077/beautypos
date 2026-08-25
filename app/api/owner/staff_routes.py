@@ -142,7 +142,7 @@ def create_designer(req: DesignerCreate, db: Session = Depends(get_db), user: Us
         "name": staff.name,
         "email": designer_user.email,
         "staff_code": staff.staff_code,
-        "message": f"디자이너 '{req.name}' 계정이 등록되었습니다. ({merchant.name} 소속)",
+        "message": f"직원 '{req.name}' 계정이 등록되었습니다. ({merchant.name} 소속)",
     }
 
 
@@ -152,7 +152,7 @@ def update_designer(staff_id: int, req: DesignerUpdate, db: Session = Depends(ge
     merchant = _get_owner_merchant(user, db)
     staff = db.query(Staff).filter(Staff.id == staff_id, Staff.merchant_id == merchant.id).first()
     if not staff:
-        raise HTTPException(status_code=404, detail="디자이너를 찾을 수 없습니다")
+        raise HTTPException(status_code=404, detail="직원을 찾을 수 없습니다")
     u = db.query(User).filter(User.id == staff.user_id).first()
 
     payload = req.model_dump(exclude_unset=True)

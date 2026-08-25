@@ -298,7 +298,7 @@ def update_customer(cid: int, req: CustomerUpdate, ctx: CrmContext = Depends(get
 
 @router.delete("/customers/{cid}")
 def delete_customer(cid: int, ctx: CrmContext = Depends(get_crm_context), db: Session = Depends(get_db)):
-    _require_owner_admin(ctx, "고객 삭제는 원장 계정에서만 가능합니다.")
+    _require_owner_admin(ctx, "고객 삭제는 사장님 계정에서만 가능합니다.")
     c = db.query(CrmCustomer).filter(CrmCustomer.id == cid, CrmCustomer.merchant_id == ctx.merchant_id).first()
     if not c:
         raise HTTPException(404, "고객을 찾을 수 없습니다")
@@ -335,7 +335,7 @@ def update_service(sid: int, req: ServiceUpdate, ctx: CrmContext = Depends(get_c
     _require_crm_management(ctx)
     s = db.query(CrmService).filter(CrmService.id == sid, CrmService.merchant_id == ctx.merchant_id).first()
     if not s:
-        raise HTTPException(404, "시술을 찾을 수 없습니다")
+        raise HTTPException(404, "서비스를 찾을 수 없습니다")
     for k, v in req.model_dump(exclude_unset=True).items():
         setattr(s, k, v)
     db.commit()
@@ -347,7 +347,7 @@ def delete_service(sid: int, ctx: CrmContext = Depends(get_crm_context), db: Ses
     _require_crm_management(ctx)
     s = db.query(CrmService).filter(CrmService.id == sid, CrmService.merchant_id == ctx.merchant_id).first()
     if not s:
-        raise HTTPException(404, "시술을 찾을 수 없습니다")
+        raise HTTPException(404, "서비스를 찾을 수 없습니다")
     db.query(CrmServicePrice).filter(CrmServicePrice.service_id == sid).delete()
     db.delete(s); db.commit()
     return {"ok": True}
@@ -366,7 +366,7 @@ def set_service_price(sid: int, req: ServicePriceIn, ctx: CrmContext = Depends(g
     _require_crm_management(ctx)
     s = db.query(CrmService).filter(CrmService.id == sid, CrmService.merchant_id == ctx.merchant_id).first()
     if not s:
-        raise HTTPException(404, "시술을 찾을 수 없습니다")
+        raise HTTPException(404, "서비스를 찾을 수 없습니다")
     _assert_staff_in_merchant(db, ctx, req.staff_id)
     existing = db.query(CrmServicePrice).filter(CrmServicePrice.service_id == sid, CrmServicePrice.staff_id == req.staff_id).first()
     if existing:
@@ -591,7 +591,7 @@ def create_reservation(req: ReservationIn, ctx: CrmContext = Depends(get_crm_con
     if not req.force:
         conflict = _conflict_check(db, ctx.merchant_id, staff_id, start, end)
         if conflict:
-            raise HTTPException(409, f"해당 디자이너의 예약 시간이 겹칩니다 ({conflict.reserved_at:%m/%d %H:%M}). 시간을 변경하거나 강제 등록하세요.")
+            raise HTTPException(409, f"해당 담당자의 예약 시간이 겹칩니다 ({conflict.reserved_at:%m/%d %H:%M}). 시간을 변경하거나 강제 등록하세요.")
     r = CrmReservation(merchant_id=ctx.merchant_id, customer_id=req.customer_id, customer_name=cname,
                        phone=phone, staff_id=staff_id, service_name=req.service_name,
                        reserved_at=start, end_at=end, duration_min=dur, memo=req.memo)

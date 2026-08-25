@@ -48,7 +48,7 @@ def _assert_staff_in_merchant(db: Session, ctx: "CrmContext", *staff_ids) -> Non
     }
     missing = wanted - found
     if missing:
-        raise HTTPException(400, "해당 미용실 소속 직원이 아닙니다 "
+        raise HTTPException(400, "해당 매장 소속 직원이 아닙니다 "
                                  f"(staff_id={', '.join(str(i) for i in sorted(missing))})")
 
 
@@ -64,28 +64,28 @@ class CrmContext:
 
 
 def get_crm_context(
-    merchant_id: Optional[int] = Query(None, description="관리자 전용: 대상 미용실 ID"),
+    merchant_id: Optional[int] = Query(None, description="관리자 전용: 대상 매장 ID"),
     db: Session = Depends(get_db),
     user: User = Depends(require_crm),
 ) -> CrmContext:
     if user.role == UserRole.OWNER:
         m = db.query(Merchant).filter(Merchant.owner_user_id == user.id).first()
         if not m:
-            raise HTTPException(404, "원장님 소유 미용실을 찾을 수 없습니다")
+            raise HTTPException(404, "사장님 소유 매장을 찾을 수 없습니다")
         return CrmContext(m, user.role, None)
     if user.role == UserRole.DESIGNER:
         staff = db.query(Staff).filter(Staff.user_id == user.id, Staff.is_active == True).first()
         if not staff:
-            raise HTTPException(404, "디자이너 소속 미용실을 찾을 수 없습니다")
+            raise HTTPException(404, "직원 소속 매장을 찾을 수 없습니다")
         m = db.query(Merchant).filter(Merchant.id == staff.merchant_id).first()
         if not m:
-            raise HTTPException(404, "소속 미용실을 찾을 수 없습니다")
+            raise HTTPException(404, "소속 매장을 찾을 수 없습니다")
         return CrmContext(m, user.role, staff.id)
     # ADMIN
     q = db.query(Merchant)
     m = q.filter(Merchant.id == merchant_id).first() if merchant_id else q.order_by(Merchant.id).first()
     if not m:
-        raise HTTPException(404, "미용실을 찾을 수 없습니다")
+        raise HTTPException(404, "매장을 찾을 수 없습니다")
     return CrmContext(m, user.role, None)
 
 
@@ -99,7 +99,7 @@ def _staff_name_map(db: Session, merchant_id: int) -> dict:
 def _require_crm_management(ctx: CrmContext) -> None:
     """Keep merchant-wide configuration changes owner/admin only."""
     if ctx.is_designer or ctx.role not in (UserRole.OWNER, UserRole.ADMIN):
-        raise HTTPException(status_code=403, detail="매장 공통 설정은 원장 계정에서 관리해 주세요.")
+        raise HTTPException(status_code=403, detail="매장 공통 설정은 사장님 계정에서 관리해 주세요.")
 
 
 def _require_owner_admin(ctx: CrmContext, message: str) -> None:

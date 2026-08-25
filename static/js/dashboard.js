@@ -73,7 +73,7 @@ const mobilePageMeta = {
     'owner-adorder-new': ['새 광고 주문', 'fas fa-plus-circle'],
     'owner-ad-keywords': ['광고 키워드', 'fas fa-key'],
     'owner-ad-credit': ['광고비', 'fas fa-wallet'],
-    crm: ['미용실 관리', 'fas fa-user-friends'],
+    crm: ['매장 관리', 'fas fa-user-friends'],
     'owner-info': ['매장 정보', 'fas fa-store'],
     'designer-transactions': ['결제 내역', 'fas fa-receipt'],
     'designer-monthly': ['월별 통계', 'fas fa-calendar-alt'],
@@ -112,7 +112,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch {
         logout(); return;
     }
-    // 원장님인 경우 매장 정보를 미리 로드하여 이름 표기에 사용
+    // 사장님인 경우 매장 정보를 미리 로드하여 이름 표기에 사용
     if (currentUser.role === 'owner') {
         try {
             ownerMerchantInfo = await apiGet('/api/owner/merchant-info');
@@ -164,11 +164,11 @@ function safeUrl(value) {
 }
 
 function roleLabel(r) {
-    return {admin:'최고관리자', sales:'영업관리자', owner:'사장님(원장님)', designer:'직원(디자이너)'}[r] || r;
+    return {admin:'최고관리자', sales:'영업관리자', owner:'사장님', designer:'직원'}[r] || r;
 }
 
 /**
- * 원장님 역할의 경우 매장명으로 표기 (풀네임, 마스킹 없음)
+ * 사장님 역할의 경우 매장명으로 표기 (풀네임, 마스킹 없음)
  */
 function ownerDisplayName(user, merchantName) {
     if (user.role === 'owner' && merchantName) {
@@ -177,7 +177,7 @@ function ownerDisplayName(user, merchantName) {
     return user.name;
 }
 
-let ownerMerchantInfo = null; // 원장님의 매장 정보 캐시
+let ownerMerchantInfo = null; // 사장님의 매장 정보 캐시
 
 function toggleSidebar() {
     const sidebar = document.getElementById('sidebar');
@@ -272,7 +272,7 @@ function isMobileViewport() {
     return forcedMobile || roleMobileQuery.matches;
 }
 
-/** 원장/디자이너 전용 모바일 앱 셸(하단 탭·시트)을 쓰는 상태인지. */
+/** 사장님/직원 전용 모바일 앱 셸(하단 탭·시트)을 쓰는 상태인지. */
 function isRoleMobile() {
     if (!currentUser || !['owner', 'designer'].includes(currentUser.role)) return false;
     return isMobileViewport();
@@ -322,7 +322,7 @@ function setupRoleMobileUI() {
         const roleLabelEl = document.getElementById('mobileRoleLabel');
         if (roleLabelEl) {
             const merchantName = currentUser.role === 'owner' && ownerMerchantInfo?.name;
-            roleLabelEl.textContent = merchantName || (currentUser.role === 'designer' ? `${currentUser.name} 디자이너` : 'ADPAY');
+            roleLabelEl.textContent = merchantName || (currentUser.role === 'designer' ? `${currentUser.name} 직원` : 'ADPAY');
         }
         buildMobileNavigation();
     }
@@ -620,8 +620,8 @@ function buildSidebar() {
         }
         if (isBeautyBusiness()) {
             html += `
-        <div class="nav-section">미용실 관리 프로그램</div>
-        <a class="nav-link" href="#" data-page="crm"><i class="fas fa-user-friends"></i>미용실 관리 프로그램</a>`;
+        <div class="nav-section">고객관리 프로그램</div>
+        <a class="nav-link" href="#" data-page="crm"><i class="fas fa-user-friends"></i>고객관리 프로그램</a>`;
         }
         html += `
         <div class="nav-section">설정</div>
@@ -634,8 +634,8 @@ function buildSidebar() {
         <a class="nav-link" href="#" data-page="designer-settlement"><i class="fas fa-coins"></i>정산 분배</a>`;
         if (isBeautyBusiness()) {
             html += `
-        <div class="nav-section">미용실 관리 프로그램</div>
-        <a class="nav-link" href="#" data-page="crm"><i class="fas fa-user-friends"></i>미용실 관리 프로그램</a>`;
+        <div class="nav-section">고객관리 프로그램</div>
+        <a class="nav-link" href="#" data-page="crm"><i class="fas fa-user-friends"></i>고객관리 프로그램</a>`;
         }
         html += `
         <div class="nav-section">정보</div>
@@ -727,7 +727,7 @@ async function loadPage(page) {
             case 'owner-crm':
             case 'crm':
                 if (!isBeautyBusiness()) {
-                    c.innerHTML = '<div class="alert alert-warning mt-3"><i class="fas fa-lock me-2"></i>이 메뉴는 뷰티 업종 전용입니다.</div>';
+                    c.innerHTML = '<div class="alert alert-warning mt-3"><i class="fas fa-lock me-2"></i>이 메뉴는 고객관리 업종 전용입니다.</div>';
                 } else {
                     await loadCRM(c, t);
                 }
@@ -1034,7 +1034,7 @@ async function loadHomePage(c, t) {
                                     <i class="fas fa-copy"></i>
                                 </button>
                             </div>
-                            <small class="text-muted d-block mt-1">원장님께 추천 링크를 전달하면 가맹점이 자동 연결됩니다.</small>
+                            <small class="text-muted d-block mt-1">사장님께 추천 링크를 전달하면 가맹점이 자동 연결됩니다.</small>
                         </li>` : ''}
                     </ul>
                 </div></div>
@@ -1205,7 +1205,7 @@ async function loadHomePage(c, t) {
                                     ${recentTxns.map(tx => `
                                     <tr>
                                         <td style="padding-left:1.2rem;" class="fw-bold">${formatMoney(tx.amount)}</td>
-                                        <td>${tx.staff_name || '<span class="text-muted">원장님</span>'}</td>
+                                        <td>${tx.staff_name || '<span class="text-muted">사장님</span>'}</td>
                                         <td><span class="badge bg-secondary bg-opacity-10 text-secondary">${tx.card_brand || '-'}</span></td>
                                         <td class="text-muted" style="font-size:.8rem;">${formatDate(tx.created_at)}</td>
                                     </tr>`).join('')}
@@ -1446,7 +1446,7 @@ async function showNewMerchantForm() {
     const body = document.getElementById('formModalBody');
     document.getElementById('formModalTitle').textContent = '새 가맹점 등록';
 
-    // 가맹점 소유자는 원장 계정이어야 하고, 한 계정이 두 가맹점을 가질 수 없다.
+    // 가맹점 소유자는 사장님 계정이어야 하고, 한 계정이 두 가맹점을 가질 수 없다.
     // 대상 계정을 직접 골라 등록 실패를 미리 막는다.
     let owners = [];
     try {
@@ -1458,14 +1458,14 @@ async function showNewMerchantForm() {
              ${owners.map(u => `<option value="${u.id}">${escapeHtml(u.name)} (${escapeHtml(u.email)})</option>`).join('')}
            </select>`
         : `<div class="alert alert-warning py-2 mb-0 small">
-             <i class="fas fa-triangle-exclamation me-1"></i>가맹점을 배정할 수 있는 원장 계정이 없습니다.
-             원장이 먼저 회원가입해야 합니다.
+             <i class="fas fa-triangle-exclamation me-1"></i>가맹점을 배정할 수 있는 사장님 계정이 없습니다.
+             사장님이 먼저 회원가입해야 합니다.
            </div>`;
 
     body.innerHTML = `
     <div class="row g-3">
         <div class="col-md-6"><label class="form-label">가맹점 이름</label><input class="form-control" id="fMerchName"></div>
-        <div class="col-md-6"><label class="form-label">소유자(원장) 계정</label>${ownerField}</div>
+        <div class="col-md-6"><label class="form-label">소유자(사장님) 계정</label>${ownerField}</div>
         <div class="col-md-6"><label class="form-label">사업자번호</label><input class="form-control" id="fMerchBiz"></div>
         <div class="col-md-6"><label class="form-label">연락처</label><input class="form-control" id="fMerchPhone"></div>
         <div class="col-12"><label class="form-label">주소</label><input class="form-control" id="fMerchAddr"></div>
@@ -1760,7 +1760,7 @@ async function loadAdminFeeSettings(c, t) {
     <!-- 수수료 체계 안내 -->
     <div class="alert alert-info mb-3">
         <i class="fas fa-info-circle me-2"></i><strong>새 수수료 구조:</strong>
-        미용실 부과 수수료 − PG 비용 = 플랫폼 수익 / 플랫폼 수익 − 영업 커미션 = 회사 순수익
+        가맹점 부과 수수료 − PG 비용 = 플랫폼 수익 / 플랫폼 수익 − 영업 커미션 = 회사 순수익
     </div>
 
     <!-- 부가세 안내 -->
@@ -1768,7 +1768,7 @@ async function loadAdminFeeSettings(c, t) {
         <i class="fas fa-percent me-2"></i><strong>부가세(VAT 10%) 별도:</strong>
         ${VAT_NOTICE}
         <div class="small mt-1">
-            예) 미용실 수수료 ${fmtRateWithVat(settings.merchant_fee_rate)}
+            예) 가맹점 수수료 ${fmtRateWithVat(settings.merchant_fee_rate)}
             &nbsp;/&nbsp; PG 수수료 ${fmtRateWithVat(settings.pg_fee_rate)}
         </div>
         <div class="small text-muted mt-1">
@@ -1782,7 +1782,7 @@ async function loadAdminFeeSettings(c, t) {
         <div class="card-body">
             <div class="row g-3">
                 <div class="col-md-4">
-                    <label class="form-label fw-bold">미용실 부과 수수료율 <span class="text-danger">*</span>
+                    <label class="form-label fw-bold">가맹점 부과 수수료율 <span class="text-danger">*</span>
                         <span class="badge bg-warning text-dark ms-1">부가세 별도</span>
                     </label>
                     <div class="input-group">
@@ -1791,7 +1791,7 @@ async function loadAdminFeeSettings(c, t) {
                             oninput="updateFeePreview()">
                         <span class="input-group-text">%</span>
                     </div>
-                    <small class="text-muted d-block">미용실이 내는 총 수수료</small>
+                    <small class="text-muted d-block">가맹점이 내는 총 수수료</small>
                     <small class="text-primary fw-bold" id="gs_merchant_fee_vat">${fmtRateWithVat(settings.merchant_fee_rate)}</small>
                 </div>
                 <div class="col-md-4">
@@ -1850,7 +1850,7 @@ async function loadAdminFeeSettings(c, t) {
                     ${_feeSimRow(sim)}
                 </div>
                 <small class="text-muted d-block mt-2">
-                    미용실 수수료 ${fmtRateWithVat(settings.merchant_fee_rate)}
+                    가맹점 수수료 ${fmtRateWithVat(settings.merchant_fee_rate)}
                     &nbsp;·&nbsp; PG 비용 ${fmtRateWithVat(settings.pg_fee_rate)}
                 </small>
             </div>
@@ -1877,7 +1877,7 @@ async function loadAdminFeeSettings(c, t) {
                     <thead class="table-light">
                         <tr>
                             <th>가맹점</th>
-                            <th>미용실 수수료율 <small class="text-muted fw-normal">(부가세 별도)</small></th>
+                            <th>가맹점 수수료율 <small class="text-muted fw-normal">(부가세 별도)</small></th>
                             <th>PG 비용율 <small class="text-muted fw-normal">(부가세 별도)</small></th>
                             <th>실제 적용율</th>
                             <th>오버라이드 여부</th>
@@ -1969,12 +1969,12 @@ async function loadAdminFeeSettings(c, t) {
 function _feeSimRow(sim) {
     const items = [
         { label: '결제액', val: sim.sample_amount, cls: 'text-dark' },
-        { label: '미용실 수수료 (VAT 포함)', val: `-${sim.merchant_fee}`, cls: 'text-danger' },
+        { label: '가맹점 수수료 (VAT 포함)', val: `-${sim.merchant_fee}`, cls: 'text-danger' },
         { label: 'PG 비용 (VAT 포함)', val: `-${sim.pg_cost}`, cls: 'text-warning' },
         { label: '플랫폼 수익', val: sim.platform_income, cls: 'text-primary' },
         { label: '영업 커미션', val: `-${sim.sales_commission}`, cls: 'text-secondary' },
         { label: '회사 순수익', val: sim.company_profit, cls: 'text-success fw-bold' },
-        { label: '미용실 수령', val: sim.net_payout, cls: 'text-info fw-bold' },
+        { label: '가맹점 수령', val: sim.net_payout, cls: 'text-info fw-bold' },
     ];
     return items.map(i => `
         <div class="col">
@@ -2021,7 +2021,7 @@ async function saveGlobalFeeSettings() {
             merchant_fee_rate: mfr, pg_fee_rate: pgr, sales_commission_rate: scr,
         });
         alert('전역 수수료 설정이 저장되었습니다.\n\n'
-            + `미용실 수수료: ${fmtRateWithVat(mfr)}\n`
+            + `가맹점 수수료: ${fmtRateWithVat(mfr)}\n`
             + `PG 수수료: ${fmtRateWithVat(pgr)}\n`
             + `영업 커미션: ${(scr*100).toFixed(2)}% (부가세 미적용)`);
         navigate('admin-fee-settings');
@@ -2039,7 +2039,7 @@ function updateMerchantFeeVatHint(mid, effective) {
     const pgr = pgrVal ? parseFloat(pgrVal) / 100 : effective?.pg_fee_rate;
     if (mfr == null && pgr == null) { hint.textContent = '-'; return; }
     const parts = [];
-    if (mfr != null) parts.push(`미용실 ${(applyVat(mfr)*100).toFixed(2)}%`);
+    if (mfr != null) parts.push(`가맹점 ${(applyVat(mfr)*100).toFixed(2)}%`);
     if (pgr != null) parts.push(`PG ${(applyVat(pgr)*100).toFixed(2)}%`);
     hint.textContent = parts.join(' / ');
     hint.title = VAT_NOTICE;
@@ -2079,7 +2079,7 @@ async function saveMerchantFeeOverride(mid) {
     try {
         const res = await apiPut(`/api/admin/merchants/${mid}/fee-override`, body);
         const applied = [
-            res.merchant_fee_rate != null ? `미용실 ${fmtRateWithVat(res.merchant_fee_rate)}` : null,
+            res.merchant_fee_rate != null ? `가맹점 ${fmtRateWithVat(res.merchant_fee_rate)}` : null,
             res.pg_fee_rate != null ? `PG ${fmtRateWithVat(res.pg_fee_rate)}` : null,
         ].filter(Boolean).join('\n');
         alert(`가맹점 수수료 오버라이드가 저장되었습니다.\n\n${applied}`);
@@ -2220,7 +2220,7 @@ async function loadAdminFeePolicies(c, t) {
                     <li><strong>PG 수수료:</strong> 결제 금액 × 설정 수수료율 × 1.1 <strong>(부가세 포함 금액)</strong></li>
                     <li><strong>구성:</strong> PG 수수료 = <strong>영업 몫</strong> + <strong>ADPAY 플랫폼 몫</strong>
                         <small class="text-muted">(영업 몫 = 결제액 × 영업관리자 커미션율, 부가세 미적용)</small></li>
-                    <li><strong>분배가능액:</strong> 결제액 − PG 수수료 → 원장 ↔ 디자이너 분배율(share_rate)로 분배</li>
+                    <li><strong>분배가능액:</strong> 결제액 − PG 수수료 → 사장님 ↔ 직원 분배율(share_rate)로 분배</li>
                     <li><strong>정산 예시:</strong> 10,000원 결제, PG 5.00% (부가세 별도) / 영업 1%
                         → 실제 적용 5.50% → PG수수료 <strong>550원</strong>(영업 100원 + ADPAY 450원)
                         → 분배가능액 <strong>9,450원</strong></li>
@@ -2479,7 +2479,7 @@ async function loadAdminAdOrders(c, t) {
             <div class="d-flex align-items-center gap-2">
                 <i class="fas fa-sliders-h text-white"></i>
                 <h6 class="mb-0 text-white fw-bold">광고 기능 스위치</h6>
-                <span class="ms-auto badge ad-feature-header-note" style="background:rgba(255,255,255,.15);color:#fff;font-size:.68rem"><i class="fas fa-info-circle me-1"></i>원장 계정에 표시될 광고 메뉴를 제어합니다</span>
+                <span class="ms-auto badge ad-feature-header-note" style="background:rgba(255,255,255,.15);color:#fff;font-size:.68rem"><i class="fas fa-info-circle me-1"></i>사장님 계정에 표시될 광고 메뉴를 제어합니다</span>
             </div>
         </div>
         <div class="card-body py-3 px-4">
@@ -2491,7 +2491,7 @@ async function loadAdminAdOrders(c, t) {
                     </div>
                     <div>
                         <div class="fw-bold" style="font-size:1rem">광고 주문 관리</div>
-                        <div class="ad-feature-description" style="font-size:.74rem;color:#888"><span class="ad-feature-desktop-copy">ON: 원장 계정에 "광고 주문 내역" / "새 광고 주문" 메뉴 표시<br>OFF: 해당 메뉴 숨김 (광고 분석은 항상 표시)</span><span class="ad-feature-mobile-copy">원장님의 광고 주문 메뉴 전체를 켜거나 끕니다.</span></div>
+                        <div class="ad-feature-description" style="font-size:.74rem;color:#888"><span class="ad-feature-desktop-copy">ON: 사장님 계정에 "광고 주문 내역" / "새 광고 주문" 메뉴 표시<br>OFF: 해당 메뉴 숨김 (광고 분석은 항상 표시)</span><span class="ad-feature-mobile-copy">사장님의 광고 주문 메뉴 전체를 켜거나 끕니다.</span></div>
                     </div>
                 </div>
                 <div class="form-check form-switch mb-0" style="padding-left:0">
@@ -2563,7 +2563,7 @@ async function loadAdminAdOrders(c, t) {
             <i class="fas fa-won-sign text-primary"></i>
             <div>
                 <h5 class="mb-0">광고 상품 단가 설정</h5>
-                <small class="text-muted">원장님의 새 광고 주문 화면과 예상 집행 예산에 즉시 반영됩니다.</small>
+                <small class="text-muted">사장님의 새 광고 주문 화면과 예상 집행 예산에 즉시 반영됩니다.</small>
             </div>
         </div>
         <div class="card-body">
@@ -2922,7 +2922,7 @@ async function loadAdminMetrics(c, t) {
         <div>
             <span class="workspace-eyebrow">AD ANALYTICS</span>
             <h2>매장별 광고 분석 데이터 관리</h2>
-            <p>원장이 등록한 우리 매장·경쟁업체를 같은 검색 키워드로 확인한 뒤 최신 지표를 기록합니다.</p>
+            <p>사장님이 등록한 우리 매장·경쟁업체를 같은 검색 키워드로 확인한 뒤 최신 지표를 기록합니다.</p>
         </div>
         <div class="workspace-hero-icon"><i class="fas fa-chart-line"></i></div>
     </div>
@@ -2939,7 +2939,7 @@ async function loadAdminMetrics(c, t) {
     </div></div>
     <div class="card data-card mb-3"><div class="card-header"><h5>확인 지표 입력</h5></div><div class="card-body">
         <div class="row g-3">
-            <div class="col-md-4"><label class="form-label">공통 검색 키워드</label><input class="form-control" id="metricKeyword" placeholder="예: 강남 미용실"></div>
+            <div class="col-md-4"><label class="form-label">공통 검색 키워드</label><input class="form-control" id="metricKeyword" placeholder="예: 지역명 + 업종명"></div>
             <div class="col-md-4"><label class="form-label">확인 날짜</label><input type="date" class="form-control" id="metricDate"></div>
             <div class="col-md-4"><label class="form-label">플레이스 순위</label><input type="number" min="1" class="form-control" id="metricRank" placeholder="검색 결과 순위"></div>
             <div class="col-md-4"><label class="form-label">블로그 리뷰 누적 수</label><input type="number" min="0" class="form-control" id="metricBlog" value="0"></div>
@@ -2964,10 +2964,10 @@ async function loadAdminMetricTargets() {
         adminMetricTargets = data.targets || [];
         targetSelect.innerHTML = adminMetricTargets.length
             ? adminMetricTargets.map((target, index) => `<option value="${index}">${target.type === 'my' ? '우리 매장' : '경쟁업체'} · ${escapeHtml(target.name)}</option>`).join('')
-            : '<option value="">원장이 등록한 분석 대상이 없습니다</option>';
+            : '<option value="">사장님이 등록한 분석 대상이 없습니다</option>';
         document.getElementById('metricTargetStatus').innerHTML = adminMetricTargets.length
             ? `<div class="analysis-progress"><strong>${data.ready_count}/${adminMetricTargets.length}</strong><span>개 대상에 분석 데이터가 있습니다</span></div>`
-            : '<div class="alert alert-warning mb-0">원장 계정에서 우리 매장 프로필과 경쟁업체를 먼저 등록해야 합니다.</div>';
+            : '<div class="alert alert-warning mb-0">사장님 계정에서 우리 매장 프로필과 경쟁업체를 먼저 등록해야 합니다.</div>';
         selectAdminMetricTarget();
     } catch (e) {
         adminMetricTargets = [];
@@ -3171,7 +3171,7 @@ async function loadAdminUsers(c, t) {
     t.textContent = '사용자 목록';
     const users = await apiGet('/api/admin/users');
 
-    const roleLabelMap = {admin:'최고관리자', sales:'영업관리자', owner:'사장님(원장님)', designer:'직원(디자이너)'};
+    const roleLabelMap = {admin:'최고관리자', sales:'영업관리자', owner:'사장님', designer:'직원'};
     const roleBadgeMap = {admin:'danger', sales:'info', owner:'primary', designer:'warning'};
 
     // 역할별 통계
@@ -3197,8 +3197,8 @@ async function loadAdminUsers(c, t) {
                     <select class="form-select form-select-sm" style="width:110px" id="roleSelect${u.id}">
                         <option value="admin" ${u.role==='admin'?'selected':''}>최고관리자</option>
                         <option value="sales" ${u.role==='sales'?'selected':''}>영업관리자</option>
-                        <option value="owner" ${u.role==='owner'?'selected':''}>사장님(원장님)</option>
-                        <option value="designer" ${u.role==='designer'?'selected':''}>직원(디자이너)</option>
+                        <option value="owner" ${u.role==='owner'?'selected':''}>사장님</option>
+                        <option value="designer" ${u.role==='designer'?'selected':''}>직원</option>
                     </select>
                     <button class="btn btn-sm btn-primary" onclick="changeUserRole(${u.id})" title="역할 변경"><i class="fas fa-save"></i></button>
                     <button class="btn btn-sm btn-outline-${u.is_active?'warning':'success'}" onclick="toggleUserActive(${u.id})" title="${u.is_active?'활동정지':'활성화'}">
@@ -3221,10 +3221,10 @@ async function loadAdminUsers(c, t) {
             <div class="fs-3 fw-bold text-info">${roleCounts.sales}</div><small class="text-muted">영업관리자</small>
         </div></div></div>
         <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body text-center py-3">
-            <div class="fs-3 fw-bold text-primary">${roleCounts.owner}</div><small class="text-muted">사장님(원장님)</small>
+            <div class="fs-3 fw-bold text-primary">${roleCounts.owner}</div><small class="text-muted">사장님</small>
         </div></div></div>
         <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body text-center py-3">
-            <div class="fs-3 fw-bold text-warning">${roleCounts.designer}</div><small class="text-muted">직원(디자이너)</small>
+            <div class="fs-3 fw-bold text-warning">${roleCounts.designer}</div><small class="text-muted">직원</small>
         </div></div></div>
     </div>
     <div class="card data-card">
@@ -3245,7 +3245,7 @@ async function loadAdminUsers(c, t) {
 
 async function changeUserRole(uid) {
     const newRole = document.getElementById(`roleSelect${uid}`).value;
-    if (!confirm(`이 사용자의 역할을 "${({admin:'최고관리자',sales:'영업관리자',owner:'사장님(원장님)',designer:'직원(디자이너)'})[newRole]}"(으)로 변경하시겠습니까?`)) return;
+    if (!confirm(`이 사용자의 역할을 "${({admin:'최고관리자',sales:'영업관리자',owner:'사장님',designer:'직원'})[newRole]}"(으)로 변경하시겠습니까?`)) return;
     try {
         await apiPut(`/api/admin/users/${uid}/role?role=${newRole}`, {});
         navigate('admin-users');
@@ -3458,7 +3458,7 @@ async function loadSalesMerchants(c, t) {
                 <div class="d-flex gap-2 mb-2">
                     <select class="form-select form-select-sm" id="salesRange${m.id}"><option value="all">전체</option><option value="month">이번달</option><option value="week">이번주</option><option value="day">오늘</option></select>
                     <button class="btn btn-sm btn-primary" onclick="loadSalesStats(${m.id})"><i class="fas fa-search"></i></button>
-                    <button class="btn btn-sm btn-outline-secondary" onclick="loadSalesBreakdown(${m.id})" title="원장/디자이너 분배"><i class="fas fa-sitemap"></i></button>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="loadSalesBreakdown(${m.id})" title="사장님/직원 분배"><i class="fas fa-sitemap"></i></button>
                 </div>
                 <div id="salesStats${m.id}"></div>
             </div></div></div>
@@ -3619,7 +3619,7 @@ async function reloadOwnerTx() {
         <tbody>${txns.map(tx => `<tr>
             <td>${tx.id}</td><td class="fw-bold">${formatMoney(tx.amount)}</td>
             <td>${tx.installment_months||'일시불'}</td><td>${tx.card_brand||'-'}</td>
-            <td>${tx.staff_name||'<span class="text-muted">원장님</span>'}</td><td><code>${tx.approval_code||'-'}</code></td>
+            <td>${tx.staff_name||'<span class="text-muted">사장님</span>'}</td><td><code>${tx.approval_code||'-'}</code></td>
             <td>${formatDate(tx.created_at)}</td>
         </tr>`).join('')}</tbody>
     </table></div>`;
@@ -3629,16 +3629,16 @@ async function loadOwnerStaff(c, t) {
     t.textContent = '직원 관리';
     const staff = await apiGet('/api/owner/staff');
     c.innerHTML = `<div class="card data-card"><div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-        <h5 class="mb-0">직원 · 디자이너 목록</h5>
+        <h5 class="mb-0">직원 계정 목록</h5>
         <div class="d-flex gap-2 staff-mgmt-header-btns">
-            <button class="btn btn-primary btn-sm" onclick="showNewDesignerForm()"><i class="fas fa-user-plus me-1"></i>디자이너 계정 등록</button>
+            <button class="btn btn-primary btn-sm" onclick="showNewDesignerForm()"><i class="fas fa-user-plus me-1"></i>직원 계정 등록</button>
             <button class="btn btn-outline-secondary btn-sm" onclick="showNewStaffForm()"><i class="fas fa-plus me-1"></i>직원 추가(계정 없음)</button>
         </div>
     </div><div class="card-body">
         <div class="alert alert-light border small mb-3"><i class="fas fa-info-circle text-primary me-1"></i>
-            <strong>디자이너 계정 등록</strong>은 로그인 계정을 만들어 우리 미용실 소속으로 귀속시킵니다(디자이너는 직접 회원가입 불가). <strong>분배율</strong>은 결제액에서 PG·영업수수료를 뺀 <strong>분배가능액 중 디자이너 몫</strong> 비율이며, 나머지는 원장(사장님) 몫입니다.</div>
+            <strong>직원 계정 등록</strong>은 로그인 계정을 만들어 우리 매장 소속으로 귀속시킵니다(직원은 직접 회원가입 불가). <strong>분배율</strong>은 결제액에서 PG·영업수수료를 뺀 <strong>분배가능액 중 직원 몫</strong> 비율이며, 나머지는 사장님 몫입니다.</div>
         <div class="table-responsive"><table class="table table-hover align-middle staff-mgmt-table">
-            <thead><tr><th>ID</th><th>이름</th><th>코드</th><th>디자이너 분배율</th><th>상태</th><th>액션</th></tr></thead>
+            <thead><tr><th>ID</th><th>이름</th><th>코드</th><th>직원 분배율</th><th>상태</th><th>액션</th></tr></thead>
             <tbody>${staff.map(s => `<tr>
                 <td data-label="ID">${s.id}</td><td class="fw-bold" data-label="이름">${s.name}</td><td data-label="코드"><code>${s.staff_code}</code></td>
                 <td data-label="분배율" style="max-width:200px">
@@ -3647,13 +3647,13 @@ async function loadOwnerStaff(c, t) {
                         <span class="input-group-text">%</span>
                         <button class="btn btn-outline-success" onclick="saveStaffShareRate(${s.id})" title="분배율 저장"><i class="fas fa-save"></i></button>
                     </div>
-                    <small class="text-muted">원장 몫 <span id="ownerShare_${s.id}">${100-Math.round((s.share_rate??0.5)*100)}</span>%</small>
+                    <small class="text-muted">사장님 몫 <span id="ownerShare_${s.id}">${100-Math.round((s.share_rate??0.5)*100)}</span>%</small>
                 </td>
                 <td data-label="상태">${s.is_active?'<span class="badge bg-success">활성</span>':'<span class="badge bg-danger">비활성</span>'}</td>
                 <td data-label="액션"><button class="btn btn-sm btn-outline-${s.is_active?'danger':'success'}" onclick="toggleStaff(${s.id},${!s.is_active})">${s.is_active?'비활성화':'활성화'}</button></td>
             </tr>`).join('')}</tbody>
         </table></div></div></div>`;
-    // 입력 시 원장 몫 즉시 반영
+    // 입력 시 사장님 몫 즉시 반영
     staff.forEach(s => {
         const inp = document.getElementById(`share_${s.id}`);
         if (inp) inp.addEventListener('input', () => {
@@ -3669,7 +3669,7 @@ async function saveStaffShareRate(sid) {
     const pct = Math.max(0, Math.min(100, parseInt(inp.value) || 0));
     try {
         await apiPut(`/api/owner/staff/${sid}`, { share_rate: pct / 100 });
-        alert(`분배율 저장 완료!\n디자이너 ${pct}% / 원장 ${100-pct}%`);
+        alert(`분배율 저장 완료!\n직원 ${pct}% / 사장님 ${100-pct}%`);
     } catch (e) { alert('저장 실패: ' + e.message); }
 }
 
@@ -3680,7 +3680,7 @@ async function showNewStaffForm() {
     body.innerHTML = `<div class="row g-3">
         <div class="col-md-6"><label class="form-label">이름</label><input class="form-control" id="fStaffName"></div>
         <div class="col-md-6"><label class="form-label">직원 코드</label><input class="form-control" id="fStaffCode" placeholder="단말기 입력용 번호"></div>
-        <div class="col-md-6"><label class="form-label">디자이너 분배율 (%)</label><input class="form-control" id="fStaffShare" type="number" value="50" min="0" max="100" step="1"><small class="text-muted">분배가능액 중 디자이너 몫</small></div>
+        <div class="col-md-6"><label class="form-label">직원 분배율 (%)</label><input class="form-control" id="fStaffShare" type="number" value="50" min="0" max="100" step="1"><small class="text-muted">분배가능액 중 직원 몫</small></div>
         <div class="col-md-6"><label class="form-label">User ID (선택)</label><input class="form-control" id="fStaffUser" type="number" placeholder="시스템 계정 연결 시"></div>
     </div>`;
     document.getElementById('formModalSave').onclick = async () => {
@@ -3697,15 +3697,15 @@ async function toggleStaff(sid, active) { await apiPut(`/api/owner/staff/${sid}`
 async function showNewDesignerForm() {
     resetFormModalFooter(true);
     const body = document.getElementById('formModalBody');
-    document.getElementById('formModalTitle').textContent = '디자이너 계정 등록';
+    document.getElementById('formModalTitle').textContent = '직원 계정 등록';
     body.innerHTML = `<div class="row g-3">
-        <div class="col-12"><div class="alert alert-info py-2 mb-1 small"><i class="fas fa-id-card-clip me-1"></i>디자이너 로그인 계정을 생성하고 <strong>우리 미용실 소속</strong>으로 등록합니다.</div></div>
+        <div class="col-12"><div class="alert alert-info py-2 mb-1 small"><i class="fas fa-id-card-clip me-1"></i>직원 로그인 계정을 생성하고 <strong>우리 매장 소속</strong>으로 등록합니다.</div></div>
         <div class="col-md-6"><label class="form-label">이름 <span class="text-danger">*</span></label><input class="form-control" id="fDsgName"></div>
         <div class="col-md-6"><label class="form-label">직원 코드 <span class="text-danger">*</span></label><input class="form-control" id="fDsgCode" placeholder="단말기 입력용 번호"></div>
         <div class="col-md-6"><label class="form-label">이메일(로그인 ID) <span class="text-danger">*</span></label><input class="form-control" id="fDsgEmail" type="email" placeholder="designer@example.com"></div>
         <div class="col-md-6"><label class="form-label">비밀번호 <span class="text-danger">*</span></label><input class="form-control" id="fDsgPw" type="text" placeholder="6자 이상"></div>
         <div class="col-md-6"><label class="form-label">연락처</label><input class="form-control" id="fDsgPhone" placeholder="010-0000-0000"></div>
-        <div class="col-md-6"><label class="form-label">디자이너 분배율 (%)</label><input class="form-control" id="fDsgShare" type="number" value="50" min="0" max="100" step="1"></div>
+        <div class="col-md-6"><label class="form-label">직원 분배율 (%)</label><input class="form-control" id="fDsgShare" type="number" value="50" min="0" max="100" step="1"></div>
         <div class="col-12"><div id="fDsgResult"></div></div>
     </div>`;
     document.getElementById('formModalSave').onclick = async () => {
@@ -3721,14 +3721,14 @@ async function showNewDesignerForm() {
         try {
             const res = await apiPost('/api/owner/designers', { name, staff_code: code, email, password: pw, phone: phone || null, share_rate: pct / 100 });
             bootstrap.Modal.getInstance(document.getElementById('formModal')).hide();
-            alert(res.message || '디자이너 계정이 등록되었습니다.');
+            alert(res.message || '직원 계정이 등록되었습니다.');
             navigate('owner-staff');
         } catch (e) { result.innerHTML = `<div class="alert alert-danger py-2 mb-0">${escapeHtml(e.message)}</div>`; }
     };
     new bootstrap.Modal(document.getElementById('formModal')).show();
 }
 
-// ─── 정산 분배 (디자이너/원장) ─────────────────────────────
+// ─── 정산 분배 (직원/사장님) ─────────────────────────────
 function rangeSelectHtml(id, current) {
     const opts = [['month','이번달'],['week','이번주'],['day','오늘'],['all','전체']];
     return `<select class="form-select form-select-sm" id="${id}" style="max-width:140px">${opts.map(([v,l])=>`<option value="${v}" ${v===current?'selected':''}>${l}</option>`).join('')}</select>`;
@@ -3742,7 +3742,7 @@ function feeRateVatNote(data) {
     const mfr = data.merchant_fee_rate, pgr = data.pg_fee_rate;
     if (mfr == null && pgr == null) return '';
     const parts = [];
-    if (mfr != null) parts.push(`미용실 수수료 ${fmtRateExclVat(mfr)} → 실제 ${(((data.merchant_fee_rate_with_vat ?? applyVat(mfr)))*100).toFixed(2)}%`);
+    if (mfr != null) parts.push(`가맹점 수수료 ${fmtRateExclVat(mfr)} → 실제 ${(((data.merchant_fee_rate_with_vat ?? applyVat(mfr)))*100).toFixed(2)}%`);
     if (pgr != null) parts.push(`PG 수수료 ${fmtRateExclVat(pgr)} → 실제 ${(((data.pg_fee_rate_with_vat ?? applyVat(pgr)))*100).toFixed(2)}%`);
     return `<div class="alert alert-light border small py-2 mb-3">
         <i class="fas fa-percent text-warning me-1"></i>${parts.join(' &nbsp;·&nbsp; ')}
@@ -3785,16 +3785,16 @@ function renderSettlementBreakdown(data) {
     </div>
     ${feeRateNote}
     <div class="row g-2 mb-3">
-        <div class="col-6"><div class="bg-primary bg-opacity-10 rounded-3 p-3 text-center"><div class="fs-5 fw-bold text-primary">${formatMoney(data.designer_total)}</div><small class="text-muted">디자이너 분배 합계</small></div></div>
-        <div class="col-6"><div class="bg-success bg-opacity-10 rounded-3 p-3 text-center"><div class="fs-5 fw-bold text-success">${formatMoney(data.owner_amount)}</div><small class="text-muted">원장(사장님) 몫</small></div></div>
+        <div class="col-6"><div class="bg-primary bg-opacity-10 rounded-3 p-3 text-center"><div class="fs-5 fw-bold text-primary">${formatMoney(data.designer_total)}</div><small class="text-muted">직원 분배 합계</small></div></div>
+        <div class="col-6"><div class="bg-success bg-opacity-10 rounded-3 p-3 text-center"><div class="fs-5 fw-bold text-success">${formatMoney(data.owner_amount)}</div><small class="text-muted">사장님 몫</small></div></div>
     </div>
     <div class="table-responsive"><table class="table table-sm table-hover align-middle">
         <thead class="table-light"><tr>
-            <th>디자이너</th><th>코드</th><th class="text-end">매출</th>
+            <th>직원</th><th>코드</th><th class="text-end">매출</th>
             <th class="text-end">PG<br><small class="text-muted fw-normal">(부가세 포함)</small></th>
             ${showComm?'<th class="text-end">영업</th>':''}
             <th class="text-end">분배가능</th><th class="text-center">분배율</th>
-            <th class="text-end">디자이너 몫</th><th class="text-end">원장 몫</th>
+            <th class="text-end">직원 몫</th><th class="text-end">사장님 몫</th>
         </tr></thead>
         <tbody>${designerRows || `<tr><td colspan="9" class="text-center text-muted py-3">데이터 없음</td></tr>`}${unassigned}</tbody>
     </table></div>
@@ -3804,7 +3804,7 @@ function renderSettlementBreakdown(data) {
 async function loadOwnerSettlement(c, t) {
     t.textContent = '정산 분배';
     c.innerHTML = `<div class="card data-card"><div class="card-header d-flex justify-content-between align-items-center">
-        <h5 class="mb-0">디자이너 정산 분배</h5>${rangeSelectHtml('ownerSettleRange','month')}
+        <h5 class="mb-0">직원 정산 분배</h5>${rangeSelectHtml('ownerSettleRange','month')}
     </div><div class="card-body" id="ownerSettleBody">${adpayLoadingMarkup()}</div></div>`;
     const render = async () => {
         const range = document.getElementById('ownerSettleRange').value;
@@ -3819,7 +3819,7 @@ async function loadOwnerSettlement(c, t) {
     render();
 }
 
-// ─── 정산 내역 / 출금요청 (원장) ────────────────────────────
+// ─── 정산 내역 / 출금요청 (사장님) ────────────────────────────
 
 async function loadOwnerSettlements(c, t) {
     t.textContent = '정산 내역';
@@ -3929,7 +3929,7 @@ async function loadDesignerSettlement(c, t) {
             ${feeRateVatNote(d)}
             <div class="row g-2">
                 <div class="col-6"><div class="bg-primary bg-opacity-10 rounded-3 p-3 text-center"><div class="fs-4 fw-bold text-primary">${formatMoney(d.designer_amount)}</div><small class="text-muted">내 몫 (분배율 ${Math.round((d.share_rate||0)*100)}%)</small></div></div>
-                <div class="col-6"><div class="bg-light rounded-3 p-3 text-center"><div class="fs-4 fw-bold text-success">${formatMoney(d.owner_amount)}</div><small class="text-muted">원장 몫</small></div></div>
+                <div class="col-6"><div class="bg-light rounded-3 p-3 text-center"><div class="fs-4 fw-bold text-success">${formatMoney(d.owner_amount)}</div><small class="text-muted">사장님 몫</small></div></div>
             </div>
             ${!showComm?'<small class="text-muted mt-2 d-block"><i class="fas fa-eye-slash me-1"></i>영업수수료 항목은 관리자 설정에 의해 표시되지 않습니다.</small>':''}`;
         } catch (e) { body.innerHTML = `<div class="alert alert-danger">${escapeHtml(e.message)}</div>`; }
@@ -3954,8 +3954,8 @@ async function loadAdminCommissionVisibility(c, t) {
             각 역할이 자기 <strong>하위 단계의 영업수수료</strong>를 볼 수 있는지 설정합니다. OFF 로 두면 해당 역할에게 영업수수료 금액이 표시되지 않습니다. (최고관리자는 항상 표시)</div>
         ${row('admin','최고관리자','전체 영업수수료 항상 조회', true, true)}
         ${row('sales','딜러(영업관리자)','담당 가맹점의 커미션·하위 분배 표시', v.sales, false)}
-        ${row('owner','사장님(원장)','정산 분배에서 영업수수료 항목 표시', v.owner, false)}
-        ${row('designer','디자이너','내 정산에서 영업수수료 항목 표시', v.designer, false)}
+        ${row('owner','사장님','정산 분배에서 영업수수료 항목 표시', v.owner, false)}
+        ${row('designer','직원','내 정산에서 영업수수료 항목 표시', v.designer, false)}
     </div></div>`;
 }
 
@@ -4102,7 +4102,7 @@ async function showDailyDetail(dateStr) {
                     <tbody>${data.transactions.map(tx => `<tr>
                         <td class="fw-bold">${formatMoney(tx.amount)}</td>
                         <td>${tx.card_brand||'-'}</td>
-                        <td>${tx.staff_name||'<span class="text-muted">원장님</span>'}</td>
+                        <td>${tx.staff_name||'<span class="text-muted">사장님</span>'}</td>
                         <td><code>${tx.approval_code||'-'}</code></td>
                         <td class="text-muted" style="font-size:.8rem;">${tx.created_at ? tx.created_at.split(' ')[1]?.substring(0,5) || formatDate(tx.created_at) : '-'}</td>
                     </tr>`).join('')}</tbody>
@@ -4201,7 +4201,7 @@ async function loadOwnerAnalysis(c, t) {
 // ─── 오늘 현황 / 경쟁업체 비교 ───────────────────────────────
 
 // ── 1) 오늘 우리 매장 현황 + 2) 경쟁업체 비교 ──
-// 원장님이 보시는 화면이라 숫자보다 "어떻게 달라졌는지"를 먼저 보여준다.
+// 사장님이 보시는 화면이라 숫자보다 "어떻게 달라졌는지"를 먼저 보여준다.
 
 // 지표 정의 (higherIsBetter=false 인 순위는 숫자가 작을수록 좋음)
 const COMPARE_METRICS = [
@@ -4210,7 +4210,7 @@ const COMPARE_METRICS = [
     { key: 'visitor', label: '방문자 리뷰', icon: 'fa-users', color: 'success', higherIsBetter: true, unit: '개' },
 ];
 
-// 변화량을 원장님 눈높이의 문장으로 바꾼다. (change 는 양수면 '좋아짐')
+// 변화량을 사장님 눈높이의 문장으로 바꾼다. (change 는 양수면 '좋아짐')
 function changeSentence(metricKey, change, label) {
     const base = label || '어제';
     if (change === null || change === undefined) return `${base} 자료가 없어 비교할 수 없어요`;
@@ -4833,7 +4833,7 @@ function renderAnalysisSettingsModal() {
                     </div>
                     <div class="row g-2 mb-3">
                         <div class="col-5"><label class="form-label" for="newProfileNick">매장 별칭</label><input class="form-control" id="newProfileNick" placeholder="예: 홍대점"></div>
-                        <div class="col-7"><label class="form-label" for="newProfileKeyword">주요 검색어</label><input class="form-control" id="newProfileKeyword" placeholder="예: 홍대 미용실"></div>
+                        <div class="col-7"><label class="form-label" for="newProfileKeyword">주요 검색어</label><input class="form-control" id="newProfileKeyword" placeholder="예: 지역명 + 업종명"></div>
                     </div>
                     <div id="profileList" class="analysis-settings-list"></div>
                 </section>
@@ -5382,7 +5382,7 @@ async function loadOwnerAdOrders(c, t) {
     loadOwnerAdExecutions();   // 집행 현황은 실패해도 주문 목록에 영향 없다
 }
 
-// 원장용 광고 집행 현황 — 카드 버튼 클릭 시 모바일은 바텀시트, PC는 팝업으로 표시
+// 사장님용 광고 집행 현황 — 카드 버튼 클릭 시 모바일은 바텀시트, PC는 팝업으로 표시
 let _ownerExecSummaryCache = null;
 
 async function loadOwnerAdExecutions() {
@@ -5915,7 +5915,7 @@ async function renderShortsOrderForm() {
                 <div class="col-12"><label class="form-label">타겟 소비자층</label><textarea class="form-control" id="shortsTargetAudience" rows="2" placeholder="예: 20~30대 직장인 여성"></textarea></div>
                 <div class="col-12"><label class="form-label">반드시 포함할 내용 (핵심 메시지)</label><textarea class="form-control" id="shortsKeyMessages" rows="2"></textarea></div>
                 <div class="col-12"><label class="form-label">포함하면 안 되는 내용 (금지 사항)</label><textarea class="form-control" id="shortsAvoid" rows="2"></textarea></div>
-                <div class="col-12"><label class="form-label">추천 해시태그 (쉼표 구분)</label><input class="form-control" id="shortsHashtags" placeholder="예: 여름신상, 헤어스타일"></div>
+                <div class="col-12"><label class="form-label">추천 해시태그 (쉼표 구분)</label><input class="form-control" id="shortsHashtags" placeholder="예: 여름신상, 신메뉴"></div>
             </div>
         </div>
     </div>
@@ -6350,8 +6350,8 @@ function crmComingSoon(feature) {
 }
 
 // ═══════════════════════════════════════════════════════════
-// 미용실 관리 프로그램 (CRM) — 고도화 버전
-// 원장(owner): 매장 전체 / 디자이너(designer): 본인 고객·실적 위주
+// 고객관리 프로그램 (CRM) — 고도화 버전
+// 사장님(owner): 매장 전체 / 직원(designer): 본인 고객·실적 위주
 // 백엔드: /api/crm/*
 // ═══════════════════════════════════════════════════════════
 
@@ -6405,7 +6405,7 @@ function crmStaffOptions(selectedId){
 }
 function crmServiceSelect(id){
     return `<select class="form-select" id="${id}" onchange="crmFillServiceAmount(this)">
-        <option value="">시술 선택</option>
+        <option value="">서비스 선택</option>
         ${crmServiceCache.map(s=>`<option value="${escapeHtml(s.name)}" data-price="${s.price}" data-dur="${s.duration_min}">${s.category?('['+escapeHtml(s.category)+'] '):''}${escapeHtml(s.name)} (${formatMoney(s.price)})</option>`).join('')}
     </select>`;
 }
@@ -6434,7 +6434,7 @@ function crmResvStatusBadge(s, kr){
 
 // ─── Loader & Tabs ─────────────────────────────────────────
 async function loadCRM(c, t){
-    t.textContent='미용실 관리 프로그램';
+    t.textContent='고객관리 프로그램';
     try { crmMe = await apiGet('/api/crm/me'); } catch(e){ crmMe={is_designer:false,staff_id:null,role:'owner'}; }
     if(crmMe.is_designer && crmScope==='auto') crmScope='mine';
     try { crmStaffCache = await apiGet('/api/crm/staff?'+crmScopeQS()); } catch(e){ crmStaffCache=[]; }
@@ -6443,7 +6443,7 @@ async function loadCRM(c, t){
         {id:'dashboard',icon:'fa-chart-bar',label:'홈'},
         {id:'customers',icon:'fa-users',label:'고객'},
         {id:'staff',icon:'fa-user-tie',label:'직원'},
-        {id:'services',icon:'fa-cut',label:'시술'},
+        {id:'services',icon:'fa-list-check',label:'서비스'},
         {id:'messages',icon:'fa-comment-dots',label:'메시지'},
     ];
     if(!tabs.find(x=>x.id===crmTab)) crmTab='dashboard';
@@ -6455,8 +6455,8 @@ async function loadCRM(c, t){
     c.innerHTML=`
         <div class="page-header mb-3 d-flex align-items-start flex-wrap gap-2">
             <div>
-                <h2 class="fw-bold mb-1"><i class="fas fa-user-friends me-2" style="color:#667eea"></i>미용실 관리 프로그램</h2>
-                <p class="text-muted mb-0">${crmMe.merchant_name||''} · 고객, 직원, 시술 메뉴와 메시지를 간결하게 관리합니다${crmMe.is_designer?' <span class="badge bg-info ms-1">디자이너</span>':''}</p>
+                <h2 class="fw-bold mb-1"><i class="fas fa-user-friends me-2" style="color:#667eea"></i>고객관리 프로그램</h2>
+                <p class="text-muted mb-0">${crmMe.merchant_name||''} · 고객, 직원, 서비스 메뉴와 메시지를 간결하게 관리합니다${crmMe.is_designer?' <span class="badge bg-info ms-1">직원</span>':''}</p>
             </div>
             ${scopeToggle}
         </div>
@@ -6506,13 +6506,13 @@ async function crmRenderDashboard(body){
         const recentCustomers = customers.slice(0, 5);
         body.innerHTML=`
             <div class="crm-welcome mb-3">
-                <div><span>ADPAY CRM</span><h3>${escapeHtml(crmMe.merchant_name || '미용실')} 고객관리</h3><p>필요한 고객관리 기능만 빠르게 사용할 수 있습니다.</p></div>
+                <div><span>ADPAY CRM</span><h3>${escapeHtml(crmMe.merchant_name || '우리 매장')} 고객관리</h3><p>필요한 고객관리 기능만 빠르게 사용할 수 있습니다.</p></div>
                 <div class="crm-welcome-mark"><i class="fas fa-wand-magic-sparkles"></i></div>
             </div>
             <div class="crm-overview-grid mb-3">
                 ${card('fa-user-group','#2563eb','관리 고객',customers.length+'명','고객 목록과 상세 메모','customers')}
                 ${card('fa-users-gear','#7c3aed','활성 직원',staff.length+'명','담당 고객 연결','staff')}
-                ${card('fa-scissors','#0f9f80','활성 시술',services.filter(x=>x.is_active).length+'개','가격과 소요시간','services')}
+                ${card('fa-list-check','#0f9f80','활성 서비스',services.filter(x=>x.is_active).length+'개','가격과 소요시간','services')}
                 ${card('fa-comment-dots','#e87924','최근 메시지',messages.length+'건','템플릿과 발송 내역','messages')}
             </div>
             <div class="card data-card">
@@ -6533,7 +6533,7 @@ async function crmRenderStaff(body){
         body.innerHTML = `
         <div class="card data-card">
             <div class="card-header d-flex justify-content-between align-items-center">
-                <div><h5 class="mb-1">직원관리</h5><small class="text-muted">고객 담당자를 확인하고 원장 계정에서 직원 정보를 관리합니다.</small></div>
+                <div><h5 class="mb-1">직원관리</h5><small class="text-muted">고객 담당자를 확인하고 사장님 계정에서 직원 정보를 관리합니다.</small></div>
                 ${crmMe.role === 'owner' ? '<button class="btn btn-primary btn-sm" onclick="navigate(\'owner-staff\')"><i class="fas fa-user-plus me-1"></i>직원 등록·수정</button>' : ''}
             </div>
             <div class="card-body">
@@ -6625,11 +6625,11 @@ function crmCustomerForm(existing){
         <div class="col-md-4"><label class="form-label">성별</label><select class="form-select" id="cfGender"><option value="" ${!c.gender?'selected':''}>선택</option><option value="female" ${c.gender==='female'?'selected':''}>여성</option><option value="male" ${c.gender==='male'?'selected':''}>남성</option></select></div>
         <div class="col-md-4"><label class="form-label">생일</label><input class="form-control" id="cfBirth" type="date" value="${c.birthday||''}"></div>
         <div class="col-md-4"><label class="form-label">기념일</label><input class="form-control" id="cfAnniv" type="date" value="${c.anniversary||''}"></div>
-        <div class="col-md-6"><label class="form-label">담당 디자이너</label><select class="form-select" id="cfStaff">${crmStaffOptions(c.assigned_staff_id)}</select></div>
-        <div class="col-md-6"><label class="form-label">선호 디자이너</label><select class="form-select" id="cfPrefStaff">${crmStaffOptions(c.preferred_staff_id)}</select></div>
-        <div class="col-md-6"><label class="form-label">선호 시술</label><input class="form-control" id="cfPrefSvc" list="cfSvcList" value="${escapeHtml(c.preferred_service)||''}"><datalist id="cfSvcList">${crmServiceCache.map(s=>`<option value="${escapeHtml(s.name)}">`).join('')}</datalist></div>
+        <div class="col-md-6"><label class="form-label">담당 직원</label><select class="form-select" id="cfStaff">${crmStaffOptions(c.assigned_staff_id)}</select></div>
+        <div class="col-md-6"><label class="form-label">선호 직원</label><select class="form-select" id="cfPrefStaff">${crmStaffOptions(c.preferred_staff_id)}</select></div>
+        <div class="col-md-6"><label class="form-label">선호 서비스</label><input class="form-control" id="cfPrefSvc" list="cfSvcList" value="${escapeHtml(c.preferred_service)||''}"><datalist id="cfSvcList">${crmServiceCache.map(s=>`<option value="${escapeHtml(s.name)}">`).join('')}</datalist></div>
         <div class="col-md-6"><label class="form-label">사진 URL</label><input class="form-control" id="cfPhoto" value="${escapeHtml(c.photo_url)||''}" placeholder="https://..."></div>
-        <div class="col-12"><label class="form-label">태그 <small class="text-muted">(콤마: 단골,염색)</small></label><input class="form-control" id="cfTags" value="${escapeHtml((c.tags||[]).join(','))}"></div>
+        <div class="col-12"><label class="form-label">태그 <small class="text-muted">(콤마: 단골,VIP)</small></label><input class="form-control" id="cfTags" value="${escapeHtml((c.tags||[]).join(','))}"></div>
         <div class="col-md-6"><label class="form-label text-danger">알레르기/주의사항</label><textarea class="form-control" id="cfAllergy" rows="2">${escapeHtml(c.allergy_memo)||''}</textarea></div>
         <div class="col-md-6"><label class="form-label">모발 상태/이력</label><textarea class="form-control" id="cfHair" rows="2">${escapeHtml(c.hair_memo)||''}</textarea></div>
         <div class="col-12"><label class="form-label">일반 메모</label><textarea class="form-control" id="cfMemo" rows="2">${escapeHtml(c.memo)||''}</textarea></div>
@@ -6708,7 +6708,7 @@ async function crmCustomerDetail(id){
             </ul>
             <div class="tab-content">
                 <div class="tab-pane fade show active" id="cdTimeline" style="max-height:280px;overflow:auto">${timelineHtml}</div>
-                <div class="tab-pane fade" id="cdVisits"><table class="table table-sm align-middle"><thead class="table-light"><tr><th>날짜</th><th>시술</th><th>담당</th><th class="text-end">금액</th><th></th></tr></thead><tbody>${(c.visits||[]).map(v=>`<tr><td>${crmDateOnly(v.visit_date)}</td><td>${escapeHtml(v.service_name)||'-'}</td><td>${escapeHtml(v.staff_name)||'-'}</td><td class="text-end">${formatMoney(v.amount)}</td><td><button class="btn btn-sm btn-outline-danger border-0" onclick="crmDeleteVisit(${v.id},${id})"><i class="fas fa-trash"></i></button></td></tr>`).join('')||`<tr><td colspan="5" class="text-center text-muted py-3">방문 이력 없음</td></tr>`}</tbody></table></div>
+                <div class="tab-pane fade" id="cdVisits"><table class="table table-sm align-middle"><thead class="table-light"><tr><th>날짜</th><th>서비스</th><th>담당</th><th class="text-end">금액</th><th></th></tr></thead><tbody>${(c.visits||[]).map(v=>`<tr><td>${crmDateOnly(v.visit_date)}</td><td>${escapeHtml(v.service_name)||'-'}</td><td>${escapeHtml(v.staff_name)||'-'}</td><td class="text-end">${formatMoney(v.amount)}</td><td><button class="btn btn-sm btn-outline-danger border-0" onclick="crmDeleteVisit(${v.id},${id})"><i class="fas fa-trash"></i></button></td></tr>`).join('')||`<tr><td colspan="5" class="text-center text-muted py-3">방문 이력 없음</td></tr>`}</tbody></table></div>
                 <div class="tab-pane fade" id="cdMessages">
                     <div class="fw-bold small mb-1">메시지</div>
                     <table class="table table-sm align-middle"><tbody>${(c.messages||[]).map(m=>`<tr><td>${m.channel}</td><td>${escapeHtml(m.content)}</td><td class="text-muted text-nowrap">${crmDateOnly(m.sent_at)}</td></tr>`).join('')||`<tr><td class="text-center text-muted py-2">발송 내역 없음</td></tr>`}</tbody></table>
@@ -6740,15 +6740,15 @@ function crmVisitForm(customerId){
     const custSelect = customerId? '' : `<div class="col-12"><label class="form-label">고객 <span class="text-danger">*</span></label><select class="form-select" id="crmVisitCustomer"><option value="">고객 선택</option></select></div>`;
     const body=`<div class="row g-3">
         ${custSelect}
-        <div class="col-md-6"><label class="form-label">시술 선택</label>${crmServiceSelect('crmVisitSvcSel')}</div>
-        <div class="col-md-6"><label class="form-label">시술명</label><input class="form-control" id="crmVisitService"></div>
+        <div class="col-md-6"><label class="form-label">서비스 선택</label>${crmServiceSelect('crmVisitSvcSel')}</div>
+        <div class="col-md-6"><label class="form-label">서비스명</label><input class="form-control" id="crmVisitService"></div>
         <div class="col-md-6"><label class="form-label">금액</label><input class="form-control" id="crmVisitAmount" type="number" value="0"></div>
         <div class="col-md-6"><label class="form-label">담당</label><select class="form-select" id="crmVisitStaff">${crmStaffOptions(crmMe.staff_id)}</select></div>
         <div class="col-md-6"><label class="form-label">방문일시</label><input class="form-control" id="crmVisitDate" type="datetime-local" value="${crmNowLocal()}"></div>
         <div class="col-md-6"><label class="form-label">메모</label><input class="form-control" id="crmVisitMemo"></div>
         <div class="col-12"><div id="crmVisitResult"></div></div>
     </div>`;
-    crmModal('방문/시술 기록', body, `<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">닫기</button><button type="button" class="btn btn-primary" onclick="crmVisitSave(${customerId||'null'})"><i class="fas fa-save me-1"></i>기록</button>`);
+    crmModal('방문/이용 기록', body, `<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">닫기</button><button type="button" class="btn btn-primary" onclick="crmVisitSave(${customerId||'null'})"><i class="fas fa-save me-1"></i>기록</button>`);
     if(!customerId) crmLoadCustomerSelect('crmVisitCustomer');
 }
 async function crmLoadCustomerSelect(selId){
@@ -6806,7 +6806,7 @@ function crmReservationListTable(data){
         <td class="fw-bold" ${r.customer_id?`style="cursor:pointer" onclick="crmCustomerDetail(${r.customer_id})"`:''}>${escapeHtml(r.customer_name)}</td>
         <td>${escapeHtml(r.service_name)||'-'}</td><td>${escapeHtml(r.staff_name)||'-'}</td><td>${crmResvStatusBadge(r.status,r.status_kr)}</td>
         <td class="text-end">${crmResvActions(r)}</td></tr>`).join('')||`<tr><td colspan="6" class="text-center text-muted py-4">예약이 없습니다.</td></tr>`;
-    return `<div class="card data-card"><div class="card-body p-0"><div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead class="table-light"><tr><th>예약일시</th><th>고객</th><th>시술</th><th>담당</th><th>상태</th><th class="text-end">관리</th></tr></thead><tbody>${rows}</tbody></table></div></div></div>`;
+    return `<div class="card data-card"><div class="card-body p-0"><div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead class="table-light"><tr><th>예약일시</th><th>고객</th><th>서비스</th><th>담당</th><th>상태</th><th class="text-end">관리</th></tr></thead><tbody>${rows}</tbody></table></div></div></div>`;
 }
 function crmResvActions(r){
     let h='';
@@ -6865,7 +6865,7 @@ async function crmReservationDetail(id){
             <div class="col-6"><span class="text-muted">연락처</span><div>${escapeHtml(r.phone)||'-'}</div></div>
             <div class="col-6"><span class="text-muted">예약일시</span><div class="fw-bold">${formatDate(r.reserved_at)}</div></div>
             <div class="col-6"><span class="text-muted">소요</span><div>${r.duration_min||60}분</div></div>
-            <div class="col-6"><span class="text-muted">시술</span><div>${escapeHtml(r.service_name)||'-'}</div></div>
+            <div class="col-6"><span class="text-muted">서비스</span><div>${escapeHtml(r.service_name)||'-'}</div></div>
             <div class="col-6"><span class="text-muted">담당</span><div>${escapeHtml(r.staff_name)||'-'}</div></div>
             <div class="col-12"><span class="text-muted">상태</span> ${crmResvStatusBadge(r.status,r.status_kr)}</div>
             ${r.memo?`<div class="col-12"><span class="text-muted">메모</span><div>${escapeHtml(r.memo)}</div></div>`:''}
@@ -6889,7 +6889,7 @@ function crmReservationForm(){
         <div class="col-md-6"><label class="form-label">고객명 <span class="text-danger">*</span></label><input class="form-control" id="rfName"></div>
         <div class="col-md-6"><label class="form-label">연락처</label><input class="form-control" id="rfPhone"></div>
         <div class="col-md-6"><label class="form-label">예약일시 <span class="text-danger">*</span></label><input class="form-control" id="rfDate" type="datetime-local" value="${crmCalDate?crmCalDate+'T10:00':crmNowLocal()}"></div>
-        <div class="col-md-6"><label class="form-label">시술</label>${crmServiceSelect('rfSvcSel')}<input class="form-control mt-1" id="rfService" placeholder="시술명"></div>
+        <div class="col-md-6"><label class="form-label">서비스</label>${crmServiceSelect('rfSvcSel')}<input class="form-control mt-1" id="rfService" placeholder="서비스명"></div>
         <div class="col-md-3"><label class="form-label">소요(분)</label><input class="form-control" id="rfDur" type="number" value="60"></div>
         <div class="col-md-3"><label class="form-label">담당</label><select class="form-select" id="rfStaff">${crmStaffOptions(crmMe.staff_id)}</select></div>
         <div class="col-12"><label class="form-label">메모</label><input class="form-control" id="rfMemo"></div>
@@ -6998,8 +6998,8 @@ async function crmRenderAnalytics(body){
                     <div class="col-lg-4"><div class="card data-card"><div class="card-header"><h6 class="mb-0">신규 vs 재방문</h6></div><div class="card-body"><canvas id="anNew" height="110"></canvas></div></div></div>
                     <div class="col-lg-6"><div class="card data-card crm-analytics-chart-card"><div class="card-header crm-analytics-chart-head"><div><h6 class="mb-1">요일별 매출</h6><small>어떤 요일에 매출이 높은지 비교해요.</small></div><span>세로 기준 · 매출액</span></div><div class="card-body"><div class="crm-analytics-chart"><canvas id="anWeekday" aria-label="요일별 매출액 그래프"></canvas></div><p class="crm-analytics-chart-help"><i class="fas fa-circle-info"></i>막대가 높을수록 해당 요일의 매출이 많다는 뜻입니다.</p></div></div></div>
                     <div class="col-lg-6"><div class="card data-card crm-analytics-chart-card"><div class="card-header crm-analytics-chart-head"><div><h6 class="mb-1">시간대별 방문</h6><small>고객 방문이 몰리는 시간을 확인해요.</small></div><span>세로 기준 · 방문 건수</span></div><div class="card-body"><div class="crm-analytics-chart"><canvas id="anHour" aria-label="시간대별 방문 건수 그래프"></canvas></div><p class="crm-analytics-chart-help"><i class="fas fa-circle-info"></i>막대가 높을수록 해당 시간에 방문 고객이 많다는 뜻입니다.</p></div></div></div>
-                    <div class="col-lg-6"><div class="card data-card"><div class="card-header"><h6 class="mb-0">시술별 매출</h6></div><div class="card-body p-0"><table class="table table-sm mb-0 align-middle"><thead class="table-light"><tr><th>시술</th><th class="text-end">건수</th><th class="text-end">매출</th></tr></thead><tbody>${svcRows}</tbody></table></div></div></div>
-                    <div class="col-lg-6"><div class="card data-card"><div class="card-header"><h6 class="mb-0">디자이너별 매출</h6></div><div class="card-body p-0"><table class="table table-sm mb-0 align-middle"><thead class="table-light"><tr><th>디자이너</th><th class="text-end">건수</th><th class="text-end">매출</th></tr></thead><tbody>${staffRows}</tbody></table></div></div></div>
+                    <div class="col-lg-6"><div class="card data-card"><div class="card-header"><h6 class="mb-0">서비스별 매출</h6></div><div class="card-body p-0"><table class="table table-sm mb-0 align-middle"><thead class="table-light"><tr><th>서비스</th><th class="text-end">건수</th><th class="text-end">매출</th></tr></thead><tbody>${svcRows}</tbody></table></div></div></div>
+                    <div class="col-lg-6"><div class="card data-card"><div class="card-header"><h6 class="mb-0">직원별 매출</h6></div><div class="card-body p-0"><table class="table table-sm mb-0 align-middle"><thead class="table-light"><tr><th>직원</th><th class="text-end">건수</th><th class="text-end">매출</th></tr></thead><tbody>${staffRows}</tbody></table></div></div></div>
                 </div>`;
             if(window.Chart){
                 const dc=document.getElementById('anDaily'); if(dc) crmChartRefs.push(new Chart(dc,{type:'line',data:{labels:(a.daily||[]).map(d=>d.date.slice(5)),datasets:[{data:(a.daily||[]).map(d=>d.revenue),borderColor:'#0f6cbd',backgroundColor:'rgba(14,165,233,.12)',pointBackgroundColor:'#fff',pointBorderColor:'#0f6cbd',pointBorderWidth:2,pointRadius:3,pointHoverRadius:6,borderWidth:3,fill:true,tension:.3}]},options:crmAnalyticsChartOptions({xTitle:'결제 날짜',yTitle:'매출액 (원)'})}));
@@ -7179,7 +7179,7 @@ async function crmTemplateSave(id){
 }
 async function crmTemplateDelete(id){ if(!confirm('템플릿을 삭제할까요?')) return; try{ await apiDelete(`/api/crm/message-templates/${id}`); crmNotify('삭제되었습니다.','ok'); crmMsgRender('templates'); }catch(e){ crmNotify(e.message,'err'); } }
 
-// ─── Services (시술 메뉴 + 디자이너 단가) ──────────────────
+// ─── Services (서비스 메뉴 + 직원 단가) ──────────────────
 async function crmRenderServices(body){
     try{
         const data=await apiGet('/api/crm/services');
@@ -7196,14 +7196,14 @@ async function crmRenderServices(body){
                 </div>
                 <div class="crm-service-price">${formatMoney(s.price)}</div>
                 ${canManage ? `<div class="crm-service-actions">
-                    <button class="btn btn-sm btn-outline-info" title="디자이너별 단가" onclick="crmOpenServicePrice(${s.id})"><i class="fas fa-user-tag"></i></button>
+                    <button class="btn btn-sm btn-outline-info" title="직원별 단가" onclick="crmOpenServicePrice(${s.id})"><i class="fas fa-user-tag"></i></button>
                     <button class="btn btn-sm btn-outline-primary" title="수정" onclick="crmEditService(${s.id})"><i class="fas fa-pen"></i></button>
                     <button class="btn btn-sm btn-outline-danger" title="삭제" onclick="crmServiceDelete(${s.id})"><i class="fas fa-trash"></i></button>
                 </div>` : ''}
             </div>`).join('');
             sections+=`<section class="crm-service-section"><h6 class="crm-svc-cat-hdr" onclick="this.closest('.crm-service-section').classList.toggle('crm-svc-collapsed')"><i class="fas fa-folder me-1"></i>${escapeHtml(cat)}<span class="crm-svc-badge ms-2">${cats[cat].length}</span><i class="fas fa-chevron-down crm-svc-arrow"></i></h6><div class="crm-service-grid">${cards}</div></section>`;
         });
-        body.innerHTML=`<div class="card data-card"><div class="card-header d-flex justify-content-between align-items-center"><div><h6 class="mb-1">시술관리</h6><small class="text-muted">${canManage?'시술 메뉴의 가격과 소요시간을 관리합니다.':'매장에서 제공하는 시술 메뉴를 확인합니다.'}</small></div>${canManage?'<button class="btn btn-sm btn-primary" onclick="crmServiceForm()"><i class="fas fa-plus me-1"></i>시술 추가</button>':''}</div><div class="card-body">${sections||'<div class="empty-state compact"><i class="fas fa-scissors"></i><p>등록된 시술이 없습니다.</p></div>'}</div></div>`;
+        body.innerHTML=`<div class="card data-card"><div class="card-header d-flex justify-content-between align-items-center"><div><h6 class="mb-1">서비스관리</h6><small class="text-muted">${canManage?'서비스 메뉴의 가격과 소요시간을 관리합니다.':'매장에서 제공하는 서비스 메뉴를 확인합니다.'}</small></div>${canManage?'<button class="btn btn-sm btn-primary" onclick="crmServiceForm()"><i class="fas fa-plus me-1"></i>서비스 추가</button>':''}</div><div class="card-body">${sections||'<div class="empty-state compact"><i class="fas fa-list-check"></i><p>등록된 서비스가 없습니다.</p></div>'}</div></div>`;
     }catch(e){ body.innerHTML=`<div class="alert alert-danger">${escapeHtml(e.message)}</div>`; }
 }
 function crmEditService(id){ const service=crmServiceCache.find(item=>item.id===id); if(service) crmServiceForm(service); }
@@ -7211,28 +7211,28 @@ function crmOpenServicePrice(id){ const service=crmServiceCache.find(item=>item.
 function crmServiceForm(existing){
     const s=existing||{}; const isEdit=!!(existing&&existing.id);
     const body=`<div class="row g-3">
-        <div class="col-md-6"><label class="form-label">시술명 <span class="text-danger">*</span></label><input class="form-control" id="sfName" value="${s.name||''}"></div>
-        <div class="col-md-6"><label class="form-label">카테고리</label><input class="form-control" id="sfCat" list="sfCatList" value="${s.category||''}" placeholder="컷/펌/염색/클리닉/스타일링"><datalist id="sfCatList"><option value="커트"><option value="펌"><option value="염색"><option value="클리닉"><option value="스타일링"></datalist></div>
+        <div class="col-md-6"><label class="form-label">서비스명 <span class="text-danger">*</span></label><input class="form-control" id="sfName" value="${s.name||''}"></div>
+        <div class="col-md-6"><label class="form-label">카테고리</label><input class="form-control" id="sfCat" list="sfCatList" value="${s.category||''}" placeholder="예) 기본/프리미엄/관리/추가"><datalist id="sfCatList"><option value="기본"><option value="프리미엄"><option value="관리"><option value="추가"><option value="기타"></datalist></div>
         <div class="col-md-6"><label class="form-label">가격</label><input class="form-control" id="sfPrice" type="number" value="${s.price!=null?s.price:0}"></div>
         <div class="col-md-6"><label class="form-label">소요(분)</label><input class="form-control" id="sfDur" type="number" value="${s.duration_min!=null?s.duration_min:60}"></div>
         ${isEdit?`<div class="col-12"><div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="sfActive" ${s.is_active!==false?'checked':''}><label class="form-check-label">활성</label></div></div>`:''}
         <div class="col-12"><div id="sfResult"></div></div>
     </div>`;
-    crmModal(isEdit?'시술 수정':'시술 추가', body, `<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">닫기</button><button type="button" class="btn btn-primary" onclick="crmServiceSave(${isEdit?s.id:'null'})">${isEdit?'수정':'추가'}</button>`);
+    crmModal(isEdit?'서비스 수정':'서비스 추가', body, `<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">닫기</button><button type="button" class="btn btn-primary" onclick="crmServiceSave(${isEdit?s.id:'null'})">${isEdit?'수정':'추가'}</button>`);
 }
 async function crmServiceSave(id){
     const res=document.getElementById('sfResult'); const name=document.getElementById('sfName').value.trim();
-    if(!name){ res.innerHTML=`<div class="alert alert-warning py-2 mb-0">시술명은 필수입니다.</div>`; return; }
+    if(!name){ res.innerHTML=`<div class="alert alert-warning py-2 mb-0">서비스명은 필수입니다.</div>`; return; }
     const payload={ name, category:document.getElementById('sfCat').value.trim()||null, price:parseFloat(document.getElementById('sfPrice').value)||0, duration_min:parseInt(document.getElementById('sfDur').value)||60 };
     const act=document.getElementById('sfActive'); if(act) payload.is_active=act.checked;
     try{ if(id) await apiPut(`/api/crm/services/${id}`,payload); else await apiPost('/api/crm/services',payload); crmServiceCache=await apiGet('/api/crm/services'); crmCloseModal(); crmNotify('저장되었습니다.','ok'); crmSwitchTab('services'); }catch(e){ res.innerHTML=`<div class="alert alert-danger py-2 mb-0">${escapeHtml(e.message)}</div>`; }
 }
-async function crmServiceDelete(id){ if(!confirm('이 시술을 삭제할까요?')) return; try{ await apiDelete(`/api/crm/services/${id}`); crmServiceCache=await apiGet('/api/crm/services'); crmNotify('삭제되었습니다.','ok'); crmSwitchTab('services'); }catch(e){ crmNotify(e.message,'err'); } }
+async function crmServiceDelete(id){ if(!confirm('이 서비스를 삭제할까요?')) return; try{ await apiDelete(`/api/crm/services/${id}`); crmServiceCache=await apiGet('/api/crm/services'); crmNotify('삭제되었습니다.','ok'); crmSwitchTab('services'); }catch(e){ crmNotify(e.message,'err'); } }
 async function crmServicePriceForm(sid,name){
     const prices=await apiGet(`/api/crm/services/${sid}/prices`);
     const priceMap={}; prices.forEach(p=>priceMap[p.staff_id]=p.price);
     const rows=crmStaffCache.map(st=>`<tr><td>${st.name}</td><td><div class="input-group input-group-sm"><input class="form-control" id="spp_${st.id}" type="number" value="${priceMap[st.id]!=null?priceMap[st.id]:''}" placeholder="기본가 사용"><button class="btn btn-outline-primary" onclick="crmServicePriceSave(${sid},${st.id})">저장</button></div></td></tr>`).join('');
-    crmModal(`${name} — 디자이너별 단가`, `<table class="table align-middle"><thead class="table-light"><tr><th>디자이너</th><th>단가(원)</th></tr></thead><tbody>${rows||'<tr><td colspan=2 class="text-muted text-center">디자이너 없음</td></tr>'}</tbody></table><div class="small text-muted">비워두면 시술 기본가가 적용됩니다.</div>`, `<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">닫기</button>`);
+    crmModal(`${name} — 직원별 단가`, `<table class="table align-middle"><thead class="table-light"><tr><th>직원</th><th>단가(원)</th></tr></thead><tbody>${rows||'<tr><td colspan=2 class="text-muted text-center">직원 없음</td></tr>'}</tbody></table><div class="small text-muted">비워두면 서비스 기본가가 적용됩니다.</div>`, `<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">닫기</button>`);
 }
 async function crmServicePriceSave(sid,staffId){
     const v=document.getElementById(`spp_${staffId}`).value;
@@ -7308,7 +7308,7 @@ async function loadOwnerInfo(c, t) {
                     <div class="alert alert-info mt-3 mb-0">
                         <i class="fas fa-info-circle me-2"></i>
                         <strong>분야 설정 안내:</strong> 식당, 카페 등을 선택하면 <strong>직원관리</strong>와 <strong>직원별 매출</strong> 메뉴가 숨겨집니다.
-                        미용실, 네일샵 등 직원별 매출 확인이 필요한 업종은 해당 메뉴가 표시됩니다.
+                        직원별 매출 확인이 필요한 업종은 해당 메뉴가 표시됩니다.
                     </div>
                 </div>
             </div>
@@ -7920,7 +7920,7 @@ async function loadDesignerProfile(c, t) {
         <ul class="list-unstyled" style="max-width:400px;margin:0 auto;">
             <li class="mb-3 d-flex justify-content-between border-bottom pb-2"><span class="text-muted">이름</span><span class="fw-bold">${stats.staff_name}</span></li>
             <li class="mb-3 d-flex justify-content-between border-bottom pb-2"><span class="text-muted">직원 코드</span><code class="fs-5">${stats.staff_code}</code></li>
-            <li class="mb-3 d-flex justify-content-between border-bottom pb-2"><span class="text-muted">역할</span><span class="badge bg-warning">직원(디자이너)</span></li>
+            <li class="mb-3 d-flex justify-content-between border-bottom pb-2"><span class="text-muted">역할</span><span class="badge bg-warning">직원</span></li>
             <li class="mb-3 d-flex justify-content-between border-bottom pb-2"><span class="text-muted">이번달 매출</span><span class="fw-bold text-primary">${formatMoney(stats.month_sales)}</span></li>
             <li class="d-flex justify-content-between"><span class="text-muted">총 결제건수</span><span class="fw-bold">${stats.total_transactions}건</span></li>
         </ul>
@@ -8680,7 +8680,7 @@ function adminKeywordMarkup(d, merchants) {
                 </div>
                 <div class="col-md-3">
                     <label class="form-label small fw-bold">키워드</label>
-                    <input class="form-control" id="akKeyword" maxlength="60" placeholder="예) 강남 미용실">
+                    <input class="form-control" id="akKeyword" maxlength="60" placeholder="예) 지역명 + 업종명">
                 </div>
                 <div class="col-md-3">
                     <label class="form-label small fw-bold">광고 종류</label>
@@ -8793,7 +8793,7 @@ function ownerKeywordMarkup(d) {
             <div class="row g-2 align-items-end mb-3">
                 <div class="col-md-5">
                     <label class="form-label small fw-bold">키워드</label>
-                    <input class="form-control" id="okKeyword" maxlength="60" placeholder="예) 강남 미용실">
+                    <input class="form-control" id="okKeyword" maxlength="60" placeholder="예) 지역명 + 업종명">
                 </div>
                 <div class="col-md-4">
                     <label class="form-label small fw-bold">광고 종류</label>

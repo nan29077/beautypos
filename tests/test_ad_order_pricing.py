@@ -103,7 +103,7 @@ def test_place_order_saves_quantity_and_server_calculated_budget(client):
     response = client.post(
         "/api/owner/ad/place-traffic-orders",
         json={
-            "place_name_or_id": "뷰티헤어살롱 강남점",
+            "place_name_or_id": "애드페이 강남점",
             "search_keywords": ["강남 미용실"],
             "order_count": 100,
             "unit_price": 1,
