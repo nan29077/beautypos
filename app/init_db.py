@@ -259,6 +259,12 @@ def init_db():
             seed_general_owner(db)
         except Exception as e:
             print(f"   ⚠️ General owner seed skipped: {e}")
+        # 데모 가맹점은 이 시점에 만들어지므로 플랜 배정을 한 번 더 보강한다.
+        # 위쪽 seed_plans 는 가맹점이 없는 상태에서 돌아 배정할 대상이 없다.
+        try:
+            seed_plans(db)
+        except Exception as e:
+            print(f"   ⚠️ Plan assign skipped: {e}")
         print("✅ Seed data loaded")
     finally:
         db.close()

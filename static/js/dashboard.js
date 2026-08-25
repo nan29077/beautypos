@@ -54,6 +54,7 @@ const mobilePageMeta = {
     'admin-ai-settings': ['AI 설정', 'fas fa-robot'],
     'admin-rewardpop': ['리워드팝 연동', 'fas fa-plug'],
     'admin-ad-keywords': ['광고 키워드 승인', 'fas fa-key'],
+    'admin-ad-dispatch': ['광고 자동 집행', 'fas fa-paper-plane'],
     'sales-merchants': ['담당 가맹점', 'fas fa-store'],
     'sales-commission': ['커미션 현황', 'fas fa-coins'],
     'sales-payouts': ['출금요청', 'fas fa-money-bill-wave'],
@@ -566,6 +567,7 @@ function buildSidebar() {
         <a class="nav-link" href="#" data-page="admin-metrics"><i class="fas fa-chart-bar"></i>광고 분석 관리</a>
         <a class="nav-link" href="#" data-page="admin-ad-executions"><i class="fas fa-tasks"></i>광고 실행 현황</a>
         <a class="nav-link" href="#" data-page="admin-ad-keywords"><i class="fas fa-key"></i>광고 키워드 승인</a>
+        <a class="nav-link" href="#" data-page="admin-ad-dispatch"><i class="fas fa-paper-plane"></i>광고 자동 집행</a>
         <div class="nav-section"><i class="fas fa-layer-group me-1" style="font-size:.6rem"></i>플랜</div>
         <a class="nav-link" href="#" data-page="admin-plans"><i class="fas fa-layer-group"></i>플랜 관리</a>
         <div class="nav-section"><i class="fas fa-user-tie me-1" style="font-size:.6rem"></i>ADPAY 영업 · 인력</div>
@@ -695,6 +697,7 @@ async function loadPage(page) {
             case 'admin-ai-settings': await loadAdminAiSettings(c, t); break;
             case 'admin-rewardpop': await loadAdminRewardpop(c, t); break;
             case 'admin-ad-keywords': await loadAdminAdKeywords(c, t); break;
+            case 'admin-ad-dispatch': await loadAdminAdDispatch(c, t); break;
             // Sales
             case 'sales-merchants': await loadSalesMerchants(c, t); break;
             case 'sales-commission': await loadSalesCommission(c, t); break;
@@ -8052,6 +8055,181 @@ async function deleteAiApiKey() {
         showAiResult(false, e.message);
         btn.disabled = false;
     }
+}
+
+// ─── ADMIN: 광고 자동 집행 ─────────────────────────────────
+let dispatchDate = '';
+
+const DISPATCH_STATUS_BADGE = {
+    pending: ['secondary', 'clock'],
+    dry_run: ['info text-dark', 'vial'],
+    sent: ['primary', 'paper-plane'],
+    running: ['primary', 'spinner'],
+    done: ['success', 'circle-check'],
+    failed: ['danger', 'circle-exclamation'],
+    skipped: ['warning text-dark', 'pause'],
+};
+
+function dispatchStatusBadge(d) {
+    const [cls, icon] = DISPATCH_STATUS_BADGE[d.status] || ['secondary', 'circle'];
+    return `<span class="badge bg-${cls}"><i class="fas fa-${icon} me-1"></i>${escapeHtml(d.status_label)}</span>`;
+}
+
+function todayIso() {
+    const n = new Date();
+    return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+}
+
+async function loadAdminAdDispatch(c, t) {
+    t.textContent = '광고 자동 집행';
+    c.innerHTML = adpayLoadingMarkup('집행 계획을 계산하는 중입니다');
+    if (!dispatchDate) dispatchDate = todayIso();
+    try {
+        const qs = `?date=${encodeURIComponent(dispatchDate)}`;
+        const [plan, history] = await Promise.all([
+            apiGet('/api/admin/ad-dispatch/preview' + qs),
+            apiGet('/api/admin/ad-dispatch' + qs),
+        ]);
+        c.innerHTML = dispatchMarkup(plan, history);
+    } catch (e) {
+        c.innerHTML = `<div class="alert alert-danger">${escapeHtml(e.message)}</div>`;
+    }
+}
+
+function dispatchMarkup(plan, history) {
+    const labels = plan.skip_reason_labels || {};
+    const planRows = (plan.items || []).map(i => {
+        const willRun = i.action === 'dispatch';
+        return `<tr class="${willRun ? '' : 'text-muted'}">
+            <td>${escapeHtml(i.merchant_name)}</td>
+            <td><span class="badge bg-light text-dark border">${escapeHtml(i.ad_type_label)}</span></td>
+            <td class="text-end">${i.target}</td>
+            <td class="small">${i.keywords && i.keywords.length ? escapeHtml(i.keywords.join(', ')) : '-'}</td>
+            <td class="text-end">${Number(i.unit_price).toLocaleString()}</td>
+            <td class="text-end fw-bold">${willRun ? Number(i.est_cost).toLocaleString() : '-'}</td>
+            <td>${willRun
+                ? '<span class="badge bg-success"><i class="fas fa-play me-1"></i>집행 예정</span>'
+                : `<span class="badge bg-warning text-dark"><i class="fas fa-pause me-1"></i>${escapeHtml(labels[i.skip_reason] || i.skip_reason || '보류')}</span>`}</td>
+        </tr>`;
+    }).join('');
+
+    const histRows = (history.dispatches || []).map(d => `<tr>
+        <td>${escapeHtml(d.merchant_name || '-')}</td>
+        <td><span class="badge bg-light text-dark border">${escapeHtml(d.ad_type_label)}</span></td>
+        <td class="text-end">${d.requested_count}</td>
+        <td class="small">${escapeHtml(d.keyword || '-')}</td>
+        <td>${dispatchStatusBadge(d)}${d.dry_run ? ' <span class="badge bg-light text-dark border">미전송</span>' : ''}
+            ${d.skip_reason ? `<div class="small text-muted mt-1">${escapeHtml(d.skip_reason_label)}</div>` : ''}
+            ${d.error_message ? `<div class="small text-danger mt-1">${escapeHtml(d.error_message)}</div>` : ''}</td>
+        <td class="small text-muted">${escapeHtml(d.external_order_id || '-')}</td>
+        <td class="text-nowrap">
+            ${d.retryable ? `<button class="btn btn-sm btn-outline-primary" onclick="retryDispatch(${d.id})"><i class="fas fa-rotate-right"></i></button>` : ''}
+            ${d.request_json ? `<button class="btn btn-sm btn-outline-secondary ms-1" onclick="showDispatchRequest(${d.id})" title="보낼 요청 내용"><i class="fas fa-code"></i></button>` : ''}
+        </td>
+    </tr>`).join('');
+
+    window._dispatchHistory = history.dispatches || [];
+
+    const modeBanner = plan.dry_run
+        ? `<div class="alert alert-info small mb-3"><i class="fas fa-vial me-1"></i>
+             <b>드라이런 상태입니다.</b> 실행해도 리워드팝에 실제 주문이 나가지 않고,
+             어떤 요청이 나갈지만 기록됩니다. 실집행하려면 리워드팝 연동 설정에서 드라이런을 끄세요.</div>`
+        : `<div class="alert alert-warning small mb-3"><i class="fas fa-triangle-exclamation me-1"></i>
+             <b>실집행 상태입니다.</b> 실행하면 리워드팝에 실제 주문이 접수되고 포인트가 차감됩니다.</div>`;
+
+    const offBanner = plan.integration_enabled ? '' :
+        `<div class="alert alert-secondary small mb-3"><i class="fas fa-plug me-1"></i>
+           리워드팝 연동이 꺼져 있어 모든 집행이 보류됩니다. 연동 설정에서 켜주세요.</div>`;
+
+    return `
+    <div class="card data-card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h5 class="mb-0"><i class="fas fa-paper-plane me-2"></i>오늘 집행 계획</h5>
+            <div class="d-flex gap-2 align-items-center">
+                <input type="date" class="form-control form-control-sm" style="width:auto"
+                    id="dispatchDate" value="${escapeHtml(plan.date)}" onchange="changeDispatchDate(this.value)">
+            </div>
+        </div>
+        <div class="card-body">
+            ${offBanner}${modeBanner}
+            <div class="row g-3 mb-3">
+                ${kpiCard('집행 예정', `${plan.dispatch_count}건`, 'fas fa-play', 'success')}
+                ${kpiCard('총 집행 수량', `${Number(plan.total_count).toLocaleString()}`, 'fas fa-layer-group', 'primary')}
+                ${kpiCard('예상 비용', `${Number(plan.est_total_cost).toLocaleString()}원`, 'fas fa-won-sign', 'warning')}
+            </div>
+            <div class="table-responsive"><table class="table table-hover align-middle">
+                <thead><tr><th>가맹점</th><th>광고</th><th class="text-end">목표</th><th>키워드</th>
+                    <th class="text-end">단가</th><th class="text-end">예상 비용</th><th>처리</th></tr></thead>
+                <tbody>${planRows || '<tr><td colspan="7" class="text-center text-muted py-4">대상이 없습니다</td></tr>'}</tbody>
+            </table></div>
+            <div class="d-flex gap-2 flex-wrap mt-3">
+                <button class="btn btn-outline-primary btn-sm" onclick="navigate('admin-ad-dispatch')">
+                    <i class="fas fa-rotate me-1"></i>다시 계산</button>
+                <button class="btn btn-info btn-sm text-dark" onclick="runDispatch(true)">
+                    <i class="fas fa-vial me-1"></i>드라이런 실행</button>
+                <button class="btn btn-primary btn-sm" onclick="runDispatch(false)" ${plan.integration_enabled ? '' : 'disabled'}>
+                    <i class="fas fa-paper-plane me-1"></i>지금 집행</button>
+            </div>
+            <div id="dispatchResult" class="mt-3"></div>
+        </div>
+    </div>
+
+    <div class="card data-card">
+        <div class="card-header"><h5 class="mb-0"><i class="fas fa-list-check me-2"></i>집행 기록 (${escapeHtml(history.date)})</h5></div>
+        <div class="card-body">
+            <div class="table-responsive"><table class="table table-hover align-middle">
+                <thead><tr><th>가맹점</th><th>광고</th><th class="text-end">수량</th><th>키워드</th>
+                    <th>상태</th><th>외부 주문번호</th><th></th></tr></thead>
+                <tbody>${histRows || '<tr><td colspan="7" class="text-center text-muted py-4">기록이 없습니다</td></tr>'}</tbody>
+            </table></div>
+        </div>
+    </div>`;
+}
+
+function changeDispatchDate(value) {
+    dispatchDate = value || todayIso();
+    navigate('admin-ad-dispatch');
+}
+
+async function runDispatch(dryRun) {
+    const label = dryRun ? '드라이런' : '실제 집행';
+    if (!dryRun && !confirm('리워드팝에 실제 주문이 접수되고 포인트가 차감됩니다.\n계속할까요?')) return;
+    const box = document.getElementById('dispatchResult');
+    box.innerHTML = `<div class="alert alert-secondary py-2 mb-0 small"><i class="fas fa-spinner fa-spin me-1"></i>${label} 실행 중...</div>`;
+    try {
+        const res = await apiPost('/api/admin/ad-dispatch/run', {
+            execution_date: dispatchDate,
+            dry_run: dryRun,
+        });
+        const ok = res.failed_count === 0;
+        box.innerHTML = `<div class="alert alert-${ok ? 'success' : 'warning'} py-2 mb-0 small">
+            <i class="fas fa-circle-check me-1"></i>${escapeHtml(label)} 완료 —
+            전송 ${res.dispatched_count}건 · 실패 ${res.failed_count}건 · 보류 ${res.skipped_count}건</div>`;
+        setTimeout(() => navigate('admin-ad-dispatch'), 1200);
+    } catch (e) {
+        box.innerHTML = `<div class="alert alert-danger py-2 mb-0 small">${escapeHtml(e.message)}</div>`;
+    }
+}
+
+async function retryDispatch(id) {
+    if (!confirm('이 건을 다시 집행합니다. 실제 주문이 나갑니다.\n계속할까요?')) return;
+    try {
+        await apiPost(`/api/admin/ad-dispatch/${id}/retry`, {});
+        navigate('admin-ad-dispatch');
+    } catch (e) { alert(e.message); }
+}
+
+function showDispatchRequest(id) {
+    const row = (window._dispatchHistory || []).find(d => d.id === id);
+    if (!row) return;
+    resetFormModalFooter(false);
+    let pretty = row.request_json;
+    try { pretty = JSON.stringify(JSON.parse(row.request_json), null, 2); } catch (e) { /* 원본 그대로 */ }
+    document.getElementById('formModalBody').innerHTML = `
+        <h6 class="fw-bold mb-2">리워드팝에 보낼 요청 내용</h6>
+        <div class="small text-muted mb-2">필드 이름은 리워드팝 API 명세를 확보하면 맞춥니다.</div>
+        <pre class="bg-light border rounded p-3" style="font-size:.8rem;max-height:50vh;overflow:auto">${escapeHtml(pretty)}</pre>`;
+    new bootstrap.Modal(document.getElementById('formModal')).show();
 }
 
 // ─── 광고 집행 키워드 (관리자 승인 / 매장 등록) ─────────────

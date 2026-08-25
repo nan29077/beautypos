@@ -392,3 +392,12 @@ class AdKeywordUpdate(BaseModel):
 
 class AdKeywordReject(BaseModel):
     reason: Optional[str] = None
+
+
+# ─── 광고 자동 집행 (Admin) ─────────────────────────────────
+
+class AdDispatchRun(BaseModel):
+    """집행 실행 요청. 값을 비우면 오늘 · 전 가맹점 · 저장된 드라이런 설정을 따른다."""
+    execution_date: Optional[date] = None
+    merchant_id: Optional[int] = None
+    dry_run: Optional[bool] = None     # 저장된 설정을 이번 실행에만 덮어쓴다

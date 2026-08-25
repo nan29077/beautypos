@@ -12,12 +12,13 @@ Covers: merchants CRUD, PG config, transactions, payout requests,
 - misc_routes.py — 대시보드 통계, AI 설정 등
 - rewardpop_routes.py — 리워드팝 광고 자동집행 연동 설정
 - keyword_routes.py — 광고 집행 키워드 관리·승인
+- dispatch_routes.py — 광고 자동 집행 실행·조회
 """
 from fastapi import APIRouter
 
 from app.api.admin import (
     merchant_routes, pg_routes, settlement_routes, ad_routes, payout_routes, misc_routes,
-    rewardpop_routes, keyword_routes,
+    rewardpop_routes, keyword_routes, dispatch_routes,
 )
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -29,3 +30,4 @@ router.include_router(payout_routes.router)
 router.include_router(misc_routes.router)
 router.include_router(rewardpop_routes.router)
 router.include_router(keyword_routes.router)
+router.include_router(dispatch_routes.router)
