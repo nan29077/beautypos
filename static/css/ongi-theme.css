@@ -1057,6 +1057,16 @@ body:has(.hero-slider) .device-list i {
         background: linear-gradient(180deg, rgba(27, 20, 58, .12) 0%, rgba(27, 20, 58, .82) 56%, rgba(25, 19, 52, .97) 100%);
     }
 
+    body:has(.hero-slider) .hero-slide-copy,
+    body:has(.hero-slider) .hero-slide-copy.hero-wide {
+        padding-inline: 4px;
+        border-color: transparent;
+        background: transparent;
+        box-shadow: none;
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+    }
+
     body:has(.hero-slider) .device-visual > img {
         height: auto;
         aspect-ratio: 1 / 1;
