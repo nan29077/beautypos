@@ -415,7 +415,8 @@ async def create_order(db: Session, ad_type: str, payload: dict) -> dict:
 
     body = await _request(db, "POST", settings["order_path"], json_body=payload)
 
-    external_order_id = _find_identifier(body, ORDER_ID_KEYS)
+    # 리워드팝 응답은 groupId(UUID)를 기준 식별자로 쓴다. 상태 조회도 groupId로 한다.
+    external_order_id = (body.get("groupId") if isinstance(body, dict) else None) or _find_identifier(body, ORDER_ID_KEYS)
     if not external_order_id:
         # 주문은 접수됐을 수 있으므로 재시도 대상으로 두지 않는다.
         # 같은 주문이 두 번 나가는 것보다 사람이 확인하는 편이 낫다.
