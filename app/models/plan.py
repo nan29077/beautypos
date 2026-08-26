@@ -1,8 +1,9 @@
 """플랜(요금제) 관리 모델.
 
-Plan          — 베이직/스탠다드/프리미엄 3종 플랜 카탈로그 (수수료율 + 5종 광고 목표 건수)
-MerchantPlan  — 가맹점에 배정된 플랜 (배정 이력이 쌓이며, 최신 1건이 현재 플랜)
-AdExecution   — 광고 집행 기록 (가맹점 × 광고종류 × 날짜)
+Plan               — 베이직/스탠다드/프리미엄 3종 플랜 카탈로그 (수수료율 + 5종 광고 목표 건수)
+MerchantPlan       — 가맹점에 배정된 플랜 (배정 이력이 쌓이며, 최신 1건이 현재 플랜)
+MerchantAdOverride — 가맹점별 광고 수량 오버라이드 (플랜 기본값 대신 사용)
+AdExecution        — 광고 집행 기록 (가맹점 × 광고종류 × 날짜)
 """
 from datetime import datetime
 from sqlalchemy import (
@@ -106,3 +107,25 @@ class AdExecution(Base):
 
     merchant = relationship("Merchant")
     creator = relationship("User", foreign_keys=[created_by])
+
+
+class MerchantAdOverride(Base):
+    """가맹점별 광고 수량 오버라이드.
+
+    monthly_override 가 설정된 광고 타입은 해당 가맹점에 한해 플랜 기본값 대신
+    이 값을 월 목표로 사용한다. monthly_override=None 이면 플랜 기본값을 따른다.
+    일별 목표는 plan_service.daily_target_for_date() 로 자동 계산된다.
+    """
+    __tablename__ = "merchant_ad_overrides"
+    __table_args__ = (
+        UniqueConstraint("merchant_id", "ad_type", name="uq_merchant_ad_override"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    merchant_id = Column(Integer, ForeignKey("merchants.id"), nullable=False, index=True)
+    ad_type = Column(String(30), nullable=False)          # AD_EXECUTION_TYPE_CODES 중 하나
+    monthly_override = Column(Integer, nullable=True)     # None = 플랜 기본값 사용
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    merchant = relationship("Merchant")

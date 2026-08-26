@@ -116,9 +116,10 @@ def build_plan(db: Session, target_date: Optional[date_cls] = None,
                 items.append(entry)
                 continue
 
-            target = plan_service.daily_target_for_date(
-                plan.target(ad_type, "monthly"), target_date
+            effective_monthly = plan_service.effective_monthly_target(
+                db, merchant.id, ad_type, plan
             )
+            target = plan_service.daily_target_for_date(effective_monthly, target_date)
             entry["target"] = target
             if target <= 0:
                 entry["skip_reason"] = SKIP_ZERO_TARGET

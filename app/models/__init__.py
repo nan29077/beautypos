@@ -41,7 +41,7 @@ from app.models.crm import (
     MessageChannel, MessageStatus, CouponStatus,
 )
 from app.models.plan import (
-    Plan, MerchantPlan, AdExecution,
+    Plan, MerchantPlan, MerchantAdOverride, AdExecution,
     AD_EXECUTION_TYPES, AD_EXECUTION_TYPE_CODES, AD_EXECUTION_TYPE_LABELS, PLAN_CODES,
 )
 
@@ -73,6 +73,6 @@ __all__ = [
     "CrmMessageTemplate", "CrmMessageLog", "CrmCoupon",
     "ReservationStatus", "RESERVATION_STATUS_KR",
     "MessageChannel", "MessageStatus", "CouponStatus",
-    "Plan", "MerchantPlan", "AdExecution",
+    "Plan", "MerchantPlan", "MerchantAdOverride", "AdExecution",
     "AD_EXECUTION_TYPES", "AD_EXECUTION_TYPE_CODES", "AD_EXECUTION_TYPE_LABELS", "PLAN_CODES",
 ]

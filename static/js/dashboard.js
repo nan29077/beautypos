@@ -9204,7 +9204,7 @@ async function loadAdminPlans(c, t) {
             <div class="table-responsive">
                 <table class="table table-hover align-middle">
                     <thead><tr>
-                        <th>가맹점</th><th>현재 플랜</th><th>수수료율 (부가세 별도)</th><th>배정일</th><th style="min-width:220px">플랜 변경</th>
+                        <th>가맹점</th><th>현재 플랜</th><th>수수료율 (부가세 별도)</th><th>배정일</th><th style="min-width:220px">플랜 변경</th><th>개별 수량</th>
                     </tr></thead>
                     <tbody>
                         ${assigned.map(m => `
@@ -9225,7 +9225,12 @@ async function loadAdminPlans(c, t) {
                                     </button>
                                 </div>
                             </td>
-                        </tr>`).join('') || '<tr><td colspan="5" class="text-center text-muted py-4">가맹점이 없습니다</td></tr>'}
+                            <td>
+                                <button class="btn btn-sm btn-outline-secondary" onclick="showAdOverrideModal(${m.id}, '${escapeHtml(m.name)}')">
+                                    <i class="fas fa-sliders-h me-1"></i>개별 설정
+                                </button>
+                            </td>
+                        </tr>`).join('') || '<tr><td colspan="6" class="text-center text-muted py-4">가맹점이 없습니다</td></tr>'}
                     </tbody>
                 </table>
             </div>
@@ -9360,6 +9365,64 @@ async function assignMerchantPlan(merchantId) {
         alert(`${res.merchant_name} → ${res.plan.name} 플랜으로 변경되었습니다.`);
         navigate('admin-plans');
     } catch (e) { alert('플랜 변경 실패: ' + e.message); }
+}
+
+async function showAdOverrideModal(merchantId, merchantName) {
+    let info;
+    try {
+        info = await apiGet(`/api/admin/merchants/${merchantId}/ad-override`);
+    } catch (e) {
+        alert('오버라이드 정보 조회 실패: ' + e.message);
+        return;
+    }
+
+    document.getElementById('formModalTitle').textContent = `${merchantName} — 광고 수량 개별 설정`;
+    resetFormModalFooter(true);
+
+    const rows = info.items.map(it => `
+    <div class="row g-2 align-items-center mb-3">
+        <div class="col-5 fw-bold small">${escapeHtml(it.ad_type_label)}</div>
+        <div class="col-7">
+            <div class="input-group input-group-sm">
+                <input type="number" class="form-control" id="ov_${merchantId}_${it.ad_type}"
+                    placeholder="플랜 기본값 (${it.plan_monthly}건)"
+                    value="${it.monthly_override !== null && it.monthly_override !== undefined ? it.monthly_override : ''}"
+                    min="0" aria-label="${escapeHtml(it.ad_type_label)} 월 목표">
+                <span class="input-group-text">건/월</span>
+            </div>
+            <div class="small text-muted mt-1">플랜 기본값: ${it.plan_monthly}건/월 · 현재 적용: <strong>${it.effective_monthly}건/월</strong></div>
+        </div>
+    </div>`).join('');
+
+    document.getElementById('formModalBody').innerHTML = `
+    <div class="alert alert-info py-2 small mb-3">
+        <i class="fas fa-info-circle me-1"></i>
+        비워두면 <strong>${escapeHtml(info.plan_name || '미배정')} 플랜 기본값</strong>을 사용합니다.
+        숫자를 입력하면 이 매장에만 해당 수량이 적용됩니다.
+    </div>
+    ${rows}
+    <div id="ov_result"></div>`;
+
+    const saveBtn = document.getElementById('formModalSave');
+    saveBtn.onclick = async () => {
+        const overrides = info.items.map(it => {
+            const val = document.getElementById(`ov_${merchantId}_${it.ad_type}`)?.value?.trim();
+            return {
+                ad_type: it.ad_type,
+                monthly_override: val === '' || val === null || val === undefined ? null : parseInt(val, 10),
+            };
+        });
+        try {
+            await apiPut(`/api/admin/merchants/${merchantId}/ad-override`, { overrides });
+            bootstrap.Modal.getInstance(document.getElementById('formModal')).hide();
+            navigate('admin-plans');
+        } catch (e) {
+            document.getElementById('ov_result').innerHTML =
+                `<div class="alert alert-danger py-2 small mt-2">${escapeHtml(e.message)}</div>`;
+        }
+    };
+
+    new bootstrap.Modal(document.getElementById('formModal')).show();
 }
 
 // ─── ADMIN: 광고 실행 현황 ─────────────────────────────────

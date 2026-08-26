@@ -7,7 +7,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.plan import (
-    Plan, MerchantPlan, AdExecution,
+    Plan, MerchantPlan, MerchantAdOverride, AdExecution,
     AD_EXECUTION_TYPES, AD_EXECUTION_TYPE_CODES, AD_EXECUTION_TYPE_LABELS,
 )
 from app.services.settlement_service import VAT_NOTICE, VAT_RATE
@@ -123,6 +123,55 @@ def plan_payload(plan: Plan, target_date: Optional[date] = None) -> dict:
     return data
 
 
+def get_override_map(db: Session, merchant_id: int) -> dict:
+    """가맹점의 광고 타입별 monthly_override 맵. 없는 타입은 포함하지 않는다."""
+    rows = (
+        db.query(MerchantAdOverride)
+        .filter(MerchantAdOverride.merchant_id == merchant_id)
+        .all()
+    )
+    return {r.ad_type: r.monthly_override for r in rows if r.monthly_override is not None}
+
+
+def effective_monthly_target(db: Session, merchant_id: int, ad_type: str, plan: Optional[Plan]) -> int:
+    """오버라이드가 있으면 오버라이드 값, 없으면 플랜 기본값을 반환한다."""
+    row = (
+        db.query(MerchantAdOverride)
+        .filter(
+            MerchantAdOverride.merchant_id == merchant_id,
+            MerchantAdOverride.ad_type == ad_type,
+        )
+        .first()
+    )
+    if row and row.monthly_override is not None:
+        return int(row.monthly_override)
+    return plan.target(ad_type, "monthly") if plan else 0
+
+
+def set_override(db: Session, merchant_id: int, ad_type: str, monthly: Optional[int]) -> None:
+    """오버라이드를 저장한다. monthly=None 이면 해당 타입 오버라이드를 제거한다."""
+    row = (
+        db.query(MerchantAdOverride)
+        .filter(
+            MerchantAdOverride.merchant_id == merchant_id,
+            MerchantAdOverride.ad_type == ad_type,
+        )
+        .first()
+    )
+    if monthly is None:
+        if row:
+            db.delete(row)
+    else:
+        if row:
+            row.monthly_override = monthly
+        else:
+            db.add(MerchantAdOverride(
+                merchant_id=merchant_id,
+                ad_type=ad_type,
+                monthly_override=monthly,
+            ))
+
+
 def build_summary(db: Session, target_date: date, merchants: list) -> list[dict]:
     """가맹점별 × 광고종류별 집행 현황 요약.
 
@@ -165,12 +214,25 @@ def build_summary(db: Session, target_date: date, merchants: list) -> list[dict]
     )
     plan_by_merchant = {mp.merchant_id: mp.plan for mp in assignments}  # 뒤에 온 것이 최신
 
+    # 가맹점별 오버라이드 (한 번에 조회)
+    override_rows = (
+        db.query(MerchantAdOverride)
+        .filter(MerchantAdOverride.merchant_id.in_(merchant_ids))
+        .all()
+    )
+    # {merchant_id: {ad_type: monthly_override}}
+    override_map: dict = {}
+    for r in override_rows:
+        if r.monthly_override is not None:
+            override_map.setdefault(r.merchant_id, {})[r.ad_type] = int(r.monthly_override)
+
     results = []
     for m in merchants:
         plan = plan_by_merchant.get(m.id)
         items = []
         for ad_type, label in AD_EXECUTION_TYPES:
-            monthly_target = plan.target(ad_type, "monthly") if plan else 0
+            plan_monthly = plan.target(ad_type, "monthly") if plan else 0
+            monthly_target = override_map.get(m.id, {}).get(ad_type, plan_monthly)
             daily_target = daily_target_for_date(monthly_target, target_date)
             expected_to_date = expected_target_through_date(monthly_target, target_date)
             today_executed = today_map.get((m.id, ad_type), 0)
@@ -204,6 +266,7 @@ def build_summary(db: Session, target_date: date, merchants: list) -> list[dict]
             "plan_id": plan.id if plan else None,
             "plan_code": plan.code if plan else None,
             "plan_name": plan.name if plan else "미배정",
+            "has_override": bool(override_map.get(m.id)),
             "items": items,
         })
     return results

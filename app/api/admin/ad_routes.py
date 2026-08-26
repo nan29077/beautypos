@@ -594,6 +594,87 @@ def change_merchant_plan(
 
 
 # ═══════════════════════════════════════════════════════════
+# 가맹점별 광고 수량 오버라이드
+# ═══════════════════════════════════════════════════════════
+
+from app.models.plan import MerchantAdOverride  # noqa: E402 (plan 임포트 보완)
+from pydantic import BaseModel as _BaseModel
+
+
+class _AdOverrideItem(_BaseModel):
+    ad_type: str
+    monthly_override: Optional[int] = None  # None = 오버라이드 제거 (플랜 기본값 복원)
+
+
+class _AdOverrideRequest(_BaseModel):
+    overrides: list[_AdOverrideItem]
+
+
+@router.get("/merchants/{merchant_id}/ad-override")
+def get_merchant_ad_override(merchant_id: int, db: Session = Depends(get_db), _=Depends(require_admin)):
+    """가맹점의 플랜 기본값 + 개별 오버라이드 설정 조회."""
+    merchant = db.query(Merchant).filter(Merchant.id == merchant_id).first()
+    if not merchant:
+        raise HTTPException(status_code=404, detail="가맹점을 찾을 수 없습니다")
+
+    plan = plan_service.get_current_plan(db, merchant_id)
+    override_rows = (
+        db.query(MerchantAdOverride)
+        .filter(MerchantAdOverride.merchant_id == merchant_id)
+        .all()
+    )
+    override_by_type = {r.ad_type: r.monthly_override for r in override_rows}
+
+    from app.models.plan import AD_EXECUTION_TYPES
+    items = []
+    for ad_type, label in AD_EXECUTION_TYPES:
+        plan_monthly = plan.target(ad_type, "monthly") if plan else 0
+        ov = override_by_type.get(ad_type)
+        items.append({
+            "ad_type": ad_type,
+            "ad_type_label": label,
+            "plan_monthly": plan_monthly,
+            "monthly_override": ov,
+            "effective_monthly": ov if ov is not None else plan_monthly,
+        })
+
+    return {
+        "merchant_id": merchant.id,
+        "merchant_name": merchant.name,
+        "plan_name": plan.name if plan else "미배정",
+        "plan_code": plan.code if plan else None,
+        "items": items,
+    }
+
+
+@router.put("/merchants/{merchant_id}/ad-override")
+def set_merchant_ad_override(
+    merchant_id: int,
+    req: _AdOverrideRequest,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """가맹점별 광고 수량 오버라이드 저장.
+
+    monthly_override=null 이면 해당 광고 타입 오버라이드를 제거하고 플랜 기본값을 사용한다.
+    """
+    merchant = db.query(Merchant).filter(Merchant.id == merchant_id).first()
+    if not merchant:
+        raise HTTPException(status_code=404, detail="가맹점을 찾을 수 없습니다")
+
+    from app.models.plan import AD_EXECUTION_TYPE_CODES
+    for item in req.overrides:
+        if item.ad_type not in AD_EXECUTION_TYPE_CODES:
+            raise HTTPException(status_code=400, detail=f"알 수 없는 광고 타입: {item.ad_type}")
+        if item.monthly_override is not None and item.monthly_override < 0:
+            raise HTTPException(status_code=400, detail="월 목표 건수는 0 이상이어야 합니다")
+        plan_service.set_override(db, merchant_id, item.ad_type, item.monthly_override)
+
+    db.commit()
+    return {"ok": True, "merchant_id": merchant.id, "merchant_name": merchant.name}
+
+
+# ═══════════════════════════════════════════════════════════
 # 광고 집행 기록
 # ═══════════════════════════════════════════════════════════
 
