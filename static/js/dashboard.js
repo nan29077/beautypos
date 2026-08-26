@@ -39,6 +39,7 @@ const mobilePageMeta = {
     'admin-pg': ['PG 설정', 'fas fa-network-wired'],
     'admin-terminals': ['단말기 관리', 'fas fa-tablet-alt'],
     'admin-transactions': ['전체 결제 내역', 'fas fa-receipt'],
+    'admin-ongi': ['온기 QR 결제', 'fas fa-qrcode'],
     'admin-settlements': ['정산 관리', 'fas fa-calculator'],
     'admin-fee-settings': ['수수료 기본 설정', 'fas fa-sliders-h'],
     'admin-fee-policies': ['가맹점별 수수료', 'fas fa-percentage'],
@@ -560,6 +561,7 @@ function buildSidebar() {
         <a class="nav-link" href="#" data-page="admin-terminals"><i class="fas fa-tablet-alt"></i>단말기 관리</a>
         <div class="nav-section"><i class="fas fa-won-sign me-1" style="font-size:.6rem"></i>결제 · 정산</div>
         <a class="nav-link" href="#" data-page="admin-transactions"><i class="fas fa-receipt"></i>전체 결제 내역</a>
+        <a class="nav-link" href="#" data-page="admin-ongi"><i class="fas fa-qrcode"></i>온기 QR 결제</a>
         <a class="nav-link" href="#" data-page="admin-settlements"><i class="fas fa-calculator"></i>정산 관리</a>
         <a class="nav-link" href="#" data-page="admin-fee-settings"><i class="fas fa-sliders-h"></i>수수료 기본 설정</a>
         <a class="nav-link" href="#" data-page="admin-fee-policies"><i class="fas fa-percentage"></i>가맹점별 수수료</a>
@@ -687,6 +689,7 @@ async function loadPage(page) {
             case 'admin-pg': await loadAdminPG(c, t); break;
             case 'admin-terminals': await loadAdminTerminals(c, t); break;
             case 'admin-transactions': await loadAdminTransactions(c, t); break;
+            case 'admin-ongi': await loadAdminOngi(c, t); break;
             case 'admin-settlements': await loadAdminSettlements(c, t); break;
             case 'admin-fee-settings': await loadAdminFeeSettings(c, t); break;
             case 'admin-fee-policies': await loadAdminFeePolicies(c, t); break;
@@ -9762,4 +9765,364 @@ async function saveAdExecution(merchantId, adType) {
         });
         await refreshAdExecutions();   // 잔여 건수 즉시 갱신
     } catch (e) { alert('저장 실패: ' + e.message); }
+}
+
+// ─── ADMIN: 온기(ONGI) QR 결제 ─────────────────────────────
+let ongiState = null;
+let ongiTxPage = 1;
+let ongiTxLastPage = 1;
+
+async function loadAdminOngi(c, t) {
+    t.textContent = '온기 QR 결제';
+    c.innerHTML = adpayLoadingMarkup('온기 연동 정보를 불러오는 중입니다');
+    try {
+        ongiState = await apiGet('/api/admin/ongi/config');
+    } catch (e) {
+        c.innerHTML = `<div class="alert alert-danger">${escapeHtml(e.message)}</div>`;
+        return;
+    }
+    c.innerHTML = ongiPageMarkup(ongiState);
+    // 미연결이면 설정을 펼쳐 키 입력을 안내하고, 연결됐으면 바로 내역을 보여준다
+    toggleOngiSettings(!ongiState.configured);
+    if (ongiState.configured) {
+        loadOngiQrOptions();
+        reloadOngiTransactions(1);
+    }
+}
+
+function ongiStatusBadge(d) {
+    if (!d.configured) return '<span class="badge bg-secondary"><i class="fas fa-circle-minus me-1"></i>미연결</span>';
+    if (!d.enabled) return '<span class="badge bg-warning text-dark"><i class="fas fa-pause me-1"></i>동기화 중지</span>';
+    return '<span class="badge bg-success"><i class="fas fa-circle-check me-1"></i>연동 중</span>';
+}
+
+function ongiLastSyncText(d) {
+    return d.last_synced_at ? d.last_synced_at.replace('T', ' ') : '아직 없음';
+}
+
+function ongiPageMarkup(d) {
+    const s = d.settings || {};
+    return `
+    <div class="card data-card mb-3">
+        <div class="card-body py-2 px-3">
+            <div class="row g-2 align-items-end">
+                <div class="col-md-2"><label class="form-label small mb-1">시작일</label><input type="date" class="form-control form-control-sm" id="ongiFilterFrom"></div>
+                <div class="col-md-2"><label class="form-label small mb-1">종료일</label><input type="date" class="form-control form-control-sm" id="ongiFilterTo"></div>
+                <div class="col-md-2"><label class="form-label small mb-1">상태</label>
+                    <select class="form-select form-select-sm" id="ongiFilterStatus">
+                        <option value="">전체</option><option value="완료">완료</option><option value="취소">취소</option>
+                    </select></div>
+                <div class="col-md-2"><label class="form-label small mb-1">QR</label>
+                    <select class="form-select form-select-sm" id="ongiFilterQr"><option value="">전체 QR</option></select></div>
+                <div class="col-md-2"><label class="form-label small mb-1">검색</label>
+                    <input class="form-control form-control-sm" id="ongiFilterSearch" placeholder="결제자 / 주문번호"></div>
+                <div class="col-md-2 d-flex gap-1">
+                    <button class="btn btn-primary btn-sm flex-fill" onclick="reloadOngiTransactions(1)" ${d.configured ? '' : 'disabled'} id="ongiSearchBtn"><i class="fas fa-search me-1"></i>조회</button>
+                    <button class="btn btn-outline-secondary btn-sm" onclick="resetOngiFilters()" title="필터 초기화"><i class="fas fa-undo"></i></button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="row g-3 mb-3" id="ongiSummaryRow"></div>
+    <div class="card data-card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h5 class="mb-0"><i class="fas fa-qrcode me-2"></i>온기 QR 결제 내역</h5>
+            <div class="d-flex align-items-center gap-2">
+                <span class="badge bg-primary" id="ongiCountBadge">-</span>
+                <button class="btn btn-outline-primary btn-sm" onclick="runOngiSync()" id="ongiSyncBtn" ${d.configured ? '' : 'disabled'}>
+                    <i class="fas fa-rotate me-1"></i>지금 동기화</button>
+            </div>
+        </div>
+        <div class="card-body" id="ongiTableBody">${d.configured
+            ? adpayLoadingMarkup()
+            : '<div class="alert alert-info mb-0"><i class="fas fa-info-circle me-1"></i>아래 <b>연동 설정</b>에서 온기 API 키를 먼저 등록해주세요.</div>'}</div>
+        <div class="card-footer py-2 d-flex justify-content-between align-items-center" id="ongiPagerRow" style="display:none!important"></div>
+    </div>
+
+    <div class="card data-card">
+        <div class="card-header d-flex justify-content-between align-items-center" style="cursor:pointer" onclick="toggleOngiSettings()">
+            <h5 class="mb-0"><i class="fas fa-plug me-2"></i>연동 설정 <span id="ongiStatusBadge" class="ms-2">${ongiStatusBadge(d)}</span></h5>
+            <i class="fas fa-chevron-down" id="ongiSettingsChevron"></i>
+        </div>
+        <div class="card-body" id="ongiSettingsBody" style="display:none">
+            <label class="form-label fw-bold small">API 키</label>
+            <div class="input-group mb-2">
+                <span class="input-group-text"><i class="fas fa-key"></i></span>
+                <input type="password" class="form-control" id="ongiApiKey" placeholder="온기 관리자에게 발급받은 API 키" autocomplete="off">
+                <button class="btn btn-outline-secondary" type="button" onclick="toggleOngiKeyVisible()" id="ongiKeyEye" title="입력값 보기"><i class="fas fa-eye"></i></button>
+            </div>
+            <div class="small text-muted mb-3" id="ongiCurrentKey">${d.configured
+                ? `현재 등록된 키: <code>${escapeHtml(d.masked_key || '')}</code>`
+                : '등록된 키가 없습니다.'}</div>
+            <div class="d-flex gap-2 flex-wrap mb-3">
+                <button class="btn btn-primary btn-sm" onclick="saveOngiKey()"><i class="fas fa-floppy-disk me-1"></i>키 저장</button>
+                <button class="btn btn-outline-primary btn-sm" onclick="testOngiConnection()" id="ongiTestBtn" ${d.configured ? '' : 'disabled'}><i class="fas fa-plug me-1"></i>연결 테스트</button>
+                <button class="btn btn-outline-danger btn-sm" onclick="deleteOngiKey()" id="ongiDeleteBtn" ${d.configured ? '' : 'disabled'}><i class="fas fa-trash me-1"></i>키 삭제</button>
+            </div>
+
+            <hr class="my-3">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label small fw-bold">API MID (선택)</label>
+                    <input class="form-control" id="ongiApiMid" value="${escapeHtml(s.api_mid || '')}" placeholder="가맹점 식별 강화용, 비우면 미사용">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label small fw-bold">동기화 주기 (분)</label>
+                    <input type="number" min="1" max="1440" class="form-control" id="ongiSyncInterval" value="${planNumber(s.sync_interval_minutes, 10)}">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label small fw-bold">되짚어 받는 기간 (일)</label>
+                    <input type="number" min="1" max="90" class="form-control" id="ongiLookback" value="${planNumber(s.sync_lookback_days, 3)}">
+                    <div class="form-text small">노티 유실·사후 취소를 흡수하기 위해 최근 며칠을 매번 다시 받습니다.</div>
+                </div>
+            </div>
+            <div class="form-check form-switch mt-3">
+                <input class="form-check-input" type="checkbox" id="ongiEnabled" ${d.enabled ? 'checked' : ''} ${d.configured ? '' : 'disabled'}>
+                <label class="form-check-label" for="ongiEnabled"><b>연동 사용</b> — 꺼두면 자동 동기화가 일어나지 않습니다.</label>
+            </div>
+            <div class="mt-3">
+                <button class="btn btn-primary btn-sm" onclick="saveOngiSettings()"><i class="fas fa-floppy-disk me-1"></i>설정 저장</button>
+            </div>
+
+            <hr class="my-3">
+            <label class="form-label fw-bold small">결제 노티 시크릿 (선택)</label>
+            <div class="input-group mb-1">
+                <span class="input-group-text"><i class="fas fa-shield-halved"></i></span>
+                <input type="password" class="form-control" id="ongiNotifySecret" placeholder="ongi_nt_… (온기 관리자 콘솔에서 발급)" autocomplete="off">
+                <button class="btn btn-outline-primary" type="button" onclick="saveOngiNotifySecret()">저장</button>
+                <button class="btn btn-outline-danger" type="button" onclick="deleteOngiNotifySecret()" id="ongiSecretDeleteBtn" ${d.notify_secret_configured ? '' : 'disabled'}>삭제</button>
+            </div>
+            <div class="small text-muted mb-2" id="ongiSecretStatus">${d.notify_secret_configured
+                ? '시크릿이 등록되어 있습니다. 결제 노티(웹훅) 수신 시 서명을 검증합니다.'
+                : '등록된 시크릿이 없습니다. 웹훅을 쓰지 않으면 비워둬도 됩니다.'}</div>
+            <div id="ongiResult" class="mt-3"></div>
+        </div>
+    </div>`;
+}
+
+function toggleOngiSettings(forceOpen) {
+    const body = document.getElementById('ongiSettingsBody');
+    const chevron = document.getElementById('ongiSettingsChevron');
+    if (!body) return;
+    const open = forceOpen !== undefined ? forceOpen : body.style.display === 'none';
+    body.style.display = open ? '' : 'none';
+    if (chevron) chevron.className = open ? 'fas fa-chevron-up' : 'fas fa-chevron-down';
+}
+
+function toggleOngiKeyVisible() {
+    const input = document.getElementById('ongiApiKey');
+    const icon = document.querySelector('#ongiKeyEye i');
+    const show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    icon.className = show ? 'fas fa-eye-slash' : 'fas fa-eye';
+}
+
+function showOngiResult(ok, message) {
+    const box = document.getElementById('ongiResult');
+    if (!box) return;
+    box.innerHTML = `<div class="alert alert-${ok ? 'success' : 'danger'} py-2 mb-0 small">
+        <i class="fas fa-${ok ? 'circle-check' : 'circle-exclamation'} me-1"></i>${escapeHtml(message)}</div>`;
+}
+
+function applyOngiState(data) {
+    ongiState = data;
+    const badge = document.getElementById('ongiStatusBadge');
+    if (badge) badge.innerHTML = ongiStatusBadge(data);
+    const cur = document.getElementById('ongiCurrentKey');
+    if (cur) cur.innerHTML = data.configured
+        ? `현재 등록된 키: <code>${escapeHtml(data.masked_key || '')}</code>`
+        : '등록된 키가 없습니다.';
+    ['ongiTestBtn', 'ongiDeleteBtn', 'ongiSyncBtn', 'ongiSearchBtn'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.disabled = !data.configured;
+    });
+    const enabled = document.getElementById('ongiEnabled');
+    if (enabled) { enabled.disabled = !data.configured; enabled.checked = !!data.enabled; }
+    const secretBtn = document.getElementById('ongiSecretDeleteBtn');
+    if (secretBtn) secretBtn.disabled = !data.notify_secret_configured;
+    const secretStatus = document.getElementById('ongiSecretStatus');
+    if (secretStatus) secretStatus.textContent = data.notify_secret_configured
+        ? '시크릿이 등록되어 있습니다. 결제 노티(웹훅) 수신 시 서명을 검증합니다.'
+        : '등록된 시크릿이 없습니다. 웹훅을 쓰지 않으면 비워둬도 됩니다.';
+}
+
+async function saveOngiKey() {
+    const key = (document.getElementById('ongiApiKey').value || '').trim();
+    if (!key) { showOngiResult(false, 'API 키를 입력해주세요.'); return; }
+    try {
+        const res = await apiPost('/api/admin/ongi/api-key', { api_key: key });
+        document.getElementById('ongiApiKey').value = '';
+        applyOngiState(res);
+        showOngiResult(true, '키를 저장했습니다. 연결 테스트로 확인해보세요.');
+    } catch (e) { showOngiResult(false, e.message); }
+}
+
+async function deleteOngiKey() {
+    if (!confirm('등록된 온기 API 키를 삭제할까요? 자동 동기화가 중단됩니다.')) return;
+    try {
+        applyOngiState(await apiDelete('/api/admin/ongi/api-key'));
+        showOngiResult(true, '키를 삭제했습니다.');
+    } catch (e) { showOngiResult(false, e.message); }
+}
+
+async function testOngiConnection() {
+    const btn = document.getElementById('ongiTestBtn');
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>확인 중...';
+    try {
+        const res = await apiGet('/api/admin/ongi/test');
+        showOngiResult(res.ok, res.detail + (res.total_payments != null ? ` (전체 결제 ${Number(res.total_payments).toLocaleString()}건)` : ''));
+    } catch (e) { showOngiResult(false, e.message); }
+    finally { btn.disabled = false; btn.innerHTML = original; }
+}
+
+async function saveOngiSettings() {
+    try {
+        const res = await apiPut('/api/admin/ongi/config', {
+            api_mid: document.getElementById('ongiApiMid').value.trim(),
+            sync_interval_minutes: parseInt(document.getElementById('ongiSyncInterval').value, 10) || 10,
+            sync_lookback_days: parseInt(document.getElementById('ongiLookback').value, 10) || 3,
+            enabled: document.getElementById('ongiEnabled').checked,
+        });
+        applyOngiState(res);
+        showOngiResult(true, '설정을 저장했습니다.');
+    } catch (e) { showOngiResult(false, e.message); }
+}
+
+async function saveOngiNotifySecret() {
+    const secret = (document.getElementById('ongiNotifySecret').value || '').trim();
+    if (!secret) { showOngiResult(false, '시크릿 키를 입력해주세요.'); return; }
+    try {
+        const res = await apiPost('/api/admin/ongi/notify-secret', { secret });
+        document.getElementById('ongiNotifySecret').value = '';
+        applyOngiState(res);
+        showOngiResult(true, '노티 시크릿을 저장했습니다.');
+    } catch (e) { showOngiResult(false, e.message); }
+}
+
+async function deleteOngiNotifySecret() {
+    if (!confirm('등록된 노티 시크릿을 삭제할까요?')) return;
+    try {
+        applyOngiState(await apiDelete('/api/admin/ongi/notify-secret'));
+        showOngiResult(true, '노티 시크릿을 삭제했습니다.');
+    } catch (e) { showOngiResult(false, e.message); }
+}
+
+async function runOngiSync() {
+    const btn = document.getElementById('ongiSyncBtn');
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>동기화 중...';
+    try {
+        const res = await apiPost('/api/admin/ongi/sync', {});
+        if (res.skipped) {
+            const reasons = {
+                integration_off: '연동이 꺼져 있어 동기화하지 않았습니다. 연동 설정에서 켜주세요.',
+                ongi_error: `온기 호출 실패: ${res.detail || ''}`,
+            };
+            showOngiResult(false, reasons[res.reason] || `동기화를 건너뛰었습니다 (${res.reason})`);
+        } else {
+            showOngiResult(true, `동기화 완료 — 조회 ${res.fetched}건, 신규 ${res.created}건, 갱신 ${res.updated}건`);
+        }
+        await reloadOngiTransactions(1);
+    } catch (e) { showOngiResult(false, e.message); }
+    finally { btn.disabled = false; btn.innerHTML = original; }
+}
+
+async function loadOngiQrOptions() {
+    // 온기 서버에서 QR 목록을 받아 필터를 채운다. 실패해도 화면은 계속 동작한다.
+    try {
+        const res = await apiGet('/api/admin/ongi/qrs?limit=100');
+        const sel = document.getElementById('ongiFilterQr');
+        if (!sel || !res.items) return;
+        sel.innerHTML = '<option value="">전체 QR</option>' + res.items.map(q =>
+            `<option value="${q.id}">${escapeHtml(q.name || `QR #${q.id}`)}</option>`).join('');
+    } catch (e) { /* QR 이름 없이도 조회는 가능하다 */ }
+}
+
+function ongiTxStatusBadge(status) {
+    if (status === '완료') return '<span class="badge bg-success">완료</span>';
+    if (status === '취소') return '<span class="badge bg-danger">취소</span>';
+    return `<span class="badge bg-secondary">${escapeHtml(status || '-')}</span>`;
+}
+
+async function reloadOngiTransactions(page) {
+    ongiTxPage = page || 1;
+    const from = document.getElementById('ongiFilterFrom')?.value || '';
+    const to = document.getElementById('ongiFilterTo')?.value || '';
+    const status = document.getElementById('ongiFilterStatus')?.value || '';
+    const qrId = document.getElementById('ongiFilterQr')?.value || '';
+    const search = document.getElementById('ongiFilterSearch')?.value.trim() || '';
+
+    let url = `/api/admin/ongi/transactions?page=${ongiTxPage}&limit=20`;
+    if (from) url += `&start_date=${from}`;
+    if (to) url += `&end_date=${to}`;
+    if (status) url += `&status=${encodeURIComponent(status)}`;
+    if (qrId) url += `&qr_id=${qrId}`;
+    if (search) url += `&search=${encodeURIComponent(search)}`;
+
+    const body = document.getElementById('ongiTableBody');
+    try {
+        const data = await apiGet(url);
+        const items = data.items || [];
+        const pg = data.pagination || {};
+        const sum = data.summary || {};
+        ongiTxLastPage = pg.last_page || 1;
+
+        document.getElementById('ongiCountBadge').textContent = `${(pg.total || 0).toLocaleString()}건`;
+        document.getElementById('ongiSummaryRow').innerHTML = `
+            <div class="col-md-3 col-6"><div class="card border-0 shadow-sm text-center" style="border-radius:12px"><div class="card-body py-2">
+                <div class="fs-5 fw-bold text-primary">${(sum.completed_count || 0).toLocaleString()}</div><small class="text-muted">완료 건수</small>
+            </div></div></div>
+            <div class="col-md-3 col-6"><div class="card border-0 shadow-sm text-center" style="border-radius:12px"><div class="card-body py-2">
+                <div class="fs-5 fw-bold text-success">${formatMoney(sum.completed_amount || 0)}</div><small class="text-muted">완료 금액</small>
+            </div></div></div>
+            <div class="col-md-3 col-6"><div class="card border-0 shadow-sm text-center" style="border-radius:12px"><div class="card-body py-2">
+                <div class="fs-5 fw-bold text-danger">${(sum.cancelled_count || 0).toLocaleString()}</div><small class="text-muted">취소 건수</small>
+            </div></div></div>
+            <div class="col-md-3 col-6"><div class="card border-0 shadow-sm text-center" style="border-radius:12px"><div class="card-body py-2">
+                <div class="fs-6 fw-bold text-info" style="line-height:2">${escapeHtml(ongiLastSyncText(ongiState || {}))}</div><small class="text-muted">마지막 자동 동기화</small>
+            </div></div></div>`;
+
+        body.innerHTML = `
+            <div class="table-responsive"><table class="table table-hover table-sm">
+                <thead><tr><th>결제일시</th><th>결제자</th><th>금액</th><th>상태</th><th>결제수단</th><th>구분</th><th>QR</th><th>주문번호</th><th>승인번호</th></tr></thead>
+                <tbody>${items.length ? items.map(tx => `<tr>
+                    <td class="text-nowrap">${escapeHtml(tx.paid_at || '-')}</td>
+                    <td>${escapeHtml(tx.member_name || '-')}</td>
+                    <td class="fw-bold ${tx.status === '취소' ? 'text-decoration-line-through text-muted' : ''}">${formatMoney(tx.pay_price != null ? tx.pay_price : tx.amount)}</td>
+                    <td>${ongiTxStatusBadge(tx.status)}</td>
+                    <td>${escapeHtml(tx.payment_type || '-')}</td>
+                    <td>${escapeHtml(tx.division || '-')}</td>
+                    <td>${escapeHtml(tx.qr_name || (tx.qr_id != null ? `QR #${tx.qr_id}` : '-'))}</td>
+                    <td>${tx.order_code ? `<code>${escapeHtml(tx.order_code)}</code>` : '-'}</td>
+                    <td>${tx.auth_no ? `<code>${escapeHtml(tx.auth_no)}</code>` : '-'}</td>
+                </tr>`).join('') : `<tr><td colspan="9" class="text-center text-muted py-4">조건에 맞는 결제 내역이 없습니다.<br>
+                    <small>아직 동기화 전이라면 우측 상단 <b>지금 동기화</b>를 눌러주세요.</small></td></tr>`}</tbody>
+            </table></div>`;
+
+        const pager = document.getElementById('ongiPagerRow');
+        if (pager) {
+            if ((pg.total || 0) > (pg.per_page || 20)) {
+                pager.style.setProperty('display', 'flex', 'important');
+                pager.innerHTML = `
+                    <button class="btn btn-outline-secondary btn-sm" onclick="reloadOngiTransactions(${ongiTxPage - 1})" ${ongiTxPage <= 1 ? 'disabled' : ''}><i class="fas fa-chevron-left"></i></button>
+                    <span class="small text-muted">${ongiTxPage} / ${ongiTxLastPage} 페이지</span>
+                    <button class="btn btn-outline-secondary btn-sm" onclick="reloadOngiTransactions(${ongiTxPage + 1})" ${ongiTxPage >= ongiTxLastPage ? 'disabled' : ''}><i class="fas fa-chevron-right"></i></button>`;
+            } else {
+                pager.style.setProperty('display', 'none', 'important');
+            }
+        }
+    } catch (e) {
+        body.innerHTML = `<div class="alert alert-danger">${escapeHtml(e.message)}</div>`;
+    }
+}
+
+function resetOngiFilters() {
+    ['ongiFilterFrom', 'ongiFilterTo', 'ongiFilterStatus', 'ongiFilterQr', 'ongiFilterSearch'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+    });
+    if (ongiState && ongiState.configured) reloadOngiTransactions(1);
 }

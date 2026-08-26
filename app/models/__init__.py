@@ -37,9 +37,13 @@ from app.models.ad_credit import (
     MIN_REFUND_AMOUNT, PAYMENT_PLAN, PAYMENT_CREDIT,
 )
 from app.models.affiliate_mall import AffiliateMall
+from app.models.ongi_transaction import (
+    OngiTransaction, ONGI_STATUS_COMPLETED, ONGI_STATUS_CANCELLED,
+)
 from app.models.system_config import (
     SystemConfig, AD_ORDER_MGMT_ENABLED, AD_BLOG_ENABLED, AD_PLACE_TRAFFIC_ENABLED,
     AD_SHORTS_ENABLED, REWARDPOP_API_KEY, REWARDPOP_SETTINGS,
+    ONGI_API_KEY, ONGI_SETTINGS, ONGI_NOTIFY_SECRET,
 )
 from app.models.crm import (
     CrmCustomer, CrmService, CrmServicePrice, CrmVisit, CrmReservation, CrmPointLog,
@@ -75,8 +79,10 @@ __all__ = [
     "CREDIT_ENTRIES", "CREDIT_ENTRY_LABELS", "REFUND_STATUSES", "REFUND_STATUS_LABELS",
     "MIN_REFUND_AMOUNT", "PAYMENT_PLAN", "PAYMENT_CREDIT",
     "AffiliateMall",
+    "OngiTransaction", "ONGI_STATUS_COMPLETED", "ONGI_STATUS_CANCELLED",
     "SystemConfig", "AD_ORDER_MGMT_ENABLED", "AD_BLOG_ENABLED", "AD_PLACE_TRAFFIC_ENABLED",
     "AD_SHORTS_ENABLED", "REWARDPOP_API_KEY", "REWARDPOP_SETTINGS",
+    "ONGI_API_KEY", "ONGI_SETTINGS", "ONGI_NOTIFY_SECRET",
     "CrmCustomer", "CrmService", "CrmServicePrice", "CrmVisit", "CrmReservation", "CrmPointLog",
     "CrmMessageTemplate", "CrmMessageLog", "CrmCoupon",
     "ReservationStatus", "RESERVATION_STATUS_KR",

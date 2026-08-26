@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     # 미설정(None)이면 관리자 화면에 저장된 값을 따르고, true/false 를 주면 그 값이 우선한다.
     REWARDPOP_DRY_RUN: Optional[bool] = None
 
+    # 온기 결제 동기화 스케줄러. 폴링 주기는 관리자 화면(온기 연동 설정)에서 정한다.
+    ONGI_SYNC_ENABLED: bool = True
+
     # 로그인 실패 제한 — 같은 계정/IP 로 N 회 연속 실패하면 일정 시간 잠근다.
     LOGIN_MAX_ATTEMPTS: int = 5
     LOGIN_LOCKOUT_SECONDS: int = 300

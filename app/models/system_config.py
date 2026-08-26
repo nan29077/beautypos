@@ -40,3 +40,8 @@ OPENAI_API_KEY = "openai_api_key"  # AI 마케팅 추천용 (Fernet 암호화 �
 # 리워드팝 — 광고 자동 집행 연동
 REWARDPOP_API_KEY = "rewardpop_api_key"      # 리워드팝 API 키 (Fernet 암호화 저장)
 REWARDPOP_SETTINGS = "rewardpop_settings"    # 연동 설정 JSON (기준 URL·인증 방식·경로·집행 시각·드라이런)
+
+# 온기(ONGI) — QR 결제 내역 연동
+ONGI_API_KEY = "ongi_api_key"                # 온기 가맹점 API 키 (Fernet 암호화 저장)
+ONGI_SETTINGS = "ongi_settings"              # 연동 설정 JSON (기준 URL·API MID·동기화 주기)
+ONGI_NOTIFY_SECRET = "ongi_notify_secret"    # 결제 노티 HMAC 시크릿 (Fernet 암호화 저장)

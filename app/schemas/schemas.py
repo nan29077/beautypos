@@ -377,6 +377,25 @@ class RewardpopApiKeyUpdate(BaseModel):
     api_key: str
 
 
+# ─── 온기(ONGI) 결제 연동 (Admin) ────────────────────────────
+
+class OngiSettingsUpdate(BaseModel):
+    """온기 연동 설정. 값을 보내지 않은 항목은 기존 값을 유지한다."""
+    base_url: Optional[str] = None
+    api_mid: Optional[str] = None                 # 선택 — X-API-MID 헤더
+    sync_interval_minutes: Optional[int] = Field(default=None, ge=1, le=1440)
+    sync_lookback_days: Optional[int] = Field(default=None, ge=1, le=90)
+    enabled: Optional[bool] = None                # 연동 사용 스위치
+
+
+class OngiApiKeyUpdate(BaseModel):
+    api_key: str
+
+
+class OngiNotifySecretUpdate(BaseModel):
+    secret: str
+
+
 # ─── 단말기 관리 (Admin) ─────────────────────────────────────
 
 class TerminalCreate(BaseModel):

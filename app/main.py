@@ -14,6 +14,7 @@ from app.api.designer_routes import router as designer_router
 from app.api.owner import router as owner_router
 from app.api.sales_routes import router as sales_router
 from app.api.terminal_routes import router as terminal_router
+from app.api.webhook_routes import router as webhook_router
 from app.auth.dependencies import get_current_user
 from app.config import get_settings
 from app.database import get_db
@@ -38,7 +39,7 @@ asset_versions: AssetVersions | None = None
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     from app.init_db import init_db
-    from app.services import ad_dispatch_scheduler, rank_scheduler
+    from app.services import ad_dispatch_scheduler, ongi_sync, rank_scheduler
 
     init_db()
     # 정적 파일 해시 계산 — HTML 의 CSS/JS 링크에 ?v=<해시> 를 붙이기 위한 것
@@ -49,11 +50,14 @@ async def lifespan(_app: FastAPI):
     rank_scheduler.start(_app)
     # 관리자가 정한 시각(기본 14시 KST)에 플랜 목표만큼 광고를 자동 집행
     ad_dispatch_scheduler.start(_app)
+    # 관리자가 정한 주기(기본 10분)마다 온기 결제 내역을 폴링해 로컬에 upsert
+    ongi_sync.start(_app)
     try:
         yield
     finally:
         await rank_scheduler.stop(_app)
         await ad_dispatch_scheduler.stop(_app)
+        await ongi_sync.stop(_app)
 
 
 app = FastAPI(
@@ -78,6 +82,7 @@ app.include_router(owner_router)
 app.include_router(sales_router)
 app.include_router(designer_router)
 app.include_router(crm_router)
+app.include_router(webhook_router)
 
 
 @app.get("/api/public/review/{token}")
