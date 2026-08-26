@@ -350,7 +350,7 @@ def _find_number(node: Any, keys: tuple) -> Optional[float]:
     return None
 
 
-BALANCE_KEYS = ("balance", "point", "points", "remain", "remaining", "amount")
+BALANCE_KEYS = ("balance", "pointbalance", "point", "points", "remain", "remaining", "amount")
 
 
 async def get_balance(db: Session) -> dict:
