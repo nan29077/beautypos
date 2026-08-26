@@ -1,5 +1,11 @@
 from app.models.user import User
 from app.models.merchant import Merchant
+from app.models.merchant_ad_config import (
+    MerchantAdConfig,
+    MISSION_CATEGORIES, MISSION_CATEGORY_CODES,
+    MISSION_ACTIONS, MISSION_ACTION_CODES,
+    KEYWORD_MODES, KEYWORD_MODE_CODES, AUTO_COUNT_OPTIONS,
+)
 from app.models.staff import Staff
 from app.models.terminal import TerminalDevice
 from app.models.pg import PGProvider, MerchantPGConfig
@@ -23,6 +29,7 @@ from app.models.ad_keyword import (
 from app.models.ad_dispatch import (
     AdDispatch, DISPATCH_STATUSES, DISPATCH_STATUS_CODES, DISPATCH_STATUS_LABELS,
     SOURCE_AUTO, SOURCE_ORDER, SKIP_REASON_LABELS, MAX_RETRY, build_idempotency_key,
+    SKIP_NO_CONFIG, SKIP_NO_PLACE_CODE,
 )
 from app.models.ad_credit import (
     MerchantAdCredit, AdCreditLedger, AdCreditRefund,
@@ -63,6 +70,7 @@ __all__ = [
     "AD_TYPE_ALL", "MAX_KEYWORDS_PER_MERCHANT", "KEYWORD_MAX_LENGTH",
     "AdDispatch", "DISPATCH_STATUSES", "DISPATCH_STATUS_CODES", "DISPATCH_STATUS_LABELS",
     "SOURCE_AUTO", "SOURCE_ORDER", "SKIP_REASON_LABELS", "MAX_RETRY", "build_idempotency_key",
+    "SKIP_NO_CONFIG", "SKIP_NO_PLACE_CODE",
     "MerchantAdCredit", "AdCreditLedger", "AdCreditRefund",
     "CREDIT_ENTRIES", "CREDIT_ENTRY_LABELS", "REFUND_STATUSES", "REFUND_STATUS_LABELS",
     "MIN_REFUND_AMOUNT", "PAYMENT_PLAN", "PAYMENT_CREDIT",
@@ -75,4 +83,8 @@ __all__ = [
     "MessageChannel", "MessageStatus", "CouponStatus",
     "Plan", "MerchantPlan", "MerchantAdOverride", "AdExecution",
     "AD_EXECUTION_TYPES", "AD_EXECUTION_TYPE_CODES", "AD_EXECUTION_TYPE_LABELS", "PLAN_CODES",
+    "MerchantAdConfig",
+    "MISSION_CATEGORIES", "MISSION_CATEGORY_CODES",
+    "MISSION_ACTIONS", "MISSION_ACTION_CODES",
+    "KEYWORD_MODES", "KEYWORD_MODE_CODES", "AUTO_COUNT_OPTIONS",
 ]

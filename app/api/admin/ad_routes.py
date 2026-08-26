@@ -810,3 +810,135 @@ def list_ad_executions(
         }
         for r in rows
     ]
+
+
+# ═══════════════════════════════════════════════════════════
+# 매장별 리워드팝 광고 집행 설정 (placeCode, missionCategory, 키워드 모드)
+# ═══════════════════════════════════════════════════════════
+
+from app.models.merchant_ad_config import (  # noqa: E402
+    MerchantAdConfig,
+    MISSION_CATEGORIES, MISSION_CATEGORY_CODES,
+    MISSION_ACTIONS, MISSION_ACTION_CODES,
+    KEYWORD_MODES, KEYWORD_MODE_CODES, AUTO_COUNT_OPTIONS,
+)
+from app.services.ad_dispatch import DISPATCHABLE_AD_TYPES  # noqa: E402
+
+
+class _AdConfigItem(_BaseModel):
+    ad_type: str
+    mission_category: Optional[str] = None
+    mission_action: Optional[str] = None
+    keyword_mode: str = "MANUAL"
+    auto_count: Optional[int] = None
+
+
+class _AdConfigRequest(_BaseModel):
+    place_code: Optional[str] = None  # 네이버 플레이스 숫자 코드
+    configs: list[_AdConfigItem]
+
+
+@router.get("/merchants/{merchant_id}/ad-config")
+def get_merchant_ad_config(merchant_id: int, db: Session = Depends(get_db), _=Depends(require_admin)):
+    """매장 리워드팝 집행 설정 + placeCode 조회."""
+    merchant = db.query(Merchant).filter(Merchant.id == merchant_id).first()
+    if not merchant:
+        raise HTTPException(status_code=404, detail="가맹점을 찾을 수 없습니다")
+
+    config_rows = (
+        db.query(MerchantAdConfig)
+        .filter(MerchantAdConfig.merchant_id == merchant_id)
+        .all()
+    )
+    config_by_type = {c.ad_type: c for c in config_rows}
+
+    items = []
+    for ad_type in DISPATCHABLE_AD_TYPES:
+        cfg = config_by_type.get(ad_type)
+        items.append({
+            "ad_type": ad_type,
+            "ad_type_label": AD_EXECUTION_TYPE_LABELS.get(ad_type, ad_type),
+            "configured": cfg is not None,
+            "mission_category": cfg.mission_category if cfg else None,
+            "mission_action": cfg.mission_action if cfg else None,
+            "keyword_mode": cfg.keyword_mode if cfg else "MANUAL",
+            "auto_count": cfg.auto_count if cfg else None,
+        })
+
+    return {
+        "merchant_id": merchant.id,
+        "merchant_name": merchant.name,
+        "place_code": merchant.place_code,
+        "place_url": merchant.place_url,
+        "items": items,
+        "options": {
+            "mission_categories": [{"code": c, "label": l} for c, l in MISSION_CATEGORIES],
+            "mission_actions": {
+                cat: [{"code": c, "label": l} for c, l in actions]
+                for cat, actions in MISSION_ACTIONS.items()
+            },
+            "keyword_modes": [{"code": c, "label": l} for c, l in KEYWORD_MODES],
+            "auto_count_options": AUTO_COUNT_OPTIONS,
+        },
+    }
+
+
+@router.put("/merchants/{merchant_id}/ad-config")
+def set_merchant_ad_config(
+    merchant_id: int,
+    req: _AdConfigRequest,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """매장 리워드팝 집행 설정 저장 (upsert).
+
+    place_code 가 전달되면 Merchant 에도 반영한다.
+    각 ad_type 설정은 없으면 생성, 있으면 덮어쓴다.
+    """
+    merchant = db.query(Merchant).filter(Merchant.id == merchant_id).first()
+    if not merchant:
+        raise HTTPException(status_code=404, detail="가맹점을 찾을 수 없습니다")
+
+    # placeCode 저장 (URL에서 숫자만 추출하는 단순 정제)
+    if req.place_code is not None:
+        code = req.place_code.strip().rstrip("/")
+        # URL 형태이면 끝 숫자 부분만 추출
+        if "/" in code:
+            code = code.split("/")[-1]
+        merchant.place_code = code or None
+
+    for item in req.configs:
+        if item.ad_type not in DISPATCHABLE_AD_TYPES:
+            raise HTTPException(status_code=400, detail=f"지원하지 않는 광고 타입: {item.ad_type}")
+        if item.mission_category and item.mission_category not in MISSION_CATEGORY_CODES:
+            raise HTTPException(status_code=400, detail=f"올바르지 않은 missionCategory: {item.mission_category}")
+        if item.mission_action and item.mission_action not in MISSION_ACTION_CODES:
+            raise HTTPException(status_code=400, detail=f"올바르지 않은 missionAction: {item.mission_action}")
+        if item.keyword_mode not in KEYWORD_MODE_CODES:
+            raise HTTPException(status_code=400, detail=f"올바르지 않은 keywordMode: {item.keyword_mode}")
+        if item.keyword_mode == "AUTO" and item.auto_count and item.auto_count not in AUTO_COUNT_OPTIONS:
+            raise HTTPException(status_code=400, detail=f"autoCount는 {AUTO_COUNT_OPTIONS} 중 하나여야 합니다")
+
+        cfg = db.query(MerchantAdConfig).filter(
+            MerchantAdConfig.merchant_id == merchant_id,
+            MerchantAdConfig.ad_type == item.ad_type,
+        ).first()
+        if cfg is None:
+            from datetime import datetime as _dt
+            cfg = MerchantAdConfig(
+                merchant_id=merchant_id,
+                ad_type=item.ad_type,
+                created_at=_dt.utcnow(),
+                updated_at=_dt.utcnow(),
+            )
+            db.add(cfg)
+        cfg.mission_category = item.mission_category
+        cfg.mission_action = item.mission_action
+        cfg.keyword_mode = item.keyword_mode
+        cfg.auto_count = item.auto_count if item.keyword_mode == "AUTO" else None
+        from datetime import datetime as _dt
+        cfg.updated_at = _dt.utcnow()
+
+    db.commit()
+    return {"ok": True, "merchant_id": merchant.id, "merchant_name": merchant.name,
+            "place_code": merchant.place_code}

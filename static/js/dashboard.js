@@ -9204,7 +9204,7 @@ async function loadAdminPlans(c, t) {
             <div class="table-responsive">
                 <table class="table table-hover align-middle">
                     <thead><tr>
-                        <th>가맹점</th><th>현재 플랜</th><th>수수료율 (부가세 별도)</th><th>배정일</th><th style="min-width:220px">플랜 변경</th><th>개별 수량</th>
+                        <th>가맹점</th><th>현재 플랜</th><th>수수료율 (부가세 별도)</th><th>배정일</th><th style="min-width:220px">플랜 변경</th><th>개별 수량</th><th>리워드팝 설정</th>
                     </tr></thead>
                     <tbody>
                         ${assigned.map(m => `
@@ -9230,7 +9230,12 @@ async function loadAdminPlans(c, t) {
                                     <i class="fas fa-sliders-h me-1"></i>개별 설정
                                 </button>
                             </td>
-                        </tr>`).join('') || '<tr><td colspan="6" class="text-center text-muted py-4">가맹점이 없습니다</td></tr>'}
+                            <td>
+                                <button class="btn btn-sm btn-outline-primary" onclick="showAdConfigModal(${m.id}, '${escapeHtml(m.name)}')">
+                                    <i class="fas fa-cog me-1"></i>리워드팝
+                                </button>
+                            </td>
+                        </tr>`).join('') || '<tr><td colspan="7" class="text-center text-muted py-4">가맹점이 없습니다</td></tr>'}
                     </tbody>
                 </table>
             </div>
@@ -9423,6 +9428,154 @@ async function showAdOverrideModal(merchantId, merchantName) {
     };
 
     new bootstrap.Modal(document.getElementById('formModal')).show();
+}
+
+async function showAdConfigModal(merchantId, merchantName) {
+    let info;
+    try {
+        info = await apiGet(`/api/admin/merchants/${merchantId}/ad-config`);
+    } catch (e) {
+        alert('리워드팝 설정 조회 실패: ' + e.message);
+        return;
+    }
+
+    document.getElementById('formModalTitle').textContent = `${merchantName} — 리워드팝 집행 설정`;
+    resetFormModalFooter(true);
+
+    const missionCatOptions = (info.options?.mission_categories || [])
+        .map(c => `<option value="${c.code}">${escapeHtml(c.label)}</option>`).join('');
+    const keywordModeOptions = (info.options?.keyword_modes || [])
+        .map(c => `<option value="${c.code}">${escapeHtml(c.label)}</option>`).join('');
+    const autoCountOptions = (info.options?.auto_count_options || [10, 30, 50])
+        .map(n => `<option value="${n}">${n}개</option>`).join('');
+
+    function missionActionOptions(category, selected) {
+        const all = info.options?.mission_actions || {};
+        const acts = all[category] || [];
+        if (!acts.length) return '<option value="">카테고리를 먼저 선택하세요</option>';
+        return acts.map(a => `<option value="${a.code}" ${a.code === selected ? 'selected' : ''}>${escapeHtml(a.label)}</option>`).join('');
+    }
+
+    const rows = info.items.map(it => `
+    <div class="card mb-3 border-secondary">
+        <div class="card-header py-2 fw-bold small">
+            <i class="fas fa-ad me-1 text-primary"></i>${escapeHtml(it.ad_type_label)}
+            ${it.configured ? '<span class="badge bg-success ms-2">설정됨</span>' : '<span class="badge bg-warning text-dark ms-2">미설정 (집행 건너뜀)</span>'}
+        </div>
+        <div class="card-body py-3">
+            <div class="row g-2 mb-2">
+                <div class="col-6">
+                    <label class="form-label small fw-bold mb-1">미션 카테고리</label>
+                    <select class="form-select form-select-sm" id="cfg_cat_${merchantId}_${it.ad_type}"
+                        onchange="updateMissionActions(${merchantId}, '${it.ad_type}')">
+                        <option value="">선택 안 함</option>
+                        ${(info.options?.mission_categories || []).map(c =>
+                            `<option value="${c.code}" ${c.code === it.mission_category ? 'selected' : ''}>${escapeHtml(c.label)}</option>`
+                        ).join('')}
+                    </select>
+                </div>
+                <div class="col-6">
+                    <label class="form-label small fw-bold mb-1">미션 액션</label>
+                    <select class="form-select form-select-sm" id="cfg_act_${merchantId}_${it.ad_type}">
+                        <option value="">선택 안 함</option>
+                        ${missionActionOptions(it.mission_category, it.mission_action)}
+                    </select>
+                </div>
+            </div>
+            <div class="row g-2">
+                <div class="col-6">
+                    <label class="form-label small fw-bold mb-1">키워드 모드</label>
+                    <select class="form-select form-select-sm" id="cfg_kwmode_${merchantId}_${it.ad_type}"
+                        onchange="updateAutoCountVisibility(${merchantId}, '${it.ad_type}')">
+                        ${(info.options?.keyword_modes || []).map(c =>
+                            `<option value="${c.code}" ${c.code === it.keyword_mode ? 'selected' : ''}>${escapeHtml(c.label)}</option>`
+                        ).join('')}
+                    </select>
+                </div>
+                <div class="col-6" id="cfg_autocnt_wrap_${merchantId}_${it.ad_type}" style="${it.keyword_mode === 'AUTO' ? '' : 'display:none'}">
+                    <label class="form-label small fw-bold mb-1">자동 키워드 수</label>
+                    <select class="form-select form-select-sm" id="cfg_autocnt_${merchantId}_${it.ad_type}">
+                        ${[10, 30, 50].map(n =>
+                            `<option value="${n}" ${n === it.auto_count ? 'selected' : ''}>${n}개</option>`
+                        ).join('')}
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>`).join('');
+
+    document.getElementById('formModalBody').innerHTML = `
+    <div class="mb-3">
+        <label class="form-label fw-bold">네이버 플레이스 코드</label>
+        <input type="text" class="form-control" id="cfg_place_code_${merchantId}"
+            placeholder="예: 1750900108 (URL 끝 숫자 또는 전체 URL 입력)"
+            value="${escapeHtml(info.place_code || '')}">
+        <div class="form-text">
+            네이버 플레이스 URL 끝의 숫자만 입력하거나, 전체 URL을 붙여넣어도 됩니다.
+        </div>
+    </div>
+    <hr>
+    <div class="fw-bold mb-3 small text-muted">광고 타입별 집행 설정</div>
+    ${rows}
+    <div id="cfg_result_${merchantId}"></div>`;
+
+    const saveBtn = document.getElementById('formModalSave');
+    saveBtn.onclick = async () => {
+        const place_code = document.getElementById(`cfg_place_code_${merchantId}`)?.value?.trim() || null;
+        const configs = info.items.map(it => {
+            const cat = document.getElementById(`cfg_cat_${merchantId}_${it.ad_type}`)?.value || null;
+            const act = document.getElementById(`cfg_act_${merchantId}_${it.ad_type}`)?.value || null;
+            const kwmode = document.getElementById(`cfg_kwmode_${merchantId}_${it.ad_type}`)?.value || 'MANUAL';
+            const autocnt = kwmode === 'AUTO'
+                ? parseInt(document.getElementById(`cfg_autocnt_${merchantId}_${it.ad_type}`)?.value, 10) || null
+                : null;
+            return {
+                ad_type: it.ad_type,
+                mission_category: cat || null,
+                mission_action: act || null,
+                keyword_mode: kwmode,
+                auto_count: autocnt,
+            };
+        });
+        try {
+            await apiPut(`/api/admin/merchants/${merchantId}/ad-config`, { place_code, configs });
+            bootstrap.Modal.getInstance(document.getElementById('formModal')).hide();
+            navigate('admin-plans');
+        } catch (e) {
+            document.getElementById(`cfg_result_${merchantId}`).innerHTML =
+                `<div class="alert alert-danger py-2 small mt-2">${escapeHtml(e.message)}</div>`;
+        }
+    };
+
+    new bootstrap.Modal(document.getElementById('formModal')).show();
+}
+
+function updateMissionActions(merchantId, adType) {
+    const catSel = document.getElementById(`cfg_cat_${merchantId}_${adType}`);
+    const actSel = document.getElementById(`cfg_act_${merchantId}_${adType}`);
+    if (!catSel || !actSel) return;
+    const cat = catSel.value;
+    const missionActionsMap = {
+        VISIT: [
+            { code: 'WRITE_REVIEW', label: '방문자 리뷰' },
+            { code: 'FIND_PATH', label: '길찾기' },
+            { code: 'SPOT_CHECK', label: '명소확인' },
+            { code: 'RANDOM_MISSION', label: '랜덤 미션' },
+            { code: 'BUSINESS_HOURS', label: '영업시간' },
+            { code: 'INTRODUCTION', label: '소개' },
+            { code: 'WALK_COUNT', label: '도보수' },
+        ],
+        SAVE: [{ code: 'PLACE_SAVE', label: '플레이스 저장' }],
+    };
+    const acts = missionActionsMap[cat] || [];
+    actSel.innerHTML = '<option value="">선택 안 함</option>' +
+        acts.map(a => `<option value="${a.code}">${escapeHtml(a.label)}</option>`).join('');
+}
+
+function updateAutoCountVisibility(merchantId, adType) {
+    const kwmode = document.getElementById(`cfg_kwmode_${merchantId}_${adType}`)?.value;
+    const wrap = document.getElementById(`cfg_autocnt_wrap_${merchantId}_${adType}`);
+    if (wrap) wrap.style.display = kwmode === 'AUTO' ? '' : 'none';
 }
 
 // ─── ADMIN: 광고 실행 현황 ─────────────────────────────────

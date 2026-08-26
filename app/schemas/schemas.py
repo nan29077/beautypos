@@ -59,6 +59,7 @@ class MerchantUpdate(BaseModel):
     address: Optional[str] = None
     phone: Optional[str] = None
     is_active: Optional[bool] = None
+    place_code: Optional[str] = None  # 네이버 플레이스 숫자 코드 (리워드팝 placeCode)
 
 
 # ─── PG Config ───────────────────────────────────────────────

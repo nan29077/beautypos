@@ -21,6 +21,7 @@ class Merchant(Base):
     category = Column(String(50), nullable=True, default=None)  # hair_salon, nail_shop, restaurant, cafe, etc.
     category_custom = Column(String(100), nullable=True, default=None)  # 직접입력 시 값
     place_url = Column(String(500), nullable=True, default=None)  # 네이버 플레이스 URL
+    place_code = Column(String(30), nullable=True, default=None)   # 네이버 플레이스 숫자 코드 (리워드팝 placeCode)
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 

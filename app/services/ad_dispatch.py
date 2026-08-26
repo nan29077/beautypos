@@ -24,7 +24,9 @@ from app.models.ad_dispatch import (
     RETRY_BACKOFF_MINUTES,
     SKIP_ALREADY_DONE,
     SKIP_INTEGRATION_OFF,
+    SKIP_NO_CONFIG,
     SKIP_NO_KEYWORD,
+    SKIP_NO_PLACE_CODE,
     SKIP_NO_PLAN,
     SKIP_NO_PRICE,
     SKIP_REASON_LABELS,
@@ -40,6 +42,7 @@ from app.models.ad_dispatch import (
     build_idempotency_key,
 )
 from app.models.merchant import Merchant
+from app.models.merchant_ad_config import MerchantAdConfig
 from app.models.plan import AdExecution, AD_EXECUTION_TYPE_LABELS
 from app.services import ad_keyword, ad_pricing, plan_service, rewardpop
 from app.utils.kst import fmt_kst, today_kst
@@ -77,6 +80,14 @@ def _already_executed(db: Session, merchant_id: int, ad_type: str, day: date_cls
     ).first() is not None
 
 
+def _get_ad_config(db: Session, merchant_id: int, ad_type: str) -> Optional[MerchantAdConfig]:
+    """매장별 광고 집행 설정 조회. 없으면 None."""
+    return db.query(MerchantAdConfig).filter(
+        MerchantAdConfig.merchant_id == merchant_id,
+        MerchantAdConfig.ad_type == ad_type,
+    ).first()
+
+
 def build_plan(db: Session, target_date: Optional[date_cls] = None,
                merchant_id: Optional[int] = None) -> dict:
     """오늘 무엇이 나갈지 계산한다. 아무것도 전송하지 않는다.
@@ -101,10 +112,12 @@ def build_plan(db: Session, target_date: Optional[date_cls] = None,
             entry = {
                 "merchant_id": merchant.id,
                 "merchant_name": merchant.name,
+                "place_code": merchant.place_code,
                 "ad_type": ad_type,
                 "ad_type_label": AD_EXECUTION_TYPE_LABELS.get(ad_type, ad_type),
                 "target": 0,
                 "keywords": [],
+                "ad_config": None,
                 "unit_price": _unit_price(pricing, ad_type),
                 "est_cost": 0,
                 "action": "skip",
@@ -131,15 +144,37 @@ def build_plan(db: Session, target_date: Optional[date_cls] = None,
                 items.append(entry)
                 continue
 
-            keywords = ad_keyword.pick_for_date(
-                ad_keyword.usable_keywords(db, merchant.id, ad_type),
-                target_date, KEYWORDS_PER_DISPATCH,
-            )
-            entry["keywords"] = [k.keyword for k in keywords]
-            if not keywords:
-                entry["skip_reason"] = SKIP_NO_KEYWORD
+            # 리워드팝 집행 설정 확인 (placeCode, missionCategory 등)
+            ad_config = _get_ad_config(db, merchant.id, ad_type)
+            if ad_config is None:
+                entry["skip_reason"] = SKIP_NO_CONFIG
                 items.append(entry)
                 continue
+            entry["ad_config"] = {
+                "mission_category": ad_config.mission_category,
+                "mission_action": ad_config.mission_action,
+                "keyword_mode": ad_config.keyword_mode,
+                "auto_count": ad_config.auto_count,
+            }
+
+            # placeCode 확인
+            if not merchant.place_code:
+                entry["skip_reason"] = SKIP_NO_PLACE_CODE
+                items.append(entry)
+                continue
+
+            # MANUAL 모드일 때만 키워드 체크
+            if ad_config.keyword_mode == "MANUAL":
+                keywords = ad_keyword.pick_for_date(
+                    ad_keyword.usable_keywords(db, merchant.id, ad_type),
+                    target_date, KEYWORDS_PER_DISPATCH,
+                )
+                entry["keywords"] = [k.keyword for k in keywords]
+                if not keywords:
+                    entry["skip_reason"] = SKIP_NO_KEYWORD
+                    items.append(entry)
+                    continue
+            # AUTO 모드는 리워드팝이 키워드를 자동 추출하므로 키워드 체크 불필요
 
             if entry["unit_price"] <= 0:
                 entry["skip_reason"] = SKIP_NO_PRICE
@@ -196,19 +231,46 @@ def _record_skip(db: Session, item: dict, target_date: date_cls, actor_id: Optio
 
 
 def _build_request(item: dict, target_date: date_cls) -> dict:
-    """리워드팝에 보낼 요청 본문.
+    """리워드팝 POST /ads 에 보낼 요청 본문.
 
-    필드 이름은 리워드팝 명세가 확정되면 이 함수 안에서만 바꾸면 된다.
+    리워드팝 명세 필드:
+        placeCode       - 네이버 플레이스 숫자 코드
+        missionCategory - VISIT | SAVE
+        missionAction   - WRITE_REVIEW | FIND_PATH | SPOT_CHECK 등 (VISIT 계열)
+                          PLACE_SAVE (SAVE 계열)
+        startDate       - 집행 시작일 (YYYY-MM-DD)
+        workDays        - 집행 일수 (1일 집행이므로 항상 1)
+        dailyQuantity   - 하루 집행 수량
+        keywordMode     - MANUAL | AUTO
+        keywords        - 파이프(|) 구분 문자열 (MANUAL 모드일 때만)
+        autoCount       - AUTO 모드 키워드 수 (10 | 30 | 50)
+
+    필드 이름은 이 함수 안에서만 바꾸면 된다.
     집행 행(request_json)에 그대로 남기므로 관리자가 무엇을 보냈는지 확인할 수 있다.
     """
-    return {
-        "ad_type": item["ad_type"],
-        "merchant_id": item["merchant_id"],
-        "merchant_name": item["merchant_name"],
-        "keywords": item["keywords"],
-        "count": item["target"],
-        "date": str(target_date),
+    cfg = item.get("ad_config") or {}
+    keyword_mode = cfg.get("keyword_mode", "MANUAL")
+
+    payload = {
+        "placeCode": item["place_code"],
+        "missionCategory": cfg.get("mission_category"),
+        "missionAction": cfg.get("mission_action"),
+        "startDate": str(target_date),
+        "workDays": 1,
+        "dailyQuantity": item["target"],
+        "keywordMode": keyword_mode,
     }
+
+    if keyword_mode == "MANUAL":
+        # 파이프(|) 구분 문자열로 전달
+        payload["keywords"] = "|".join(item.get("keywords", []))
+    else:
+        # AUTO 모드: 리워드팝이 자동 추출할 키워드 수
+        auto_count = cfg.get("auto_count")
+        if auto_count:
+            payload["autoCount"] = auto_count
+
+    return payload
 
 
 def _prepare_row(db: Session, item: dict, target_date: date_cls,
@@ -361,13 +423,22 @@ async def retry(db: Session, row: AdDispatch, actor_id: Optional[int] = None) ->
     """실패한 집행을 다시 시도한다."""
     if row.status != STATUS_FAILED:
         return row
+    merchant = row.merchant
+    ad_config = _get_ad_config(db, row.merchant_id, row.ad_type)
     item = {
         "merchant_id": row.merchant_id,
-        "merchant_name": row.merchant.name if row.merchant else "",
+        "merchant_name": merchant.name if merchant else "",
+        "place_code": merchant.place_code if merchant else None,
         "ad_type": row.ad_type,
         "target": int(row.requested_count or 0),
         "keywords": [k.strip() for k in (row.keyword or "").split(",") if k.strip()],
         "est_cost": float(row.cost_amount or 0),
+        "ad_config": {
+            "mission_category": ad_config.mission_category if ad_config else None,
+            "mission_action": ad_config.mission_action if ad_config else None,
+            "keyword_mode": ad_config.keyword_mode if ad_config else "MANUAL",
+            "auto_count": ad_config.auto_count if ad_config else None,
+        },
     }
     await run_in_threadpool(_bump_retry, db, row)
     return await _dispatch_one(db, item, row.execution_date, False, actor_id)
