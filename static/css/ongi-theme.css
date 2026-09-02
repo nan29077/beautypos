@@ -818,7 +818,7 @@ body:has(.hero-slider) .section-head {
 .cta-mascot {
     position: absolute;
     right: 30px;
-    bottom: -14px;
+    bottom: 18px;
     width: 118px;
     height: 118px;
     border: 4px solid rgba(255, 255, 255, .68);
@@ -931,9 +931,9 @@ body:has(.review-container) .review-container {
 
     .cta-mascot {
         right: 50%;
-        bottom: -26px;
-        width: 82px;
-        height: 82px;
+        bottom: 14px;
+        width: 86px;
+        height: 86px;
         margin: 0;
         transform: translateX(50%);
     }
