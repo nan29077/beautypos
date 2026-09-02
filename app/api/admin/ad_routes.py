@@ -13,7 +13,7 @@ from app.database import get_db
 from app.models.user import User
 from app.models.merchant import Merchant
 from app.models.ad import (
-    AdOrder, AdOrderStatus, AdMetric, AdOrderBlogDetail, AdOrderBlogImage,
+    AdOrder, AdOrderStatus, AdOrderType, AdMetric, AdOrderBlogDetail, AdOrderBlogImage,
     AdOrderPlaceTrafficDetail, AdOrderShortsDetail, AdPlaceProfile, AdCompetitor,
     SHORTS_DURATION_TIERS,
 )
@@ -22,7 +22,7 @@ from app.models.system_config import (
     SystemConfig, AD_ORDER_MGMT_ENABLED, AD_BLOG_ENABLED, AD_PLACE_TRAFFIC_ENABLED,
     AD_SHORTS_ENABLED,
 )
-from app.services import ad_pricing
+from app.services import ad_dispatch, ad_pricing, rewardpop
 from app.services.settlement_service import get_effective_fee_rates
 from app.schemas.schemas import (
     AdMetricCreate, AdOrderStatusUpdate, AdPricingUpdate,
@@ -182,10 +182,42 @@ def _change_ad_order_status(
     }
 
 
+async def _dispatch_rewardpop_order_if_needed(
+    db: Session, oid: int, requested_status: str, admin: User,
+):
+    """플레이스 추가 주문이 검토→집행으로 바뀌는 순간 리워드팝에 먼저 접수한다."""
+    if requested_status != AdOrderStatus.RUNNING.value:
+        return None
+    order = db.query(AdOrder).filter(AdOrder.id == oid).first()
+    if not order or order.type != AdOrderType.PLACE_TRAFFIC:
+        return None
+    # 외부 API 호출은 되돌릴 수 없다. 내부 상태 전환을 먼저 검증해
+    # 잘못된 요청이 리워드팝 광고를 생성하는 일을 막는다.
+    _validate_ad_order_transition(order.status.value, requested_status)
+    try:
+        dispatch = await ad_dispatch.dispatch_ad_order(db, order, admin.id)
+    except rewardpop.RewardpopError as exc:
+        raise HTTPException(status_code=502, detail=exc.message) from exc
+    if dispatch.status == "failed":
+        raise HTTPException(
+            status_code=502,
+            detail=dispatch.error_message or "리워드팝 광고 등록에 실패했습니다",
+        )
+    return dispatch
+
+
 @router.post("/ad/orders/{oid}/status")
-def update_ad_order_status(oid: int, req: AdOrderStatusUpdate, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+async def update_ad_order_status(oid: int, req: AdOrderStatusUpdate, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     """상태 변경 (구 엔드포인트). /ad/orders/{oid}/execute 와 같은 처리를 한다."""
-    return _change_ad_order_status(db, oid, req.status, admin, req.admin_memo)
+    dispatch = await _dispatch_rewardpop_order_if_needed(db, oid, req.status, admin)
+    result = _change_ad_order_status(db, oid, req.status, admin, req.admin_memo)
+    if dispatch is not None and dispatch.status == "done":
+        result = _change_ad_order_status(db, oid, AdOrderStatus.DONE.value, admin)
+    return {
+        **result,
+        "dispatch_id": dispatch.id if dispatch else None,
+        "external_order_id": dispatch.external_order_id if dispatch else None,
+    }
 
 
 # ─── Ad Metrics ──────────────────────────────────────────────
@@ -386,7 +418,7 @@ def get_ad_order_detail(oid: int, db: Session = Depends(get_db), _=Depends(requi
 
 
 @router.put("/ad/orders/{oid}/execute")
-def execute_ad_order(
+async def execute_ad_order(
     oid: int,
     status: str = Query(...),
     admin_memo: Optional[str] = Query(None),
@@ -397,8 +429,16 @@ def execute_ad_order(
 
     반려 시 크레딧 환급을 포함한 상태 변경 처리는 _change_ad_order_status() 한 곳에 있다.
     """
+    dispatch = await _dispatch_rewardpop_order_if_needed(db, oid, status, admin)
     result = _change_ad_order_status(db, oid, status, admin, admin_memo, append_memo=True)
-    return {**result, "assigned_admin": admin.name}
+    if dispatch is not None and dispatch.status == "done":
+        result = _change_ad_order_status(db, oid, AdOrderStatus.DONE.value, admin)
+    return {
+        **result,
+        "assigned_admin": admin.name,
+        "dispatch_id": dispatch.id if dispatch else None,
+        "external_order_id": dispatch.external_order_id if dispatch else None,
+    }
 
 
 # ═══════════════════════════════════════════════════════════
@@ -905,18 +945,26 @@ def set_merchant_ad_config(
         # URL 형태이면 끝 숫자 부분만 추출
         if "/" in code:
             code = code.split("/")[-1]
+        if code and not code.isdigit():
+            raise HTTPException(status_code=400, detail="placeCode는 숫자 또는 숫자로 끝나는 플레이스 URL이어야 합니다")
         merchant.place_code = code or None
 
     for item in req.configs:
         if item.ad_type not in DISPATCHABLE_AD_TYPES:
             raise HTTPException(status_code=400, detail=f"지원하지 않는 광고 타입: {item.ad_type}")
-        if item.mission_category and item.mission_category not in MISSION_CATEGORY_CODES:
+        if not item.mission_category or item.mission_category not in MISSION_CATEGORY_CODES:
             raise HTTPException(status_code=400, detail=f"올바르지 않은 missionCategory: {item.mission_category}")
-        if item.mission_action and item.mission_action not in MISSION_ACTION_CODES:
+        if not item.mission_action or item.mission_action not in MISSION_ACTION_CODES:
             raise HTTPException(status_code=400, detail=f"올바르지 않은 missionAction: {item.mission_action}")
+        allowed_actions = {code for code, _ in MISSION_ACTIONS[item.mission_category]}
+        if item.mission_action not in allowed_actions:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{item.mission_category}에서 사용할 수 없는 missionAction입니다: {item.mission_action}",
+            )
         if item.keyword_mode not in KEYWORD_MODE_CODES:
             raise HTTPException(status_code=400, detail=f"올바르지 않은 keywordMode: {item.keyword_mode}")
-        if item.keyword_mode == "AUTO" and item.auto_count and item.auto_count not in AUTO_COUNT_OPTIONS:
+        if item.keyword_mode == "AUTO" and item.auto_count not in AUTO_COUNT_OPTIONS:
             raise HTTPException(status_code=400, detail=f"autoCount는 {AUTO_COUNT_OPTIONS} 중 하나여야 합니다")
 
         cfg = db.query(MerchantAdConfig).filter(

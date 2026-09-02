@@ -33,9 +33,11 @@ from app.services.encryption import encrypt_value, decrypt_value
 
 logger = logging.getLogger(__name__)
 
-REQUEST_TIMEOUT = 15.0
+REQUEST_TIMEOUT = 20.0
+# AUTO 키워드 추출은 공식 문서상 최대 120초가 걸릴 수 있다.
+ORDER_REQUEST_TIMEOUT = 130.0
 
-# 인증 방식 — 명세를 받으면 이 중 하나로 설정한다.
+# 비공식/테스트 호스트 호환용 인증 방식. 공식 호스트는 header로 고정한다.
 AUTH_STYLES = [
     ("bearer", "Authorization: Bearer <키>"),
     ("header", "지정한 헤더에 키를 그대로"),
@@ -45,13 +47,13 @@ AUTH_STYLE_CODES = [code for code, _ in AUTH_STYLES]
 
 DEFAULT_SETTINGS = {
     "base_url": "https://api.rewardpop.kr",
-    "auth_style": "bearer",          # AUTH_STYLE_CODES 중 하나
-    "auth_header": "X-API-KEY",      # auth_style == "header" 일 때 사용
+    "auth_style": "header",          # 공식 규격: x-api-key 헤더
+    "auth_header": "x-api-key",      # auth_style == "header" 일 때 사용
     "auth_query": "api_key",         # auth_style == "query" 일 때 사용
-    "ping_path": "",                 # 연결 확인용 GET 경로 (명세 확인 후 입력)
-    "balance_path": "",              # 포인트 잔액 조회 GET 경로
-    "order_path": "",                # 주문 생성 POST 경로
-    "status_path": "",               # 주문 상태 조회 GET 경로 ({id} 자리에 외부 주문번호가 들어간다)
+    "ping_path": "/accounts/points", # 별도 ping이 없어 안전한 잔액 GET으로 인증 확인
+    "balance_path": "/accounts/points",
+    "order_path": "/ads",
+    "status_path": "/ads",           # GET /ads?groupId=<외부 주문번호>
     "dispatch_hour": 14,             # 자동 집행 시각 (KST)
     "dispatch_minute": 0,
     "dry_run": True,                 # 참이면 실제 호출 없이 요청 내용만 기록한다
@@ -165,15 +167,22 @@ def normalize_settings(raw: Optional[dict]) -> dict:
     base = str(raw.get("base_url") or DEFAULT_SETTINGS["base_url"]).strip().rstrip("/")
     if not base.startswith(("http://", "https://")):
         base = DEFAULT_SETTINGS["base_url"]
+    official = base.lower() == DEFAULT_SETTINGS["base_url"].lower()
+    if official:
+        style = "header"
     return {
         "base_url": base,
         "auth_style": style,
-        "auth_header": str(raw.get("auth_header") or DEFAULT_SETTINGS["auth_header"]).strip(),
+        "auth_header": (
+            DEFAULT_SETTINGS["auth_header"] if official
+            else str(raw.get("auth_header") or DEFAULT_SETTINGS["auth_header"]).strip()
+        ),
         "auth_query": str(raw.get("auth_query") or DEFAULT_SETTINGS["auth_query"]).strip(),
-        "ping_path": _clean_path(raw.get("ping_path")),
-        "balance_path": _clean_path(raw.get("balance_path")),
-        "order_path": _clean_path(raw.get("order_path")),
-        "status_path": _clean_path(raw.get("status_path")),
+        # 공식 API 경로는 고정값이다. 과거 빈 설정도 읽는 즉시 안전한 기본값으로 보정한다.
+        "ping_path": _clean_path(DEFAULT_SETTINGS["ping_path"] if official else raw.get("ping_path")),
+        "balance_path": _clean_path(DEFAULT_SETTINGS["balance_path"] if official else raw.get("balance_path")),
+        "order_path": _clean_path(DEFAULT_SETTINGS["order_path"] if official else raw.get("order_path")),
+        "status_path": _clean_path(DEFAULT_SETTINGS["status_path"] if official else raw.get("status_path")),
         "dispatch_hour": _clean_int(raw.get("dispatch_hour"), DEFAULT_SETTINGS["dispatch_hour"], 0, 23),
         "dispatch_minute": _clean_int(raw.get("dispatch_minute"), DEFAULT_SETTINGS["dispatch_minute"], 0, 59),
         "dry_run": bool(raw.get("dry_run", DEFAULT_SETTINGS["dry_run"])),
@@ -244,6 +253,7 @@ async def _request(
     *,
     json_body: Optional[dict] = None,
     params: Optional[dict] = None,
+    timeout: float = REQUEST_TIMEOUT,
 ) -> Any:
     """리워드팝에 요청을 보내고 파싱된 본문을 돌려준다.
 
@@ -264,7 +274,7 @@ async def _request(
     url = settings["base_url"] + path
 
     try:
-        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+        async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.request(
                 method.upper(), url,
                 headers=headers,
@@ -356,8 +366,8 @@ BALANCE_KEYS = ("balance", "pointbalance", "point", "points", "remain", "remaini
 async def get_balance(db: Session) -> dict:
     """리워드팝 포인트 잔액을 조회한다.
 
-    응답 형태가 확정되지 않아, 흔한 이름의 숫자 필드를 찾아 balance 로 올려주고
-    원본도 함께 돌려준다. 명세를 받으면 이 추정 로직을 정확한 매핑으로 바꾼다.
+    공식 응답의 pointBalance를 포함해 중첩 계정 응답에서도 잔액을 찾고,
+    관리 화면 진단을 위해 원본도 함께 돌려준다.
     """
     settings = await run_in_threadpool(get_settings, db)
     if not settings["balance_path"]:
@@ -366,8 +376,7 @@ async def get_balance(db: Session) -> dict:
     return {"balance": _find_number(body, BALANCE_KEYS), "raw": body}
 
 
-# 주문 생성 응답에서 외부 주문번호로 쓸 수 있는 필드 이름들.
-# 명세가 확정되면 첫 번째 값 하나만 남기면 된다.
+# 공식 groupId를 우선하고, 테스트/호환 호스트 응답에는 아래 이름도 허용한다.
 ORDER_ID_KEYS = (
     "external_order_id", "order_id", "orderid", "orderno", "order_no",
     "campaign_id", "campaignid", "id", "uid", "no",
@@ -376,9 +385,10 @@ ORDER_ID_KEYS = (
 
 def _find_identifier(node: Any, keys: tuple) -> Optional[str]:
     """중첩된 응답에서 주문번호로 보이는 값을 찾는다 (문자열/정수 모두 허용)."""
+    normalized_keys = {str(candidate).lower().replace("_", "") for candidate in keys}
     if isinstance(node, dict):
         for key, value in node.items():
-            if key.lower().replace("_", "") in keys and isinstance(value, (str, int)):
+            if key.lower().replace("_", "") in normalized_keys and isinstance(value, (str, int)):
                 text = str(value).strip()
                 if text:
                     return text
@@ -413,7 +423,21 @@ async def create_order(db: Session, ad_type: str, payload: dict) -> dict:
             "주문 생성 경로가 아직 설정되지 않았습니다. 연동 설정에서 경로를 입력해주세요."
         )
 
-    body = await _request(db, "POST", settings["order_path"], json_body=payload)
+    try:
+        body = await _request(
+            db, "POST", settings["order_path"], json_body=payload,
+            timeout=ORDER_REQUEST_TIMEOUT,
+        )
+    except RewardpopError as exc:
+        # 공식 API는 외부 멱등키를 받지 않는다. 타임아웃/5xx 뒤 자동 재시도하면
+        # 이미 접수된 캠페인이 중복될 수 있어 운영자 확인 전에는 재시도하지 않는다.
+        if exc.retryable:
+            raise RewardpopError(
+                f"{exc.message} 주문 접수 여부를 리워드팝에서 확인한 뒤 재시도해주세요.",
+                retryable=False,
+                status=exc.status,
+            )
+        raise
 
     # 리워드팝 응답은 groupId(UUID)를 기준 식별자로 쓴다. 상태 조회도 groupId로 한다.
     external_order_id = (body.get("groupId") if isinstance(body, dict) else None) or _find_identifier(body, ORDER_ID_KEYS)
@@ -429,19 +453,19 @@ async def create_order(db: Session, ad_type: str, payload: dict) -> dict:
     status, _raw_status = map_external_status(body)
     return {
         "external_order_id": external_order_id,
-        "status": status or "running",
+        "status": status or "sent",
         "raw": body,
     }
 
 
 # 외부 상태 문자열을 우리 상태로 옮기는 표.
-# 명세를 받으면 실제 값에 맞춰 채운다. 모르는 값은 '진행 중'으로 두어
-# 완료로 잘못 처리하지 않는다.
+# 공식 상태 외의 값은 매핑하지 않는다. 모르는 값을 성공으로 간주하지 않는다.
 EXTERNAL_STATUS_MAP = {
+    "active": "running", "pending": "sent", "stop": "failed",
     "done": "done", "complete": "done", "completed": "done", "finished": "done",
     "success": "done", "succeeded": "done",
     "running": "running", "progress": "running", "in_progress": "running",
-    "processing": "running", "pending": "running", "waiting": "running",
+    "processing": "running", "waiting": "running",
     "fail": "failed", "failed": "failed", "error": "failed",
     "cancel": "failed", "cancelled": "failed", "canceled": "failed", "rejected": "failed",
 }
@@ -473,13 +497,13 @@ def map_external_status(body) -> tuple:
     raw = _find(body)
     if not raw:
         return None, None
-    return EXTERNAL_STATUS_MAP.get(raw.lower().replace("-", "_"), "running"), raw
+    return EXTERNAL_STATUS_MAP.get(raw.lower().replace("-", "_")), raw
 
 
 async def get_order_status(db: Session, external_order_id: str) -> dict:
     """접수된 주문의 진행 상태를 조회한다.
 
-    경로에 {id} 자리를 두면 외부 주문번호로 채운다. 예) /v1/campaigns/{id}
+    공식 규격은 GET /ads?groupId=<등록 응답의 groupId> 이다.
     """
     settings = await run_in_threadpool(get_settings, db)
     path = settings["status_path"]
@@ -491,7 +515,7 @@ async def get_order_status(db: Session, external_order_id: str) -> dict:
     if "{id}" in path:
         body = await _request(db, "GET", path.replace("{id}", str(external_order_id)))
     else:
-        body = await _request(db, "GET", path, params={"id": external_order_id})
+        body = await _request(db, "GET", path, params={"groupId": external_order_id})
 
     status, raw_status = map_external_status(body)
     return {"status": status, "raw_status": raw_status, "raw": body}

@@ -78,12 +78,12 @@ async def run_once(force: bool = False) -> dict:
     db = SessionLocal()
     try:
         today = today_kst()
-        if not force and not acquire_daily_lock(db, today):
-            logger.info("광고 자동 집행 건너뜀 — 오늘(%s) 이미 실행됨", today)
-            return {"skipped": True, "reason": "already_run_today", "date": str(today)}
         if not rewardpop.is_enabled(db):
             logger.info("광고 자동 집행 건너뜀 — 리워드팝 연동이 꺼져 있음")
             return {"skipped": True, "reason": "integration_off", "date": str(today)}
+        if not force and not acquire_daily_lock(db, today):
+            logger.info("광고 자동 집행 건너뜀 — 오늘(%s) 이미 실행됨", today)
+            return {"skipped": True, "reason": "already_run_today", "date": str(today)}
         return await ad_dispatch.run(db, target_date=today)
     finally:
         db.close()
@@ -99,6 +99,7 @@ async def _scheduler_loop() -> None:
     from app.services import rewardpop
 
     logger.info("광고 자동 집행 스케줄러 시작")
+    last_status_slot = None
     while True:
         try:
             await asyncio.sleep(CHECK_INTERVAL_SECONDS)
@@ -111,13 +112,26 @@ async def _scheduler_loop() -> None:
             settings = rewardpop.get_settings(db)
             hour = int(settings.get("dispatch_hour", 14))
             minute = int(settings.get("dispatch_minute", 0))
+            integration_enabled = rewardpop.is_enabled(db)
         except Exception as exc:  # noqa: BLE001 — 설정을 못 읽어도 루프는 살아 있어야 한다
             logger.warning("집행 시각 설정을 읽지 못했습니다: %s", exc)
-            hour, minute = 14, 0
+            hour, minute, integration_enabled = 14, 0, False
         finally:
             db.close()
 
         now = datetime.now(KST)
+        # 접수된 캠페인의 상태를 5분마다 동기화한다. GET 조회라 외부 주문을 만들지 않는다.
+        status_slot = now.strftime("%Y-%m-%d %H:%M") if now.minute % 5 == 0 else None
+        if integration_enabled and status_slot and status_slot != last_status_slot:
+            last_status_slot = status_slot
+            status_db = SessionLocal()
+            try:
+                from app.services import ad_dispatch
+                await ad_dispatch.refresh_statuses(status_db, limit=200)
+            except Exception as exc:  # noqa: BLE001 — 상태 조회 실패로 집행 루프를 죽이지 않는다
+                logger.warning("리워드팝 광고 상태 자동 동기화 실패: %s", exc)
+            finally:
+                status_db.close()
         # 지정 시각을 막 지난 구간에 들어왔을 때만 집행한다.
         # 실제 중복 방지는 일일 잠금이 하므로 이 창은 넉넉해도 된다.
         if now.hour == hour and minute <= now.minute < minute + 5:

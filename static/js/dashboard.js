@@ -8917,15 +8917,15 @@ function rewardpopMarkup(d) {
             <div class="row g-3">
                 <div class="col-md-6">
                     <label class="form-label small fw-bold">기준 URL</label>
-                    <input class="form-control" id="rpBaseUrl" value="${escapeHtml(s.base_url || '')}" placeholder="https://api.rewardpop.kr">
+                    <input class="form-control" id="rpBaseUrl" value="${escapeHtml(s.base_url || '')}" readonly>
                 </div>
                 <div class="col-md-6">
                     <label class="form-label small fw-bold">인증 방식</label>
-                    <select class="form-select" id="rpAuthStyle" onchange="toggleRewardpopAuthFields()">${styles}</select>
+                    <select class="form-select" id="rpAuthStyle" onchange="toggleRewardpopAuthFields()" disabled>${styles}</select>
                 </div>
                 <div class="col-md-6" id="rpAuthHeaderWrap">
                     <label class="form-label small fw-bold">인증 헤더 이름</label>
-                    <input class="form-control" id="rpAuthHeader" value="${escapeHtml(s.auth_header || '')}" placeholder="X-API-KEY">
+                    <input class="form-control" id="rpAuthHeader" value="${escapeHtml(s.auth_header || '')}" readonly>
                 </div>
                 <div class="col-md-6" id="rpAuthQueryWrap">
                     <label class="form-label small fw-bold">인증 쿼리 이름</label>
@@ -8934,24 +8934,24 @@ function rewardpopMarkup(d) {
             </div>
 
             <hr class="my-4">
-            <div class="small text-muted mb-2"><i class="fas fa-info-circle me-1"></i>아래 경로는 리워드팝 API 문서의 엔드포인트를 그대로 입력합니다. 예) <code>/v1/campaigns</code></div>
+            <div class="small text-muted mb-2"><i class="fas fa-circle-check me-1 text-success"></i>공식 OpenAPI 규격에 고정된 경로입니다. 상태 조회는 <code>GET /ads?groupId=...</code>를 사용합니다.</div>
             <div class="row g-3">
                 <div class="col-md-4">
                     <label class="form-label small fw-bold">연결 확인 경로 (GET)</label>
-                    <input class="form-control" id="rpPingPath" value="${escapeHtml(s.ping_path || '')}" placeholder="/v1/me">
+                    <input class="form-control" id="rpPingPath" value="${escapeHtml(s.ping_path || '')}" readonly>
                 </div>
                 <div class="col-md-4">
                     <label class="form-label small fw-bold">잔액 조회 경로 (GET)</label>
-                    <input class="form-control" id="rpBalancePath" value="${escapeHtml(s.balance_path || '')}" placeholder="/v1/points">
+                    <input class="form-control" id="rpBalancePath" value="${escapeHtml(s.balance_path || '')}" readonly>
                 </div>
                 <div class="col-md-4">
                     <label class="form-label small fw-bold">주문 생성 경로 (POST)</label>
-                    <input class="form-control" id="rpOrderPath" value="${escapeHtml(s.order_path || '')}" placeholder="/v1/campaigns">
+                    <input class="form-control" id="rpOrderPath" value="${escapeHtml(s.order_path || '')}" readonly>
                 </div>
                 <div class="col-md-4">
                     <label class="form-label small fw-bold">상태 조회 경로 (GET)</label>
-                    <input class="form-control" id="rpStatusPath" value="${escapeHtml(s.status_path || '')}" placeholder="/v1/campaigns/{id}">
-                    <div class="form-text small">{id} 자리에 외부 주문번호가 들어갑니다.</div>
+                    <input class="form-control" id="rpStatusPath" value="${escapeHtml(s.status_path || '')}" readonly>
+                    <div class="form-text small">등록 응답의 groupId를 조회 파라미터로 전달합니다.</div>
                 </div>
             </div>
 

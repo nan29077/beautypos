@@ -28,6 +28,7 @@ MISSION_ACTIONS = {
         ("BUSINESS_HOURS", "영업시간"),
         ("INTRODUCTION", "소개"),
         ("WALK_COUNT", "도보수"),
+        ("BUS_STATION", "정류장"),
     ],
     "SAVE": [
         ("PLACE_SAVE", "플레이스 저장"),

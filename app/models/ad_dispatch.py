@@ -56,6 +56,7 @@ SKIP_NO_PRICE = "no_price"
 SKIP_LOW_BALANCE = "low_balance"
 SKIP_NO_CONFIG = "no_config"      # 매장별 리워드팝 집행 설정 미등록
 SKIP_NO_PLACE_CODE = "no_place_code"  # 네이버 플레이스 코드 미등록
+SKIP_INVALID_CONFIG = "invalid_config"  # 공식 API 규격과 맞지 않는 설정
 
 SKIP_REASON_LABELS = {
     SKIP_NO_KEYWORD: "승인된 키워드 없음",
@@ -67,6 +68,7 @@ SKIP_REASON_LABELS = {
     SKIP_LOW_BALANCE: "포인트 잔액 부족",
     SKIP_NO_CONFIG: "리워드팝 집행 설정 미등록",
     SKIP_NO_PLACE_CODE: "네이버 플레이스 코드 미등록",
+    SKIP_INVALID_CONFIG: "리워드팝 집행 설정 오류",
 }
 
 # 재시도 상한과 간격(분). 지수 백오프 — 무한 재시도는 포인트를 태운다.

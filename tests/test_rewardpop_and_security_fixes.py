@@ -10,6 +10,7 @@
 """
 import asyncio
 import importlib
+import json
 import os
 import sys
 
@@ -46,36 +47,35 @@ def _session():
 
 # ─── 리워드팝 ────────────────────────────────────────────────
 
-def test_create_order_no_longer_raises_dry_run_spec_missing():
-    """create_order 가 무조건 SpecMissing 을 던지던 드라이런 코드가 사라졌어야 한다."""
+def test_create_order_uses_official_path_and_requires_key(client):
+    """공식 /ads 경로를 기본 사용하며 키가 없으면 외부 호출 전에 차단한다."""
     from app.services import rewardpop
 
     db = _session()
     try:
-        # 경로가 비어 있으면 여전히 '설정하라'는 안내를 준다.
-        with pytest.raises(rewardpop.SpecMissing) as exc:
+        with pytest.raises(rewardpop.RewardpopError) as exc:
             asyncio.run(rewardpop.create_order(db, "blog_review", {"count": 1}))
-        assert "경로" in exc.value.message
-
-        # 경로를 채우면 더 이상 규격 미확정으로 막지 않고 키 검사 단계까지 간다.
-        rewardpop.save_settings(db, {**rewardpop.get_settings(db), "order_path": "/v1/orders"})
-        with pytest.raises(rewardpop.RewardpopError) as exc2:
-            asyncio.run(rewardpop.create_order(db, "blog_review", {"count": 1}))
-        assert "API 키" in exc2.value.message
+        assert "API 키" in exc.value.message
+        assert rewardpop.get_settings(db)["order_path"] == "/ads"
     finally:
-        rewardpop.save_settings(db, {**rewardpop.get_settings(db), "order_path": ""})
         db.close()
 
 
-def test_settings_update_accepts_status_path(client):
-    """status_path 가 스키마에 없어 저장되지 않던 버그."""
+def test_official_settings_override_legacy_paths(client):
+    """공식 호스트에서는 과거 사용자 입력보다 검증된 OpenAPI 경로를 사용한다."""
     response = client.put(
         "/api/admin/rewardpop/config",
         json={"status_path": "/v1/campaigns/{id}"},
         headers=_auth(client, "admin"),
     )
     assert response.status_code == 200
-    assert response.json()["settings"]["status_path"] == "/v1/campaigns/{id}"
+    settings = response.json()["settings"]
+    assert settings["auth_style"] == "header"
+    assert settings["auth_header"] == "x-api-key"
+    assert settings["ping_path"] == "/accounts/points"
+    assert settings["balance_path"] == "/accounts/points"
+    assert settings["order_path"] == "/ads"
+    assert settings["status_path"] == "/ads"
 
 
 def test_dry_run_can_be_forced_by_env():
@@ -94,6 +94,198 @@ def test_dry_run_can_be_forced_by_env():
             assert rewardpop.dry_run_enabled(db) is True
         finally:
             app_settings.REWARDPOP_DRY_RUN = None
+    finally:
+        db.close()
+
+
+def test_rewardpop_official_http_contract(monkeypatch):
+    """공식 x-api-key, /ads, groupId, /accounts/points 규격을 그대로 사용한다."""
+    import httpx
+    from app.services import rewardpop
+
+    db = _session()
+    calls = []
+    original_client = rewardpop.httpx.AsyncClient
+
+    def handler(request):
+        calls.append(request)
+        if request.method == "POST" and request.url.path == "/ads":
+            return httpx.Response(201, json={"groupId": "GROUP-1", "status": "PENDING"})
+        if request.method == "GET" and request.url.path == "/ads":
+            return httpx.Response(200, json=[{"groupId": "GROUP-1", "status": "ACTIVE"}])
+        if request.method == "GET" and request.url.path == "/accounts/points":
+            return httpx.Response(200, json={"pointBalance": 123456, "children": []})
+        return httpx.Response(404, json={})
+
+    def client_factory(*args, **kwargs):
+        return original_client(
+            transport=httpx.MockTransport(handler),
+            timeout=kwargs.get("timeout"),
+        )
+
+    try:
+        rewardpop.save_api_key(db, "test-rewardpop-api-key-1234567890")
+        monkeypatch.setattr(rewardpop.httpx, "AsyncClient", client_factory)
+        created = asyncio.run(rewardpop.create_order(db, "place_traffic", {
+            "placeCode": 1750900108,
+            "missionCategory": "VISIT",
+            "missionAction": "FIND_PATH",
+            "startDate": "2026-09-02",
+            "workDays": 1,
+            "dailyQuantity": 100,
+            "keywordMode": "MANUAL",
+            "keywords": "강남미용실",
+        }))
+        status = asyncio.run(rewardpop.get_order_status(db, created["external_order_id"]))
+        balance = asyncio.run(rewardpop.get_balance(db))
+
+        assert created["external_order_id"] == "GROUP-1"
+        assert created["status"] == "sent"
+        assert status["status"] == "running"
+        assert balance["balance"] == 123456
+        assert all(request.headers["x-api-key"] == "test-rewardpop-api-key-1234567890" for request in calls)
+        assert calls[1].url.params["groupId"] == "GROUP-1"
+    finally:
+        rewardpop.delete_api_key(db)
+        db.close()
+
+
+def test_approved_place_order_is_dispatched_to_rewardpop(client, monkeypatch):
+    """추가 플레이스 주문은 관리자 집행 시 order 출처 원장으로 한 번만 전송된다."""
+    from app.models.ad import AdOrder, AdOrderPlaceTrafficDetail, AdOrderStatus, AdOrderType
+    from app.models.ad_dispatch import AdDispatch
+    from app.models.merchant import Merchant
+    from app.models.merchant_ad_config import MerchantAdConfig
+    from app.models.user import User
+    from app.services import rewardpop
+
+    db = _session()
+    try:
+        merchant = db.query(Merchant).first()
+        admin = db.query(User).filter(User.email == "admin@test.com").first()
+        merchant.place_code = "1750900108"
+        config = MerchantAdConfig(
+            merchant_id=merchant.id,
+            ad_type="place_traffic",
+            mission_category="VISIT",
+            mission_action="FIND_PATH",
+            keyword_mode="MANUAL",
+        )
+        order = AdOrder(
+            merchant_id=merchant.id,
+            type=AdOrderType.PLACE_TRAFFIC,
+            status=AdOrderStatus.REVIEWING,
+            created_by=admin.id,
+        )
+        db.add_all([config, order])
+        db.flush()
+        db.add(AdOrderPlaceTrafficDetail(
+            order_id=order.id,
+            place_name_or_id="애드페이 강남점",
+            search_keywords_json=json.dumps(["강남 미용실", "헤어샵"]),
+            order_count=100,
+            unit_price=100,
+            est_total_cost=10000,
+        ))
+        rewardpop.save_api_key(db, "test-rewardpop-api-key-1234567890")
+        rewardpop.save_settings(db, {**rewardpop.get_settings(db), "dry_run": False})
+        db.commit()
+        order_id = order.id
+    finally:
+        db.close()
+
+    captured = []
+
+    async def fake_create_order(_db, ad_type, payload):
+        captured.append((ad_type, payload))
+        return {"external_order_id": "GROUP-ORDER-1", "status": "sent", "raw": {"status": "PENDING"}}
+
+    monkeypatch.setattr(rewardpop, "create_order", fake_create_order)
+    response = client.put(
+        f"/api/admin/ad/orders/{order_id}/execute?status=running",
+        headers=_auth(client, "admin"),
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["external_order_id"] == "GROUP-ORDER-1"
+    assert captured[0][0] == "place_traffic"
+    assert captured[0][1]["placeCode"] == 1750900108
+    assert captured[0][1]["dailyQuantity"] == 100
+    assert captured[0][1]["keywords"] == "강남 미용실|헤어샵"
+
+    db = _session()
+    try:
+        dispatch = db.query(AdDispatch).filter(AdDispatch.ad_order_id == order_id).one()
+        assert dispatch.source == "order"
+        assert dispatch.external_order_id == "GROUP-ORDER-1"
+        assert db.query(AdOrder).filter(AdOrder.id == order_id).one().status == AdOrderStatus.RUNNING
+    finally:
+        rewardpop.delete_api_key(db)
+        db.close()
+
+
+def test_invalid_order_transition_does_not_dispatch_to_rewardpop(client, monkeypatch):
+    """내부 상태 전환이 잘못되면 되돌릴 수 없는 외부 POST를 먼저 보내지 않는다."""
+    from app.models.ad import AdOrder, AdOrderPlaceTrafficDetail, AdOrderStatus, AdOrderType
+    from app.models.merchant import Merchant
+    from app.models.merchant_ad_config import MerchantAdConfig
+    from app.models.user import User
+    from app.services import rewardpop
+
+    db = _session()
+    try:
+        merchant = db.query(Merchant).first()
+        admin = db.query(User).filter(User.email == "admin@test.com").first()
+        merchant.place_code = "1750900108"
+        config = db.query(MerchantAdConfig).filter(
+            MerchantAdConfig.merchant_id == merchant.id,
+            MerchantAdConfig.ad_type == "place_traffic",
+        ).first()
+        if config is None:
+            config = MerchantAdConfig(merchant_id=merchant.id, ad_type="place_traffic")
+            db.add(config)
+        config.mission_category = "VISIT"
+        config.mission_action = "FIND_PATH"
+        config.keyword_mode = "MANUAL"
+        order = AdOrder(
+            merchant_id=merchant.id,
+            type=AdOrderType.PLACE_TRAFFIC,
+            status=AdOrderStatus.REQUESTED,
+            created_by=admin.id,
+        )
+        db.add(order)
+        db.flush()
+        db.add(AdOrderPlaceTrafficDetail(
+            order_id=order.id,
+            place_name_or_id="애드페이 강남점",
+            search_keywords_json=json.dumps(["강남 미용실"]),
+            order_count=10,
+            unit_price=100,
+            est_total_cost=1000,
+        ))
+        rewardpop.save_api_key(db, "test-rewardpop-api-key-1234567890")
+        rewardpop.save_settings(db, {**rewardpop.get_settings(db), "dry_run": False})
+        db.commit()
+        order_id = order.id
+    finally:
+        db.close()
+
+    calls = []
+
+    async def fake_create_order(_db, ad_type, payload):
+        calls.append((ad_type, payload))
+        return {"external_order_id": "SHOULD-NOT-EXIST", "status": "sent", "raw": {}}
+
+    monkeypatch.setattr(rewardpop, "create_order", fake_create_order)
+    response = client.put(
+        f"/api/admin/ad/orders/{order_id}/execute?status=running",
+        headers=_auth(client, "admin"),
+    )
+    assert response.status_code == 409, response.text
+    assert calls == []
+
+    db = _session()
+    try:
+        rewardpop.delete_api_key(db)
     finally:
         db.close()
 
