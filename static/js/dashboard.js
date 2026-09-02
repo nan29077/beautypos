@@ -16,6 +16,46 @@ let mobileEnhanceObserver = null;
 let mobileEnhanceScheduled = false;
 let adminMetricTargets = [];
 
+// ─── 저장·실패 알림 (토스트) ────────────────────────────────
+// 인라인 alert 박스는 카드 안쪽에 있어서, 화면 아래쪽 버튼을 눌렀을 때
+// 결과가 스크롤 밖에 뜨는 일이 있었다. 눈에 띄는 알림은 이 토스트가 맡는다.
+function showToast(message, ok = true) {
+    let host = document.getElementById('adpayToastHost');
+    if (!host) {
+        host = document.createElement('div');
+        host.id = 'adpayToastHost';
+        host.setAttribute('aria-live', 'polite');
+        host.style.cssText = 'position:fixed;top:1rem;right:1rem;z-index:2050;'
+            + 'display:flex;flex-direction:column;gap:.5rem;max-width:min(92vw,26rem);pointer-events:none';
+        document.body.appendChild(host);
+    }
+    const el = document.createElement('div');
+    el.className = `alert alert-${ok ? 'success' : 'danger'} shadow d-flex align-items-start gap-2 py-2 px-3 mb-0`;
+    el.style.cssText = 'pointer-events:auto;opacity:0;transform:translateY(-.4rem);transition:opacity .25s,transform .25s';
+    el.innerHTML = `<i class="fas fa-${ok ? 'circle-check' : 'circle-exclamation'} mt-1"></i>`
+        + `<div class="small flex-grow-1">${escapeHtml(String(message == null ? '' : message))}</div>`;
+    el.onclick = () => el.remove();
+    host.appendChild(el);
+    requestAnimationFrame(() => { el.style.opacity = '1'; el.style.transform = 'none'; });
+    // 실패는 읽을 시간이 더 필요하다.
+    setTimeout(() => {
+        el.style.opacity = '0';
+        el.style.transform = 'translateY(-.4rem)';
+        setTimeout(() => el.remove(), 300);
+    }, ok ? 2800 : 6000);
+}
+
+// 저장 버튼이 눌린 동안 스피너를 보여준다. 되돌리는 함수를 돌려준다.
+function busyButton(id, label = '저장 중...') {
+    const btn = document.getElementById(id);
+    if (!btn) return () => {};
+    const original = btn.innerHTML;
+    const wasDisabled = btn.disabled;
+    btn.disabled = true;
+    btn.innerHTML = `<i class="fas fa-spinner fa-spin me-1"></i>${escapeHtml(label)}`;
+    return () => { btn.disabled = wasDisabled; btn.innerHTML = original; };
+}
+
 function adpayLoadingMarkup(message = '') {
     return `<div class="adpay-loading" role="status" aria-live="polite">
         <div>
@@ -8011,7 +8051,10 @@ function toggleAiKeyVisible() {
 }
 
 function showAiResult(ok, message) {
-    document.getElementById('aiResult').innerHTML =
+    showToast(message, ok);
+    const box = document.getElementById('aiResult');
+    if (!box) return;
+    box.innerHTML =
         `<div class="alert alert-${ok ? 'success' : 'danger'} py-2 mb-0 small">
             <i class="fas fa-${ok ? 'circle-check' : 'circle-exclamation'} me-1"></i>${escapeHtml(message)}</div>`;
 }
@@ -8330,6 +8373,7 @@ const DISPATCH_STATUS_BADGE = {
     sent: ['primary', 'paper-plane'],
     running: ['primary', 'spinner'],
     done: ['success', 'circle-check'],
+    stopped: ['dark', 'circle-stop'],
     failed: ['danger', 'circle-exclamation'],
     skipped: ['warning text-dark', 'pause'],
 };
@@ -8377,12 +8421,25 @@ function dispatchMarkup(plan, history) {
         </tr>`;
     }).join('');
 
+    const actualCell = (d) => {
+        if (d.reward_count == null && d.delivered_count == null) {
+            return '<span class="text-muted small">미확인</span>';
+        }
+        const rewarded = Number(d.reward_count || 0).toLocaleString();
+        const delivered = d.delivered_count == null ? null : Number(d.delivered_count).toLocaleString();
+        return `<span class="fw-bold">${rewarded}</span>`
+            + (delivered ? `<div class="small text-muted">요청반영 ${delivered}</div>` : '');
+    };
+
     const histRows = (history.dispatches || []).map(d => `<tr>
         <td>${escapeHtml(d.merchant_name || '-')}</td>
         <td><span class="badge bg-light text-dark border">${escapeHtml(d.ad_type_label)}</span></td>
         <td class="text-end">${d.requested_count}</td>
-        <td class="small">${escapeHtml(d.keyword || '-')}</td>
+        <td class="text-end">${actualCell(d)}</td>
+        <td class="small">${escapeHtml(d.keyword || '-')}${
+            d.keyword_count ? `<div class="text-muted">키워드 ${d.keyword_count}개</div>` : ''}</td>
         <td>${dispatchStatusBadge(d)}${d.dry_run ? ' <span class="badge bg-light text-dark border">미전송</span>' : ''}
+            ${d.external_status ? `<div class="small text-muted mt-1">리워드팝: ${escapeHtml(d.external_status)}</div>` : ''}
             ${d.skip_reason ? `<div class="small text-muted mt-1">${escapeHtml(d.skip_reason_label)}</div>` : ''}
             ${d.error_message ? `<div class="small text-danger mt-1">${escapeHtml(d.error_message)}</div>` : ''}</td>
         <td class="small text-muted">${escapeHtml(d.external_order_id || '-')}</td>
@@ -8405,6 +8462,33 @@ function dispatchMarkup(plan, history) {
         `<div class="alert alert-secondary small mb-3"><i class="fas fa-plug me-1"></i>
            리워드팝 연동이 꺼져 있어 모든 집행이 보류됩니다. 연동 설정에서 켜주세요.</div>`;
 
+    // 리워드팝 공식 API는 플레이스 미션 전용이다. 오해를 줄이려고 화면에 못박아 둔다.
+    const scopeNotice = `<div class="alert alert-light border small mb-3"><i class="fas fa-circle-info me-1"></i>
+        자동 집행 대상은 <b>플레이스 방문</b> 뿐입니다. 리워드팝 공식 API에는 블로그 리뷰 상품이 없고,
+        클로 플러스는 2026-09-01부터 신규 접수가 중단되어 자동 집행할 수 없습니다.</div>`;
+
+    const basisLabel = plan.balance_basis === 'supply_price' ? '리워드팝 공급 단가 기준'
+        : plan.balance_basis === 'sale_price' ? 'ADPAY 판매 단가로 추정(공급 단가 조회 실패)'
+        : '';
+    let balanceBanner = '';
+    if (plan.balance_error) {
+        balanceBanner = `<div class="alert alert-warning small mb-3"><i class="fas fa-triangle-exclamation me-1"></i>
+            <b>포인트 잔액을 확인하지 못했습니다.</b> ${escapeHtml(plan.balance_error)}<br>
+            잔액 점검 없이 진행됩니다 — 실행 전 리워드팝에서 잔액을 직접 확인해주세요.</div>`;
+    } else if (plan.low_balance) {
+        balanceBanner = `<div class="alert alert-danger small mb-3"><i class="fas fa-ban me-1"></i>
+            <b>리워드팝 포인트가 부족해 오늘 집행이 전부 보류됐습니다.</b><br>
+            필요 ${Number(plan.required_points || 0).toLocaleString()}P ·
+            잔액 ${Number(plan.balance || 0).toLocaleString()}P
+            ${basisLabel ? `<span class="text-muted">(${escapeHtml(basisLabel)})</span>` : ''}<br>
+            포인트를 충전한 뒤 다시 실행하면 됩니다. 같은 건이 두 번 나가지는 않습니다.</div>`;
+    } else if (plan.balance_checked && plan.required_points != null) {
+        balanceBanner = `<div class="alert alert-light border small mb-3"><i class="fas fa-coins me-1"></i>
+            리워드팝 잔액 ${Number(plan.balance || 0).toLocaleString()}P ·
+            오늘 필요 ${Number(plan.required_points).toLocaleString()}P
+            ${basisLabel ? `<span class="text-muted">(${escapeHtml(basisLabel)})</span>` : ''}</div>`;
+    }
+
     return `
     <div class="card data-card mb-3">
         <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
@@ -8415,11 +8499,14 @@ function dispatchMarkup(plan, history) {
             </div>
         </div>
         <div class="card-body">
-            ${offBanner}${modeBanner}
+            ${offBanner}${scopeNotice}${modeBanner}${balanceBanner}
             <div class="row g-3 mb-3">
                 ${kpiCard('집행 예정', `${plan.dispatch_count}건`, 'fas fa-play', 'success')}
                 ${kpiCard('총 집행 수량', `${Number(plan.total_count).toLocaleString()}`, 'fas fa-layer-group', 'primary')}
                 ${kpiCard('예상 비용', `${Number(plan.est_total_cost).toLocaleString()}원`, 'fas fa-won-sign', 'warning')}
+                ${plan.balance == null ? '' :
+                    kpiCard('리워드팝 잔액', `${Number(plan.balance).toLocaleString()}P`, 'fas fa-coins',
+                        plan.low_balance ? 'danger' : 'secondary')}
             </div>
             <div class="table-responsive"><table class="table table-hover align-middle">
                 <thead><tr><th>가맹점</th><th>광고</th><th class="text-end">목표</th><th>키워드</th>
@@ -8459,9 +8546,10 @@ function dispatchMarkup(plan, history) {
         <div class="card-header"><h5 class="mb-0"><i class="fas fa-list-check me-2"></i>집행 기록 (${escapeHtml(history.date)})</h5></div>
         <div class="card-body">
             <div class="table-responsive"><table class="table table-hover align-middle">
-                <thead><tr><th>가맹점</th><th>광고</th><th class="text-end">수량</th><th>키워드</th>
+                <thead><tr><th>가맹점</th><th>광고</th><th class="text-end">요청 수량</th>
+                    <th class="text-end">실적립</th><th>키워드</th>
                     <th>상태</th><th>외부 주문번호</th><th></th></tr></thead>
-                <tbody>${histRows || '<tr><td colspan="7" class="text-center text-muted py-4">기록이 없습니다</td></tr>'}</tbody>
+                <tbody>${histRows || '<tr><td colspan="8" class="text-center text-muted py-4">기록이 없습니다</td></tr>'}</tbody>
             </table></div>
         </div>
     </div>`;
@@ -8476,8 +8564,9 @@ async function refreshDispatchStatus() {
             box.innerHTML = `<div class="alert alert-warning py-2 mb-0 small">${escapeHtml(r.detail)}</div>`;
             return;
         }
-        box.innerHTML = `<div class="alert alert-success py-2 mb-0 small">
-            확인 ${r.checked}건 · 갱신 ${r.updated}건 · 변화 없음 ${r.unchanged}건</div>`;
+        const summary = `확인 ${r.checked}건 · 갱신 ${r.updated}건 · 변화 없음 ${r.unchanged}건`;
+        showToast(summary, true);
+        box.innerHTML = `<div class="alert alert-success py-2 mb-0 small">${escapeHtml(summary)}</div>`;
         if (r.updated) setTimeout(() => navigate('admin-ad-dispatch'), 1200);
     } catch (e) {
         box.innerHTML = `<div class="alert alert-danger py-2 mb-0 small">${escapeHtml(e.message)}</div>`;
@@ -8501,15 +8590,21 @@ async function loadDispatchReport() {
 }
 
 function dispatchReportMarkup(r) {
+    const actual = (row) => row.measured
+        ? `${Number(row.rewarded).toLocaleString()}`
+        : '<span class="text-muted">미확인</span>';
+
     const typeRows = (r.by_ad_type || []).map(t => `<tr>
         <td><span class="badge bg-light text-dark border">${escapeHtml(t.ad_type_label)}</span></td>
         <td class="text-end">${Number(t.count).toLocaleString()}</td>
+        <td class="text-end">${actual(t)}</td>
         <td class="text-end fw-bold">${Number(t.cost).toLocaleString()}원</td>
     </tr>`).join('');
 
     const merchantRows = (r.by_merchant || []).map(m => `<tr>
         <td>${escapeHtml(m.merchant_name)}</td>
         <td class="text-end">${Number(m.count).toLocaleString()}</td>
+        <td class="text-end">${actual(m)}</td>
         <td class="text-end fw-bold">${Number(m.cost).toLocaleString()}원</td>
     </tr>`).join('');
 
@@ -8518,26 +8613,32 @@ function dispatchReportMarkup(r) {
 
     return `
     <div class="row g-3 mb-3">
-        ${kpiCard('집행 수량', `${Number(r.total_count).toLocaleString()}`, 'fas fa-layer-group', 'primary')}
-        ${kpiCard('집행 비용', `${Number(r.total_cost).toLocaleString()}원`, 'fas fa-won-sign', 'success')}
+        ${kpiCard('요청 수량', `${Number(r.total_count).toLocaleString()}`, 'fas fa-layer-group', 'primary')}
+        ${kpiCard('실적립 수량', `${Number(r.total_rewarded || 0).toLocaleString()}`, 'fas fa-circle-check', 'success')}
+        ${kpiCard('집행 비용', `${Number(r.total_cost).toLocaleString()}원`, 'fas fa-won-sign', 'warning')}
         ${kpiCard('집행 건', `${Number(r.total_dispatches).toLocaleString()}건`, 'fas fa-paper-plane', 'secondary')}
     </div>
     <div class="small text-muted mb-3">${escapeHtml(r.start)} ~ ${escapeHtml(r.end)}</div>
+    <div class="alert alert-light border small mb-3"><i class="fas fa-circle-info me-1"></i>
+        <b>요청 수량</b>은 우리가 리워드팝에 보낸 수, <b>실적립 수량</b>은 리워드팝이 실제로 적립한 수입니다.
+        상태 갱신을 받아온 ${Number(r.measured_dispatches || 0).toLocaleString()}건만 실적립에 잡히므로,
+        방금 나간 건은 아직 0으로 보일 수 있습니다.
+        ${r.stopped_dispatches ? `<br><b class="text-danger">중지된 집행 ${Number(r.stopped_dispatches).toLocaleString()}건</b>이 포함되어 있습니다.` : ''}</div>
     ${problemRows ? `<div class="mb-3"><div class="small fw-bold mb-1">나가지 못한 건</div>${problemRows}</div>` : ''}
     <div class="row g-3">
         <div class="col-lg-5">
             <div class="fw-bold small mb-2">광고 종류별</div>
             <div class="table-responsive"><table class="table table-sm table-hover align-middle">
-                <thead><tr><th>광고</th><th class="text-end">수량</th><th class="text-end">비용</th></tr></thead>
-                <tbody>${typeRows || '<tr><td colspan="3" class="text-center text-muted py-3">집행 없음</td></tr>'}</tbody>
+                <thead><tr><th>광고</th><th class="text-end">요청</th><th class="text-end">실적립</th><th class="text-end">비용</th></tr></thead>
+                <tbody>${typeRows || '<tr><td colspan="4" class="text-center text-muted py-3">집행 없음</td></tr>'}</tbody>
             </table></div>
         </div>
         <div class="col-lg-7">
             <div class="fw-bold small mb-2">가맹점별</div>
             <div class="table-responsive" style="max-height:40vh;overflow:auto">
                 <table class="table table-sm table-hover align-middle">
-                <thead><tr><th>가맹점</th><th class="text-end">수량</th><th class="text-end">비용</th></tr></thead>
-                <tbody>${merchantRows || '<tr><td colspan="3" class="text-center text-muted py-3">집행 없음</td></tr>'}</tbody>
+                <thead><tr><th>가맹점</th><th class="text-end">요청</th><th class="text-end">실적립</th><th class="text-end">비용</th></tr></thead>
+                <tbody>${merchantRows || '<tr><td colspan="4" class="text-center text-muted py-3">집행 없음</td></tr>'}</tbody>
             </table></div>
         </div>
     </div>`;
@@ -8559,9 +8660,13 @@ async function runDispatch(dryRun) {
             dry_run: dryRun,
         });
         const ok = res.failed_count === 0;
+        const summary = `${label} 완료 — 전송 ${res.dispatched_count}건 · 실패 ${res.failed_count}건 · 보류 ${res.skipped_count}건`;
+        showToast(summary, ok);
+        if (res.low_balance) {
+            showToast('리워드팝 포인트가 부족해 전부 보류됐습니다. 충전 후 다시 실행해주세요.', false);
+        }
         box.innerHTML = `<div class="alert alert-${ok ? 'success' : 'warning'} py-2 mb-0 small">
-            <i class="fas fa-circle-check me-1"></i>${escapeHtml(label)} 완료 —
-            전송 ${res.dispatched_count}건 · 실패 ${res.failed_count}건 · 보류 ${res.skipped_count}건</div>`;
+            <i class="fas fa-circle-check me-1"></i>${escapeHtml(summary)}</div>`;
         setTimeout(() => navigate('admin-ad-dispatch'), 1200);
     } catch (e) {
         box.innerHTML = `<div class="alert alert-danger py-2 mb-0 small">${escapeHtml(e.message)}</div>`;
@@ -8584,7 +8689,7 @@ function showDispatchRequest(id) {
     try { pretty = JSON.stringify(JSON.parse(row.request_json), null, 2); } catch (e) { /* 원본 그대로 */ }
     document.getElementById('formModalBody').innerHTML = `
         <h6 class="fw-bold mb-2">리워드팝에 보낼 요청 내용</h6>
-        <div class="small text-muted mb-2">필드 이름은 리워드팝 API 명세를 확보하면 맞춥니다.</div>
+        <div class="small text-muted mb-2">리워드팝 공식 <code>POST /ads</code> (CreateAdDto) 규격 그대로 보낸 값입니다.</div>
         <pre class="bg-light border rounded p-3" style="font-size:.8rem;max-height:50vh;overflow:auto">${escapeHtml(pretty)}</pre>`;
     new bootstrap.Modal(document.getElementById('formModal')).show();
 }
@@ -8866,7 +8971,13 @@ async function loadAdminRewardpop(c, t) {
 function rewardpopStatusBadge(d) {
     if (!d.configured) return '<span class="badge bg-secondary"><i class="fas fa-circle-minus me-1"></i>미연결</span>';
     if (!d.enabled) return '<span class="badge bg-warning text-dark"><i class="fas fa-pause me-1"></i>사용 중지</span>';
-    if (d.settings.dry_run) return '<span class="badge bg-info text-dark"><i class="fas fa-vial me-1"></i>드라이런</span>';
+    // 화면 저장값(settings.dry_run)이 아니라, 환경변수까지 반영한 실효값을 본다.
+    // 서버에 REWARDPOP_DRY_RUN 이 걸려 있으면 화면만 꺼져 있고 실제로는 안 나간다.
+    const dry = d.effective_dry_run !== undefined ? d.effective_dry_run : d.settings.dry_run;
+    if (dry) {
+        return `<span class="badge bg-info text-dark"><i class="fas fa-vial me-1"></i>드라이런${
+            d.dry_run_forced_by_env ? ' (환경변수)' : ''}</span>`;
+    }
     return '<span class="badge bg-success"><i class="fas fa-circle-check me-1"></i>연동 중</span>';
 }
 
@@ -8875,6 +8986,12 @@ function rewardpopMarkup(d) {
     const styles = (d.auth_styles || []).map(o =>
         `<option value="${escapeHtml(o.code)}" ${s.auth_style === o.code ? 'selected' : ''}>${escapeHtml(o.label)}</option>`
     ).join('');
+    const envNotice = d.dry_run_forced_by_env
+        ? `<div class="alert alert-warning small mb-3"><i class="fas fa-triangle-exclamation me-1"></i>
+             <b>서버 환경변수 <code>REWARDPOP_DRY_RUN</code> 이 화면 설정을 덮어쓰고 있습니다.</b><br>
+             현재 실효 상태는 <b>${d.effective_dry_run ? '드라이런(실제 주문 안 나감)' : '실집행'}</b> 입니다.
+             아래 드라이런 스위치를 바꿔도 이 값이 우선합니다 — 바꾸려면 배포 설정에서 해당 환경변수를 지우세요.</div>`
+        : '';
     const missing = (d.missing_paths || []);
     const missingNotice = missing.length
         ? `<div class="alert alert-warning small mb-3"><i class="fas fa-triangle-exclamation me-1"></i>
@@ -8889,7 +9006,7 @@ function rewardpopMarkup(d) {
             <span id="rpStatusBadge">${rewardpopStatusBadge(d)}</span>
         </div>
         <div class="card-body">
-            ${missingNotice}
+            ${envNotice}${missingNotice}
             <label class="form-label fw-bold small">API 키</label>
             <div class="input-group mb-2">
                 <span class="input-group-text"><i class="fas fa-key"></i></span>
@@ -8905,6 +9022,7 @@ function rewardpopMarkup(d) {
                 <button class="btn btn-primary btn-sm" onclick="saveRewardpopKey()" id="rpSaveKeyBtn"><i class="fas fa-floppy-disk me-1"></i>키 저장</button>
                 <button class="btn btn-outline-primary btn-sm" onclick="testRewardpopConnection()" id="rpTestBtn" ${d.configured ? '' : 'disabled'}><i class="fas fa-plug me-1"></i>연결 테스트</button>
                 <button class="btn btn-outline-success btn-sm" onclick="checkRewardpopBalance()" id="rpBalanceBtn" ${d.configured ? '' : 'disabled'}><i class="fas fa-coins me-1"></i>포인트 잔액</button>
+                <button class="btn btn-outline-dark btn-sm" onclick="showRewardpopPrices()" id="rpPricesBtn" ${d.configured ? '' : 'disabled'}><i class="fas fa-tags me-1"></i>공급 단가</button>
                 <button class="btn btn-outline-danger btn-sm" onclick="deleteRewardpopKey()" id="rpDeleteBtn" ${d.configured ? '' : 'disabled'}><i class="fas fa-trash me-1"></i>키 삭제</button>
             </div>
             <div id="rpResult" class="mt-3"></div>
@@ -9006,6 +9124,7 @@ function toggleRewardpopKeyVisible() {
 }
 
 function showRewardpopResult(ok, message) {
+    showToast(message, ok);
     const box = document.getElementById('rpResult');
     if (!box) return;
     box.innerHTML = `<div class="alert alert-${ok ? 'success' : 'danger'} py-2 mb-0 small">
@@ -9020,7 +9139,7 @@ function applyRewardpopState(data) {
     if (cur) cur.innerHTML = data.configured
         ? `현재 등록된 키: <code>${escapeHtml(data.masked_key || '')}</code>`
         : '등록된 키가 없습니다.';
-    ['rpTestBtn', 'rpBalanceBtn', 'rpDeleteBtn'].forEach(id => {
+    ['rpTestBtn', 'rpBalanceBtn', 'rpPricesBtn', 'rpDeleteBtn'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.disabled = !data.configured;
     });
@@ -9032,8 +9151,7 @@ async function saveRewardpopKey() {
     const input = document.getElementById('rpApiKey');
     const key = input.value.trim();
     if (!key) { showRewardpopResult(false, 'API 키를 입력해주세요.'); return; }
-    const btn = document.getElementById('rpSaveKeyBtn');
-    btn.disabled = true;
+    const restore = busyButton('rpSaveKeyBtn', '저장 중...');
     try {
         const res = await apiPost('/api/admin/rewardpop/api-key', { api_key: key });
         input.value = '';
@@ -9044,7 +9162,7 @@ async function saveRewardpopKey() {
     } catch (e) {
         showRewardpopResult(false, e.message);
     } finally {
-        btn.disabled = false;
+        restore();
     }
 }
 
@@ -9062,8 +9180,7 @@ async function deleteRewardpopKey() {
 }
 
 async function saveRewardpopSettings() {
-    const btn = document.getElementById('rpSaveBtn');
-    btn.disabled = true;
+    const restore = busyButton('rpSaveBtn', '저장 중...');
     try {
         const res = await apiPut('/api/admin/rewardpop/config', {
             base_url: document.getElementById('rpBaseUrl').value.trim(),
@@ -9084,7 +9201,7 @@ async function saveRewardpopSettings() {
     } catch (e) {
         showRewardpopResult(false, e.message);
     } finally {
-        btn.disabled = false;
+        restore();
     }
 }
 
@@ -9101,6 +9218,39 @@ async function testRewardpopConnection() {
     } finally {
         btn.disabled = false;
         btn.innerHTML = original;
+    }
+}
+
+// 리워드팝이 우리에게 매기는 미션별 원가. 집행 전 포인트 소요액의 기준이자
+// ADPAY 판매 단가와의 마진을 확인하는 자리다.
+async function showRewardpopPrices() {
+    const restore = busyButton('rpPricesBtn', '조회 중...');
+    try {
+        const res = await apiGet('/api/admin/rewardpop/prices');
+        if (!res.ok) { showRewardpopResult(false, res.detail); return; }
+        const rows = (res.prices || []).map(p => `<tr>
+            <td class="small">${escapeHtml(p.mediaType || '-')}</td>
+            <td class="small">${escapeHtml(p.missionCategory || '-')}</td>
+            <td class="small">${escapeHtml(p.missionAction || '-')}</td>
+            <td class="small">${escapeHtml([p.name, p.subName].filter(Boolean).join(' · ') || '-')}</td>
+            <td class="text-end fw-bold">${p.unitPrice == null ? '<span class="text-muted">미설정</span>'
+                : Number(p.unitPrice).toLocaleString() + '원'}</td>
+        </tr>`).join('');
+        resetFormModalFooter(false);
+        document.getElementById('formModalTitle').textContent = '리워드팝 공급 단가 (원가)';
+        document.getElementById('formModalBody').innerHTML = `
+            <div class="small text-muted mb-2">
+                집행 전 포인트 소요액을 이 단가로 계산합니다. 단가가 <b>미설정</b>인 미션은
+                판매 단가로 대신 추정하므로, 실제 차감액과 다를 수 있습니다.</div>
+            <div class="table-responsive"><table class="table table-sm table-hover align-middle">
+                <thead><tr><th>매체</th><th>카테고리</th><th>액션</th><th>이름</th><th class="text-end">공급 단가</th></tr></thead>
+                <tbody>${rows || '<tr><td colspan="5" class="text-center text-muted py-3">단가 정보가 없습니다</td></tr>'}</tbody>
+            </table></div>`;
+        new bootstrap.Modal(document.getElementById('formModal')).show();
+    } catch (e) {
+        showRewardpopResult(false, e.message);
+    } finally {
+        restore();
     }
 }
 
@@ -9881,7 +10031,7 @@ function ongiPageMarkup(d) {
                 <label class="form-check-label" for="ongiEnabled"><b>연동 사용</b> — 꺼두면 자동 동기화가 일어나지 않습니다.</label>
             </div>
             <div class="mt-3">
-                <button class="btn btn-primary btn-sm" onclick="saveOngiSettings()"><i class="fas fa-floppy-disk me-1"></i>설정 저장</button>
+                <button class="btn btn-primary btn-sm" id="ongiSaveBtn" onclick="saveOngiSettings()"><i class="fas fa-floppy-disk me-1"></i>설정 저장</button>
             </div>
 
             <hr class="my-3">
@@ -9918,6 +10068,7 @@ function toggleOngiKeyVisible() {
 }
 
 function showOngiResult(ok, message) {
+    showToast(message, ok);
     const box = document.getElementById('ongiResult');
     if (!box) return;
     box.innerHTML = `<div class="alert alert-${ok ? 'success' : 'danger'} py-2 mb-0 small">
@@ -9978,6 +10129,7 @@ async function testOngiConnection() {
 }
 
 async function saveOngiSettings() {
+    const restore = busyButton('ongiSaveBtn', '저장 중...');
     try {
         const res = await apiPut('/api/admin/ongi/config', {
             api_mid: document.getElementById('ongiApiMid').value.trim(),
@@ -9988,6 +10140,7 @@ async function saveOngiSettings() {
         applyOngiState(res);
         showOngiResult(true, '설정을 저장했습니다.');
     } catch (e) { showOngiResult(false, e.message); }
+    finally { restore(); }
 }
 
 async function saveOngiNotifySecret() {

@@ -45,14 +45,18 @@ def _with_merchant_names(db: Session, rows: list) -> list:
 
 
 @router.get("/ad-dispatch/preview")
-def preview_dispatch(
+async def preview_dispatch(
     date: Optional[str] = Query(default=None, description="기준일 (YYYY-MM-DD, 기본 오늘)"),
     merchant_id: Optional[int] = Query(default=None),
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    """오늘 무엇이 나갈지 계산해서 보여준다. 아무것도 전송하지 않는다."""
-    return ad_dispatch.build_plan(db, _parse_date(date), merchant_id)
+    """오늘 무엇이 나갈지 계산해서 보여준다. 아무것도 전송하지 않는다.
+
+    리워드팝 포인트 잔액과 공급 단가를 함께 읽어, 포인트가 모자라면
+    실행하기 전에 화면에서 먼저 보이도록 한다.
+    """
+    return await ad_dispatch.preview(db, _parse_date(date), merchant_id)
 
 
 @router.post("/ad-dispatch/run")

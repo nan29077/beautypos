@@ -87,6 +87,23 @@ async def test_rewardpop_connection(db: Session = Depends(get_db), _: User = Dep
     return await rewardpop.test_connection(db)
 
 
+@router.get("/rewardpop/prices")
+async def get_rewardpop_prices(db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    """리워드팝 미션별 공급 단가(원가)를 조회한다.
+
+    집행 전 포인트 소요액 계산의 기준이자, ADPAY 판매 단가와의 마진 확인용이다.
+    """
+    if not await run_in_threadpool(rewardpop.get_api_key, db):
+        raise HTTPException(status_code=400, detail="API 키가 등록되지 않았습니다")
+    try:
+        result = await rewardpop.get_prices(db)
+    except rewardpop.SpecMissing as exc:
+        return {"ok": False, "spec_missing": True, "detail": exc.message}
+    except rewardpop.RewardpopError as exc:
+        return {"ok": False, "retryable": exc.retryable, "detail": exc.message}
+    return {"ok": True, "prices": result["prices"], "by_mission": result["by_mission"]}
+
+
 @router.get("/rewardpop/balance")
 async def get_rewardpop_balance(db: Session = Depends(get_db), _: User = Depends(require_admin)):
     """리워드팝 포인트 잔액을 조회한다."""

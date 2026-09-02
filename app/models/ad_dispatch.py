@@ -28,6 +28,7 @@ STATUS_DRY_RUN = "dry_run"    # 드라이런 — 실제로 보내지 않고 요�
 STATUS_SENT = "sent"          # 리워드팝이 접수함
 STATUS_RUNNING = "running"    # 진행 중
 STATUS_DONE = "done"          # 완료
+STATUS_STOPPED = "stopped"    # 리워드팝에서 중지(STOP) — 일부만 나갔을 수 있다
 STATUS_FAILED = "failed"      # 실패 (재시도 대상일 수 있음)
 STATUS_SKIPPED = "skipped"    # 사전 점검에서 건너뜀 (호출하지 않음)
 
@@ -37,6 +38,7 @@ DISPATCH_STATUSES = [
     (STATUS_SENT, "접수됨"),
     (STATUS_RUNNING, "진행 중"),
     (STATUS_DONE, "완료"),
+    (STATUS_STOPPED, "중지됨"),
     (STATUS_FAILED, "실패"),
     (STATUS_SKIPPED, "보류"),
 ]
@@ -44,7 +46,11 @@ DISPATCH_STATUS_CODES = [code for code, _ in DISPATCH_STATUSES]
 DISPATCH_STATUS_LABELS = dict(DISPATCH_STATUSES)
 
 # 집행이 실제로 이뤄진 것으로 볼 상태 (AdExecution 에 반영되는 상태)
-EXECUTED_STATUSES = {STATUS_SENT, STATUS_RUNNING, STATUS_DONE}
+#
+# STOPPED 도 여기 들어간다. 중지된 캠페인은 이미 리워드팝에 접수돼 일부가 나갔고,
+# 이 집합이 곧 "오늘 이미 나갔는가"(_already_executed) 판정 기준이기 때문이다.
+# 빼면 같은 날 같은 가맹점에 주문이 한 번 더 나간다 — 리워드팝에는 취소 API 가 없다.
+EXECUTED_STATUSES = {STATUS_SENT, STATUS_RUNNING, STATUS_DONE, STATUS_STOPPED}
 
 # ─── 보류 사유 ──────────────────────────────────────────────
 SKIP_NO_KEYWORD = "no_keyword"
@@ -98,6 +104,14 @@ class AdDispatch(Base):
     status = Column(String(20), nullable=False, default=STATUS_PENDING, server_default=STATUS_PENDING)
     skip_reason = Column(String(40), nullable=True)
 
+    # 리워드팝이 돌려준 실제 진행 수치. 상태 갱신(refresh_statuses)에서 채운다.
+    # requested_count 는 "우리가 요청한 수", 아래 둘은 "리워드팝에서 실제로 일어난 수"다.
+    delivered_count = Column(Integer, nullable=True)   # reqCount — 리워드팝이 잡은 요청 수
+    reward_count = Column(Integer, nullable=True)      # rewardCount — 실제 적립 완료 수
+    keyword_count = Column(Integer, nullable=True)     # 리워드팝에 실제 등록된 키워드 수
+    keywords_json = Column(Text, nullable=True)        # AUTO 모드에서 회수한 키워드 원본
+    external_status = Column(String(40), nullable=True)  # 리워드팝 원본 상태 문자열
+
     external_order_id = Column(String(100), nullable=True, index=True)
     # "auto:12:place_traffic:2026-08-25" 형태. 재실행해도 같은 값이 나와야 한다.
     idempotency_key = Column(String(150), nullable=False)
@@ -126,6 +140,14 @@ class AdDispatch(Base):
     @property
     def skip_reason_label(self) -> str:
         return SKIP_REASON_LABELS.get(self.skip_reason or "", self.skip_reason or "")
+
+    @property
+    def effective_count(self) -> int:
+        """실제로 일어난 수량. 리워드팝 실측이 있으면 그것을, 없으면 요청 수를 쓴다."""
+        for value in (self.reward_count, self.delivered_count):
+            if value is not None:
+                return int(value)
+        return int(self.requested_count or 0)
 
     @property
     def counts_as_executed(self) -> bool:

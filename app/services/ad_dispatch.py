@@ -25,6 +25,7 @@ from app.models.ad_dispatch import (
     SKIP_ALREADY_DONE,
     SKIP_INTEGRATION_OFF,
     SKIP_INVALID_CONFIG,
+    SKIP_LOW_BALANCE,
     SKIP_NO_CONFIG,
     SKIP_NO_KEYWORD,
     SKIP_NO_PLACE_CODE,
@@ -41,6 +42,7 @@ from app.models.ad_dispatch import (
     STATUS_RUNNING,
     STATUS_SENT,
     STATUS_SKIPPED,
+    STATUS_STOPPED,
     build_idempotency_key,
 )
 from app.models.merchant import Merchant
@@ -112,11 +114,92 @@ def _config_error(config: MerchantAdConfig) -> Optional[str]:
     return None
 
 
+def _point_cost(item: dict, by_mission: Optional[dict]) -> Optional[float]:
+    """이 건이 리워드팝 포인트를 얼마나 먹는지. 공급 단가를 모르면 None."""
+    if not by_mission:
+        return None
+    cfg = item.get("ad_config") or {}
+    key = f"{cfg.get('mission_category')}:{cfg.get('mission_action')}"
+    price = by_mission.get(key)
+    if price is None:
+        return None
+    return float(price) * int(item["target"])
+
+
+def _apply_balance_gate(items: list, budget: Optional[dict]) -> dict:
+    """포인트가 모자라면 오늘 집행을 통째로 보류시킨다.
+
+    부분 집행을 하지 않는 이유
+        리워드팝에는 취소 API 가 없다. 한 번 나간 주문은 되돌릴 수 없으므로,
+        "어디까지 나갔는지" 가 애매한 상태를 만들지 않는다. 관리자가 충전한 뒤
+        다시 실행하면 멱등키 덕분에 같은 건이 두 번 나가지 않는다.
+        어느 매장을 자르고 어느 매장을 살릴지 임의로 정하지 않는 뜻도 있다.
+
+    비교 기준
+        1순위 리워드팝 공급 단가(GET /accounts/prices) × 수량 — 실제 차감액
+        2순위 ADPAY 판매 단가 × 수량 — 단가를 못 읽었을 때의 보수적 대용
+             (판매가 >= 원가라 필요액을 과대평가한다. 덜 나가는 쪽이 안전하다.)
+    """
+    result = {
+        "balance_checked": False,
+        "balance": None,
+        "required_points": None,
+        "balance_basis": None,
+        "balance_error": None,
+        "low_balance": False,
+    }
+    if not budget:
+        return result
+    # 드라이런은 포인트를 쓰지 않는다. 숫자는 보여주되 집행을 막지는 않는다.
+    enforce = budget.get("enforce", True)
+    result["balance_error"] = budget.get("error")
+    balance = budget.get("balance")
+    result["balance"] = balance
+    if balance is None:
+        # 잔액을 못 읽었다고 집행을 막지는 않는다. 잔액 API 장애로 하루를
+        # 통째로 날리는 편이 더 큰 손해다. 화면에 경고만 띄운다.
+        return result
+
+    targets = [i for i in items if i["action"] == "dispatch"]
+    if not targets:
+        result["balance_checked"] = True
+        return result
+
+    by_mission = budget.get("by_mission")
+    costs = [_point_cost(i, by_mission) for i in targets]
+    if all(c is not None for c in costs):
+        required = sum(costs)
+        basis = "supply_price"
+    else:
+        required = sum(float(i["est_cost"]) for i in targets)
+        basis = "sale_price"
+
+    result.update({
+        "balance_checked": True,
+        "required_points": required,
+        "balance_basis": basis,
+    })
+    if required > float(balance):
+        result["low_balance"] = True
+        if not enforce:
+            return result
+        for item in targets:
+            item["action"] = "skip"
+            item["skip_reason"] = SKIP_LOW_BALANCE
+            item["validation_error"] = (
+                f"리워드팝 포인트 부족 — 필요 {int(required):,} / 잔액 {int(balance):,}"
+            )
+    return result
+
+
 def build_plan(db: Session, target_date: Optional[date_cls] = None,
-               merchant_id: Optional[int] = None) -> dict:
+               merchant_id: Optional[int] = None,
+               budget: Optional[dict] = None) -> dict:
     """오늘 무엇이 나갈지 계산한다. 아무것도 전송하지 않는다.
 
     관리자 화면의 '미리보기'와 실제 실행이 같은 계산을 쓰도록 한 곳에 모았다.
+    budget 을 넘기면 리워드팝 포인트 잔액까지 반영해 보류 여부를 정한다
+    (외부 호출이 필요해 여기서 직접 조회하지 않는다 — fetch_budget 참고).
     """
     target_date = target_date or today_kst()
     pricing = ad_pricing.get_ad_pricing(db)
@@ -222,6 +305,8 @@ def build_plan(db: Session, target_date: Optional[date_cls] = None,
             entry["action"] = "dispatch"
             items.append(entry)
 
+    balance_info = _apply_balance_gate(items, budget)
+
     to_dispatch = [i for i in items if i["action"] == "dispatch"]
     return {
         "date": str(target_date),
@@ -232,7 +317,43 @@ def build_plan(db: Session, target_date: Optional[date_cls] = None,
         "total_count": sum(i["target"] for i in to_dispatch),
         "est_total_cost": sum(i["est_cost"] for i in to_dispatch),
         "skip_reason_labels": SKIP_REASON_LABELS,
+        **balance_info,
     }
+
+
+async def fetch_budget(db: Session) -> dict:
+    """집행 전에 리워드팝 포인트 잔액과 공급 단가를 한 번씩 읽는다.
+
+    실패해도 예외를 올리지 않는다. 잔액을 못 읽으면 게이트를 걸지 않고
+    경고만 남긴다 (조회 장애로 하루 집행을 통째로 막지 않기 위해서다).
+    """
+    budget = {"balance": None, "by_mission": None, "error": None}
+    if not await run_in_threadpool(rewardpop.is_enabled, db):
+        return budget
+    try:
+        result = await rewardpop.get_balance(db)
+        budget["balance"] = result.get("balance")
+        if budget["balance"] is None:
+            budget["error"] = "잔액 응답에서 포인트 값을 찾지 못했습니다."
+    except rewardpop.RewardpopError as exc:
+        budget["error"] = exc.message
+        logger.warning("리워드팝 잔액 조회 실패 — 잔액 점검 없이 진행한다: %s", exc.message)
+        return budget
+    try:
+        prices = await rewardpop.get_prices(db)
+        budget["by_mission"] = prices.get("by_mission") or None
+    except rewardpop.RewardpopError as exc:
+        # 공급 단가를 못 읽으면 판매 단가로 대신 본다. 집행을 막지는 않는다.
+        logger.info("리워드팝 공급 단가 조회 실패 — 판매 단가로 대신 본다: %s", exc.message)
+    return budget
+
+
+async def preview(db: Session, target_date: Optional[date_cls] = None,
+                  merchant_id: Optional[int] = None) -> dict:
+    """관리자 미리보기 — 잔액까지 반영한 집행 계획."""
+    budget = await fetch_budget(db)
+    budget["enforce"] = not await run_in_threadpool(rewardpop.dry_run_enabled, db)
+    return await run_in_threadpool(build_plan, db, target_date, merchant_id, budget)
 
 
 # ─── 집행 ───────────────────────────────────────────────────
@@ -338,11 +459,33 @@ def _prepare_row(db: Session, item: dict, target_date: date_cls,
     return row
 
 
+def _apply_counts(row: AdDispatch, counts: Optional[dict]) -> None:
+    """리워드팝이 알려준 실제 수치를 행에 옮긴다. 없는 값은 건드리지 않는다.
+
+    응답에 없던 항목을 0 으로 덮어쓰면 이미 채워둔 실적이 사라진다.
+    """
+    if not counts:
+        return
+    for key, attr in (("delivered_count", "delivered_count"),
+                      ("reward_count", "reward_count"),
+                      ("keyword_count", "keyword_count")):
+        if key in counts:
+            setattr(row, attr, int(counts[key]))
+
+
+def _apply_counts_only(db: Session, row: AdDispatch, result: dict) -> None:
+    """상태 문자열은 못 읽었지만 수량은 바뀐 경우 (동기 DB 작업)."""
+    _apply_counts(row, result.get("counts"))
+    db.commit()
+
+
 def _mark_sent(db: Session, row: AdDispatch, result: dict) -> None:
     """전송 성공을 기록하고 집행 실적에 반영한다 (동기 DB 작업)."""
     result_status = result.get("status")
     if result_status == "done":
         row.status = STATUS_DONE
+    elif result_status == "stopped":
+        row.status = STATUS_STOPPED
     elif result_status == "failed":
         row.status = STATUS_FAILED
         row.retry_count = MAX_RETRY
@@ -352,10 +495,40 @@ def _mark_sent(db: Session, row: AdDispatch, result: dict) -> None:
     else:
         row.status = STATUS_SENT
     row.external_order_id = str(result.get("external_order_id") or "") or None
+    row.external_status = (result.get("raw_status") or None)
+    _apply_counts(row, result.get("counts"))
     row.response_json = json.dumps(result.get("raw"), ensure_ascii=False, default=str)
     row.next_retry_at = None
     db.commit()
     sync_execution(db, row.merchant_id, row.ad_type, row.execution_date)
+
+
+def _store_keywords(db: Session, row: AdDispatch, found: dict) -> None:
+    """AUTO 모드에서 회수한 키워드를 행에 남긴다 (동기 DB 작업)."""
+    words = [w for w in (found.get("keywords") or []) if w]
+    if not words:
+        return
+    row.keywords_json = json.dumps(words, ensure_ascii=False)
+    row.keyword_count = int(found.get("keyword_count") or len(words))
+    # keyword 컬럼은 200자라 요약만 담는다. 원본은 keywords_json 에 있다.
+    row.keyword = ", ".join(words)[:200]
+    db.commit()
+
+
+async def _collect_auto_keywords(db: Session, row: AdDispatch, item: dict) -> None:
+    """AUTO 모드로 나간 건의 실제 키워드를 리워드팝에서 받아 적는다.
+
+    실패해도 집행 자체는 성공이다. 예외를 올리지 않고 로그만 남긴다.
+    """
+    cfg = item.get("ad_config") or {}
+    if cfg.get("keyword_mode") != "AUTO" or not row.external_order_id:
+        return
+    try:
+        found = await rewardpop.get_ad_keywords(db, row.external_order_id)
+    except rewardpop.RewardpopError as exc:
+        logger.info("AUTO 키워드 회수 실패 (dispatch=%s): %s", row.id, exc.message)
+        return
+    await run_in_threadpool(_store_keywords, db, row, found)
 
 
 async def _dispatch_one(db: Session, item: dict, target_date: date_cls,
@@ -381,6 +554,7 @@ async def _dispatch_one(db: Session, item: dict, target_date: date_cls,
         return row
 
     await run_in_threadpool(_mark_sent, db, row, result)
+    await _collect_auto_keywords(db, row, item)
     return row
 
 
@@ -439,7 +613,14 @@ async def run(db: Session, target_date: Optional[date_cls] = None,
               actor_id: Optional[int] = None) -> dict:
     """집행을 실행한다. 스케줄러와 관리자 수동 실행이 함께 쓴다."""
     target_date = target_date or today_kst()
-    plan = await run_in_threadpool(build_plan, db, target_date, merchant_id)
+    # 실제로 보낼 때만 포인트 잔액으로 막는다. 드라이런은 숫자만 보여준다.
+    effective_dry_run = (
+        dry_run if dry_run is not None
+        else await run_in_threadpool(rewardpop.dry_run_enabled, db)
+    )
+    budget = await fetch_budget(db)
+    budget["enforce"] = not effective_dry_run
+    plan = await run_in_threadpool(build_plan, db, target_date, merchant_id, budget)
     if dry_run is None:
         dry_run = plan["dry_run"]
 
@@ -467,6 +648,11 @@ async def run(db: Session, target_date: Optional[date_cls] = None,
         "dispatched_count": len(dispatched),
         "failed_count": len(failed),
         "skipped_count": len(skipped),
+        "balance": plan.get("balance"),
+        "required_points": plan.get("required_points"),
+        "balance_basis": plan.get("balance_basis"),
+        "balance_error": plan.get("balance_error"),
+        "low_balance": plan.get("low_balance", False),
     }
 
 
@@ -598,6 +784,7 @@ def _apply_external_status(db: Session, row: AdDispatch, new_status: str, result
     """리워드팝에서 읽어온 상태를 반영한다 (동기 DB 작업)."""
     row.status = (
         STATUS_DONE if new_status == "done" else
+        STATUS_STOPPED if new_status == "stopped" else
         STATUS_FAILED if new_status == "failed" else
         STATUS_SENT if new_status == "sent" else
         STATUS_RUNNING
@@ -606,6 +793,11 @@ def _apply_external_status(db: Session, row: AdDispatch, new_status: str, result
         row.error_message = f"리워드팝 상태: {result.get('raw_status')}"[:500]
         # 접수까지 됐다가 실패한 건은 자동 재시도 대상으로 두지 않는다.
         row.retry_count = MAX_RETRY
+    if new_status == "stopped":
+        # 실패가 아니다 — 이미 나간 만큼은 실적이다. 사유만 남긴다.
+        row.error_message = f"리워드팝에서 중지됨 (상태: {result.get('raw_status')})"[:500]
+    row.external_status = (result.get("raw_status") or row.external_status)
+    _apply_counts(row, result.get("counts"))
     row.response_json = json.dumps(result.get("raw"), ensure_ascii=False, default=str)
     if row.ad_order_id and new_status == "done":
         from app.models.ad import AdOrder, AdOrderStatus
@@ -640,8 +832,18 @@ async def refresh_statuses(db: Session, target_date: Optional[date_cls] = None,
             continue
 
         new_status = result.get("status")
-        if not new_status or new_status == row.status:
+        counts = result.get("counts") or {}
+        # 상태가 그대로여도 실제 적립 수는 계속 늘어난다. 수량만 바뀌어도 기록한다.
+        counts_changed = any(
+            key in counts and int(counts[key]) != getattr(row, key)
+            for key in ("delivered_count", "reward_count", "keyword_count")
+        )
+        if (not new_status or new_status == row.status) and not counts_changed:
             unchanged += 1
+            continue
+        if not new_status:
+            await run_in_threadpool(_apply_counts_only, db, row, result)
+            updated += 1
             continue
 
         await run_in_threadpool(_apply_external_status, db, row, new_status, result)
@@ -666,14 +868,21 @@ def report(db: Session, start: date_cls, end: date_cls) -> dict:
 
     names = dict(db.query(Merchant.id, Merchant.name).all())
     by_merchant, by_type = {}, {}
+    stopped_count = 0
     for row in rows:
         count = int(row.requested_count or 0)
+        # 리워드팝이 알려준 실측. 아직 안 받아온 건은 None 이라 요청 수와 구분된다.
+        delivered = int(row.delivered_count) if row.delivered_count is not None else None
+        rewarded = int(row.reward_count) if row.reward_count is not None else None
         cost = float(row.cost_amount or 0)
+        if row.status == STATUS_STOPPED:
+            stopped_count += 1
 
         m = by_merchant.setdefault(row.merchant_id, {
             "merchant_id": row.merchant_id,
             "merchant_name": names.get(row.merchant_id, "-"),
-            "count": 0, "cost": 0.0, "dispatches": 0,
+            "count": 0, "delivered": 0, "rewarded": 0, "measured": 0,
+            "cost": 0.0, "dispatches": 0,
         })
         m["count"] += count
         m["cost"] += cost
@@ -682,11 +891,18 @@ def report(db: Session, start: date_cls, end: date_cls) -> dict:
         t = by_type.setdefault(row.ad_type, {
             "ad_type": row.ad_type,
             "ad_type_label": AD_EXECUTION_TYPE_LABELS.get(row.ad_type, row.ad_type),
-            "count": 0, "cost": 0.0, "dispatches": 0,
+            "count": 0, "delivered": 0, "rewarded": 0, "measured": 0,
+            "cost": 0.0, "dispatches": 0,
         })
         t["count"] += count
         t["cost"] += cost
         t["dispatches"] += 1
+
+        if delivered is not None or rewarded is not None:
+            for bucket in (m, t):
+                bucket["delivered"] += delivered or 0
+                bucket["rewarded"] += rewarded or 0
+                bucket["measured"] += 1
 
     # 실패·보류는 따로 세어 얼마나 새고 있는지 보여준다.
     problem_rows = db.query(AdDispatch).filter(
@@ -705,6 +921,11 @@ def report(db: Session, start: date_cls, end: date_cls) -> dict:
         "start": str(start),
         "end": str(end),
         "total_count": sum(m["count"] for m in by_merchant.values()),
+        # 실측 — 리워드팝에서 상태를 받아온 건만 합산된다.
+        "total_delivered": sum(m["delivered"] for m in by_merchant.values()),
+        "total_rewarded": sum(m["rewarded"] for m in by_merchant.values()),
+        "measured_dispatches": sum(m["measured"] for m in by_merchant.values()),
+        "stopped_dispatches": stopped_count,
         "total_cost": sum(m["cost"] for m in by_merchant.values()),
         "total_dispatches": len(rows),
         "by_merchant": sorted(by_merchant.values(), key=lambda x: x["cost"], reverse=True),
@@ -725,6 +946,10 @@ def to_dict(row: AdDispatch, merchant_name: Optional[str] = None) -> dict:
         "execution_date": str(row.execution_date),
         "source": row.source,
         "requested_count": row.requested_count,
+        "delivered_count": row.delivered_count,
+        "reward_count": row.reward_count,
+        "keyword_count": row.keyword_count,
+        "external_status": row.external_status,
         "keyword": row.keyword,
         "status": row.status,
         "status_label": row.status_label,

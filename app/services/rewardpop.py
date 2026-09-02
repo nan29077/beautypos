@@ -54,6 +54,10 @@ DEFAULT_SETTINGS = {
     "balance_path": "/accounts/points",
     "order_path": "/ads",
     "status_path": "/ads",           # GET /ads?groupId=<외부 주문번호>
+    # 등록된 전체 키워드 조회. AUTO 모드에서 리워드팝이 실제로 고른 키워드를 회수한다.
+    "keywords_path": "/ads/{groupId}/keywords",
+    # 미션별 공급 단가(원가). 집행 전 포인트 소요액을 계산하는 데 쓴다.
+    "prices_path": "/accounts/prices",
     "dispatch_hour": 14,             # 자동 집행 시각 (KST)
     "dispatch_minute": 0,
     "dry_run": True,                 # 참이면 실제 호출 없이 요청 내용만 기록한다
@@ -183,6 +187,12 @@ def normalize_settings(raw: Optional[dict]) -> dict:
         "balance_path": _clean_path(DEFAULT_SETTINGS["balance_path"] if official else raw.get("balance_path")),
         "order_path": _clean_path(DEFAULT_SETTINGS["order_path"] if official else raw.get("order_path")),
         "status_path": _clean_path(DEFAULT_SETTINGS["status_path"] if official else raw.get("status_path")),
+        "keywords_path": _clean_path(
+            DEFAULT_SETTINGS["keywords_path"] if official else raw.get("keywords_path")
+        ),
+        "prices_path": _clean_path(
+            DEFAULT_SETTINGS["prices_path"] if official else raw.get("prices_path")
+        ),
         "dispatch_hour": _clean_int(raw.get("dispatch_hour"), DEFAULT_SETTINGS["dispatch_hour"], 0, 23),
         "dispatch_minute": _clean_int(raw.get("dispatch_minute"), DEFAULT_SETTINGS["dispatch_minute"], 0, 59),
         "dry_run": bool(raw.get("dry_run", DEFAULT_SETTINGS["dry_run"])),
@@ -450,18 +460,22 @@ async def create_order(db: Session, ad_type: str, payload: dict) -> dict:
             "리워드팝 관리자 화면에서 접수 여부를 확인해주세요."
         )
 
-    status, _raw_status = map_external_status(body)
+    status, raw_status = map_external_status(body)
     return {
         "external_order_id": external_order_id,
         "status": status or "sent",
+        "raw_status": raw_status,
+        "counts": extract_counts(body),
         "raw": body,
     }
 
 
 # 외부 상태 문자열을 우리 상태로 옮기는 표.
 # 공식 상태 외의 값은 매핑하지 않는다. 모르는 값을 성공으로 간주하지 않는다.
+# STOP(중지)은 실패가 아니다. 이미 접수돼 일부가 나갔을 수 있고, 리워드팝에는
+# 취소 API 가 없어 되돌릴 수도 없다. 실패로 뭉뚱그리면 재집행 판정이 어긋난다.
 EXTERNAL_STATUS_MAP = {
-    "active": "running", "pending": "sent", "stop": "failed",
+    "active": "running", "pending": "sent", "stop": "stopped", "stopped": "stopped",
     "done": "done", "complete": "done", "completed": "done", "finished": "done",
     "success": "done", "succeeded": "done",
     "running": "running", "progress": "running", "in_progress": "running",
@@ -470,6 +484,50 @@ EXTERNAL_STATUS_MAP = {
     "cancel": "failed", "cancelled": "failed", "canceled": "failed", "rejected": "failed",
 }
 STATUS_KEYS = ("status", "state", "order_status", "campaign_status", "result")
+
+# 공식 응답이 돌려주는 실제 진행 수치.
+#   totalReqCount 전체 요청 수 / reqCount 이 건의 요청 수 / rewardCount 실제 적립 완료 수
+# GET /ads 는 배열이라 workDays 가 여러 날이면 행이 여러 개 온다. 합산해서 본다.
+COUNT_FIELDS = {
+    "reqcount": "delivered_count",
+    "rewardcount": "reward_count",
+    "totalreqcount": "total_count",
+    "keywordcount": "keyword_count",
+}
+
+
+def extract_counts(body) -> dict:
+    """응답에서 실제 진행 수치를 뽑아 합산한다. 못 찾은 항목은 키 자체가 없다.
+
+    합산 대상은 "광고 행"으로 보이는 dict — 위 필드를 하나라도 가진 dict 뿐이다.
+    중첩 구조에서 같은 값을 두 번 더하지 않도록, 행을 찾으면 그 안쪽은 보지 않는다.
+    """
+    totals: dict = {}
+
+    def _is_row(node) -> bool:
+        return isinstance(node, dict) and any(
+            k.lower().replace("_", "") in COUNT_FIELDS for k in node
+        )
+
+    def _add(node) -> None:
+        for key, value in node.items():
+            field = COUNT_FIELDS.get(key.lower().replace("_", ""))
+            if field and isinstance(value, (int, float)) and not isinstance(value, bool):
+                totals[field] = totals.get(field, 0) + int(value)
+
+    def _walk(node) -> None:
+        if _is_row(node):
+            _add(node)
+            return
+        if isinstance(node, dict):
+            for value in node.values():
+                _walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                _walk(value)
+
+    _walk(body)
+    return totals
 
 
 def map_external_status(body) -> tuple:
@@ -518,7 +576,104 @@ async def get_order_status(db: Session, external_order_id: str) -> dict:
         body = await _request(db, "GET", path, params={"groupId": external_order_id})
 
     status, raw_status = map_external_status(body)
-    return {"status": status, "raw_status": raw_status, "raw": body}
+    return {
+        "status": status,
+        "raw_status": raw_status,
+        "counts": extract_counts(body),
+        "raw": body,
+    }
+
+
+async def get_ad_keywords(db: Session, external_order_id: str) -> dict:
+    """등록된 전체 키워드를 조회한다 (공식: GET /ads/{groupId}/keywords).
+
+    AUTO 모드는 리워드팝이 키워드를 직접 고르므로, 이걸 회수하지 않으면
+    무엇이 나갔는지 ADPAY 에 기록이 남지 않는다. 요청한 개수보다 적게
+    등록될 수 있어 keywordCount 도 함께 돌려준다.
+    """
+    settings = await run_in_threadpool(get_settings, db)
+    path = settings.get("keywords_path") or ""
+    if not path:
+        raise SpecMissing("키워드 조회 경로가 설정되지 않았습니다.")
+    if not external_order_id:
+        raise RewardpopError("외부 주문번호가 없어 키워드를 조회할 수 없습니다.")
+
+    filled = path.replace("{groupId}", str(external_order_id)).replace("{id}", str(external_order_id))
+    body = await _request(db, "GET", filled)
+
+    keywords: list = []
+
+    def _walk(node):
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key.lower() == "keywords" and isinstance(value, list):
+                    keywords.extend(str(v).strip() for v in value if str(v).strip())
+                else:
+                    _walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                _walk(value)
+
+    _walk(body)
+    # 순서를 지키면서 중복만 제거한다.
+    seen, unique = set(), []
+    for word in keywords:
+        if word not in seen:
+            seen.add(word)
+            unique.append(word)
+    counts = extract_counts(body)
+    return {
+        "keywords": unique,
+        "keyword_count": counts.get("keyword_count", len(unique)),
+        "raw": body,
+    }
+
+
+def _price_rows(node, out: list) -> None:
+    """공급 단가 응답(중첩 계정 트리)에서 본인 계정의 prices 배열만 뽑는다."""
+    if isinstance(node, dict):
+        rows = node.get("prices")
+        if isinstance(rows, list):
+            for row in rows:
+                if isinstance(row, dict):
+                    out.append(row)
+            # 본인 단가를 찾았으면 하부 계정(children)까지 섞지 않는다.
+            return
+        for value in node.values():
+            _price_rows(value, out)
+    elif isinstance(node, list):
+        for value in node:
+            _price_rows(value, out)
+
+
+async def get_prices(db: Session) -> dict:
+    """미션별 공급 단가(원가)를 조회한다 (공식: GET /accounts/prices).
+
+    돌려주는 형태:
+        {"prices": [원본 행...], "by_mission": {"VISIT:FIND_PATH": 120, ...}, "raw": 원본}
+
+    단가가 설정되지 않은 미션은 unitPrice 가 null 이라 by_mission 에 넣지 않는다.
+    """
+    settings = await run_in_threadpool(get_settings, db)
+    path = settings.get("prices_path") or ""
+    if not path:
+        raise SpecMissing("공급 단가 조회 경로가 설정되지 않았습니다.")
+    body = await _request(db, "GET", path)
+
+    rows: list = []
+    _price_rows(body, rows)
+    by_mission = {}
+    for row in rows:
+        price = row.get("unitPrice")
+        category = row.get("missionCategory")
+        action = row.get("missionAction")
+        if price is None or not category or not action:
+            continue
+        try:
+            by_mission[f"{category}:{action}"] = float(price)
+        except (TypeError, ValueError):
+            continue
+    return {"prices": rows, "by_mission": by_mission, "raw": body}
 
 
 def status_summary(db: Session) -> dict:
