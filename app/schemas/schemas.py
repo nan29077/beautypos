@@ -10,7 +10,7 @@ from enum import Enum
 # ─── Auth ────────────────────────────────────────────────────
 
 class RegisterRequest(BaseModel):
-    email: str
+    email: EmailStr
     password: str = Field(min_length=6)
     name: str
     phone: Optional[str] = None
@@ -441,6 +441,26 @@ class AdDispatchRun(BaseModel):
     execution_date: Optional[date] = None
     merchant_id: Optional[int] = None
     dry_run: Optional[bool] = None     # 저장된 설정을 이번 실행에만 덮어쓴다
+
+
+class ManualDispatchComplete(BaseModel):
+    """수동 접수 완료 처리 (블로그 배포처럼 리워드팝 등록 API 가 없는 광고).
+
+    count 를 비우면 그날 자동 배분된 목표만큼 접수한 것으로 본다.
+    """
+    merchant_id: int
+    ad_type: str
+    execution_date: Optional[date] = None
+    count: Optional[int] = Field(default=None, ge=1)
+    external_order_id: Optional[str] = Field(default=None, max_length=100)
+    note: Optional[str] = Field(default=None, max_length=300)
+
+
+class ManualDispatchRevert(BaseModel):
+    """수동 접수 완료 처리를 되돌린다."""
+    merchant_id: int
+    ad_type: str
+    execution_date: Optional[date] = None
 
 
 # ─── 광고비 크레딧 (Admin / Owner) ──────────────────────────

@@ -15,9 +15,12 @@
     켜지는 것을 막기 위해 환경변수 REWARDPOP_DRY_RUN 으로 강제 덮어쓸 수 있다
     (true = 항상 드라이런, false = 항상 실제 전송, 미설정 = 화면 설정을 따름).
 """
+import ipaddress
 import json
 import logging
+import socket
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 import httpx
 from sqlalchemy.orm import Session
@@ -163,13 +166,23 @@ def _clean_path(value: Any) -> str:
     return text if text.startswith("/") else "/" + text
 
 
+def _is_safe_url(url: str) -> bool:
+    """RFC 1918·link-local·loopback 대역으로의 SSRF 요청을 차단한다."""
+    try:
+        host = urlparse(url).hostname or ""
+        ip = ipaddress.ip_address(socket.gethostbyname(host))
+        return not (ip.is_private or ip.is_link_local or ip.is_loopback)
+    except Exception:
+        return False
+
+
 def normalize_settings(raw: Optional[dict]) -> dict:
     raw = raw if isinstance(raw, dict) else {}
     style = str(raw.get("auth_style") or DEFAULT_SETTINGS["auth_style"]).strip()
     if style not in AUTH_STYLE_CODES:
         style = DEFAULT_SETTINGS["auth_style"]
     base = str(raw.get("base_url") or DEFAULT_SETTINGS["base_url"]).strip().rstrip("/")
-    if not base.startswith(("http://", "https://")):
+    if not base.startswith(("http://", "https://")) or not _is_safe_url(base):
         base = DEFAULT_SETTINGS["base_url"]
     official = base.lower() == DEFAULT_SETTINGS["base_url"].lower()
     if official:
@@ -650,9 +663,19 @@ async def get_prices(db: Session) -> dict:
     """미션별 공급 단가(원가)를 조회한다 (공식: GET /accounts/prices).
 
     돌려주는 형태:
-        {"prices": [원본 행...], "by_mission": {"VISIT:FIND_PATH": 120, ...}, "raw": 원본}
+        {"prices": [원본 행...],
+         "by_mission": {"VISIT:FIND_PATH": 120, ...},
+         "by_media": {"clo": [120.0], "cloblog": [28000.0], ...},
+         "raw": 원본}
 
-    단가가 설정되지 않은 미션은 unitPrice 가 null 이라 by_mission 에 넣지 않는다.
+    단가가 설정되지 않은 미션은 unitPrice 가 null 이라 어느 쪽에도 넣지 않는다.
+
+    by_media 가 따로 있는 이유
+        플레이스가 아닌 매체(클로 블로그 등)는 missionCategory/missionAction 이 null 이라
+        by_mission 만으로는 단가를 꺼낼 수 없다. 공식 문서도 mediaType 을
+        "clo, blue, cloplus, cloblog, nstore 등"으로 안내한다.
+        한 매체에 여러 행이 올 수 있어 값을 리스트로 모아 둔다 — 하나로 접는 판단은
+        쓰는 쪽(ad_dispatch.supply_unit_price)에서 한다.
     """
     settings = await run_in_threadpool(get_settings, db)
     path = settings.get("prices_path") or ""
@@ -663,17 +686,31 @@ async def get_prices(db: Session) -> dict:
     rows: list = []
     _price_rows(body, rows)
     by_mission = {}
+    by_media: dict = {}
     for row in rows:
         price = row.get("unitPrice")
-        category = row.get("missionCategory")
-        action = row.get("missionAction")
-        if price is None or not category or not action:
+        if price is None:
             continue
         try:
-            by_mission[f"{category}:{action}"] = float(price)
+            value = float(price)
         except (TypeError, ValueError):
             continue
-    return {"prices": rows, "by_mission": by_mission, "raw": body}
+
+        media = (row.get("mediaType") or "").strip().lower()
+        if media:
+            bucket = by_media.setdefault(media, [])
+            if value not in bucket:
+                bucket.append(value)
+
+        category = row.get("missionCategory")
+        action = row.get("missionAction")
+        if not category or not action:
+            continue
+        by_mission[f"{category}:{action}"] = value
+
+    for values in by_media.values():
+        values.sort()
+    return {"prices": rows, "by_mission": by_mission, "by_media": by_media, "raw": body}
 
 
 def status_summary(db: Session) -> dict:
