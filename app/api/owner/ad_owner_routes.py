@@ -28,6 +28,7 @@ from app.models.ad import (
 )
 from app.models.ad_credit import PAYMENT_CREDIT, PAYMENT_PLAN
 from app.models.plan import AD_EXECUTION_TYPES
+from app.models.merchant_ad_config import MerchantAdConfig, BLOG_POST_TYPES, BLOG_PLACE_URL_GUIDE
 from app.models.system_config import (
     SystemConfig,
     AD_ORDER_MGMT_ENABLED,
@@ -1360,4 +1361,176 @@ def owner_ad_execution_summary(
         "month_end": str(month_end),
         "ad_types": [{"code": code, "label": label} for code, label in AD_EXECUTION_TYPES],
         "merchant": summary[0] if summary else None,
+    }
+
+
+# ─── 블로그 광고 설정 (blog_review 자동 월별 접수) ───────────
+
+def _blog_config_dict(config: Optional[MerchantAdConfig]) -> dict:
+    """MerchantAdConfig 블로그 필드를 API 응답 형태로 변환한다."""
+    if config is None:
+        return {
+            "configured": False,
+            "blog_place_url": None,
+            "blog_place_name": None,
+            "blog_main_keyword": None,
+            "blog_work_keywords": [],
+            "blog_tags": [],
+            "blog_post_type": None,
+            "blog_store_address": None,
+            "blog_store_phone": None,
+            "blog_extra_link": None,
+            "daily_workload": None,
+        }
+    try:
+        work_kw = json.loads(config.blog_work_keywords or "[]")
+    except (TypeError, ValueError):
+        work_kw = []
+    try:
+        tags = json.loads(config.blog_tags or "[]")
+    except (TypeError, ValueError):
+        tags = []
+    return {
+        "configured": bool(config.blog_place_url and config.blog_main_keyword),
+        "blog_place_url": config.blog_place_url,
+        "blog_place_name": config.blog_place_name,
+        "blog_main_keyword": config.blog_main_keyword,
+        "blog_work_keywords": work_kw,
+        "blog_tags": tags,
+        "blog_post_type": config.blog_post_type,
+        "blog_store_address": config.blog_store_address,
+        "blog_store_phone": config.blog_store_phone,
+        "blog_extra_link": config.blog_extra_link,
+        "daily_workload": config.auto_count,
+    }
+
+
+@router.get("/ad/blog-config")
+def owner_get_blog_config(
+    merchant_id: Optional[int] = Query(default=None),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_owner),
+):
+    """블로그 광고 자동 접수 설정 조회.
+
+    설정이 없으면 configured=False 로 빈 구조를 반환한다.
+    placeUrl 입력 안내 문구(place_url_guide)도 함께 돌려준다.
+    """
+    merchant = _get_owner_merchant(user, db, merchant_id)
+    config = db.query(MerchantAdConfig).filter(
+        MerchantAdConfig.merchant_id == merchant.id,
+        MerchantAdConfig.ad_type == "blog_review",
+    ).first()
+    return {
+        **_blog_config_dict(config),
+        "merchant_id": merchant.id,
+        "post_types": BLOG_POST_TYPES,
+        "place_url_guide": BLOG_PLACE_URL_GUIDE,
+    }
+
+
+@router.put("/ad/blog-config")
+def owner_put_blog_config(
+    body: dict,
+    merchant_id: Optional[int] = Query(default=None),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_owner),
+):
+    """블로그 광고 자동 접수 설정 등록/수정.
+
+    필수 필드: blog_place_url, blog_place_name, blog_main_keyword,
+               blog_work_keywords(배열), blog_tags(배열 5개 이상),
+               blog_post_type(INFO/REVIEW/FREE), daily_workload(3 이상 정수)
+    선택 필드: blog_store_address, blog_store_phone, blog_extra_link
+
+    placeUrl은 반드시 m.place.naver.com으로 시작하는 모바일 URL이어야 합니다:
+      네이버 지도 앱 또는 모바일 웹에서 업체 검색 > 상세 페이지 URL 복사
+      예: https://m.place.naver.com/restaurant/1750900108/home
+      네이버 앱: 업체명 우측 공유 버튼 > 링크 복사
+      PC URL(map.naver.com)은 사용 불가입니다.
+    """
+    merchant = _get_owner_merchant(user, db, merchant_id)
+
+    # ── 필수 필드 검증 ──
+    place_url = (body.get("blog_place_url") or "").strip()
+    if not place_url:
+        raise HTTPException(status_code=400, detail="blog_place_url은 필수입니다")
+    if "m.place.naver.com" not in place_url:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "blog_place_url은 m.place.naver.com으로 시작하는 모바일 URL이어야 합니다. "
+                + BLOG_PLACE_URL_GUIDE
+            ),
+        )
+
+    place_name = (body.get("blog_place_name") or "").strip()
+    if not place_name:
+        raise HTTPException(status_code=400, detail="blog_place_name(업체명)은 필수입니다")
+
+    main_keyword = (body.get("blog_main_keyword") or "").strip()
+    if not main_keyword:
+        raise HTTPException(status_code=400, detail="blog_main_keyword(필수 키워드)는 필수입니다")
+
+    work_keywords = body.get("blog_work_keywords") or []
+    if not isinstance(work_keywords, list) or len(work_keywords) < 1:
+        raise HTTPException(status_code=400, detail="blog_work_keywords는 1개 이상의 키워드 배열이어야 합니다")
+    if len(work_keywords) > 5:
+        raise HTTPException(status_code=400, detail="blog_work_keywords는 최대 5개까지 입력할 수 있습니다")
+
+    tags = body.get("blog_tags") or []
+    if not isinstance(tags, list) or len(tags) < 5:
+        raise HTTPException(status_code=400, detail="blog_tags(해시태그)는 5개 이상 입력해야 합니다")
+
+    post_type = (body.get("blog_post_type") or "").strip().upper()
+    if post_type not in BLOG_POST_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"blog_post_type은 {BLOG_POST_TYPES} 중 하나여야 합니다",
+        )
+
+    try:
+        daily_workload = int(body.get("daily_workload") or 0)
+    except (TypeError, ValueError):
+        daily_workload = 0
+    if daily_workload < 3:
+        raise HTTPException(status_code=400, detail="daily_workload(일 배포 건수)는 최소 3건 이상이어야 합니다")
+
+    # ── 저장 ──
+    config = db.query(MerchantAdConfig).filter(
+        MerchantAdConfig.merchant_id == merchant.id,
+        MerchantAdConfig.ad_type == "blog_review",
+    ).first()
+    if config is None:
+        config = MerchantAdConfig(
+            merchant_id=merchant.id,
+            ad_type="blog_review",
+            keyword_mode="AUTO",
+        )
+        db.add(config)
+
+    config.blog_place_url = place_url
+    config.blog_place_name = place_name
+    config.blog_main_keyword = main_keyword
+    config.blog_work_keywords = json.dumps(
+        [str(k).strip() for k in work_keywords if str(k).strip()], ensure_ascii=False
+    )
+    config.blog_tags = json.dumps(
+        [str(t).strip().lstrip("#") for t in tags if str(t).strip()], ensure_ascii=False
+    )
+    config.blog_post_type = post_type
+    config.auto_count = daily_workload
+    config.blog_store_address = (body.get("blog_store_address") or "").strip() or None
+    config.blog_store_phone = (body.get("blog_store_phone") or "").strip() or None
+    config.blog_extra_link = (body.get("blog_extra_link") or "").strip() or None
+    config.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(config)
+
+    return {
+        **_blog_config_dict(config),
+        "merchant_id": merchant.id,
+        "post_types": BLOG_POST_TYPES,
+        "place_url_guide": BLOG_PLACE_URL_GUIDE,
+        "saved": True,
     }

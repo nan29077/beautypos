@@ -56,6 +56,7 @@ DEFAULT_SETTINGS = {
     "ping_path": "/accounts/points", # 별도 ping이 없어 안전한 잔액 GET으로 인증 확인
     "balance_path": "/accounts/points",
     "order_path": "/ads",
+    "blog_order_path": "/ads/cloblog",  # POST /ads/cloblog — 클로 블로그 월별 접수
     "status_path": "/ads",           # GET /ads?groupId=<외부 주문번호>
     # 등록된 전체 키워드 조회. AUTO 모드에서 리워드팝이 실제로 고른 키워드를 회수한다.
     "keywords_path": "/ads/{groupId}/keywords",
@@ -199,6 +200,9 @@ def normalize_settings(raw: Optional[dict]) -> dict:
         "ping_path": _clean_path(DEFAULT_SETTINGS["ping_path"] if official else raw.get("ping_path")),
         "balance_path": _clean_path(DEFAULT_SETTINGS["balance_path"] if official else raw.get("balance_path")),
         "order_path": _clean_path(DEFAULT_SETTINGS["order_path"] if official else raw.get("order_path")),
+        "blog_order_path": _clean_path(
+            DEFAULT_SETTINGS["blog_order_path"] if official else raw.get("blog_order_path")
+        ),
         "status_path": _clean_path(DEFAULT_SETTINGS["status_path"] if official else raw.get("status_path")),
         "keywords_path": _clean_path(
             DEFAULT_SETTINGS["keywords_path"] if official else raw.get("keywords_path")
@@ -711,6 +715,61 @@ async def get_prices(db: Session) -> dict:
     for values in by_media.values():
         values.sort()
     return {"prices": rows, "by_mission": by_mission, "by_media": by_media, "raw": body}
+
+
+async def create_blog_order(db: Session, payload: dict) -> dict:
+    """클로 블로그 광고 주문을 접수한다 (POST /ads/cloblog).
+
+    호출부(ad_dispatch.dispatch_blog_monthly)가 만든 요청 본문을 그대로 보내고,
+    응답에서 외부 주문번호와 상태를 뽑아 돌려준다.
+
+    돌려주는 형태:
+        {"external_order_id": str, "status": str, "raw": dict}
+
+    실패는 전부 RewardpopError(또는 하위 SpecMissing)로 올라간다.
+    """
+    settings = await run_in_threadpool(get_settings, db)
+    path = settings.get("blog_order_path") or ""
+    if not path:
+        raise SpecMissing(
+            "블로그 주문 생성 경로가 아직 설정되지 않았습니다. 연동 설정에서 경로를 확인해주세요."
+        )
+
+    try:
+        body = await _request(
+            db, "POST", path, json_body=payload,
+            timeout=ORDER_REQUEST_TIMEOUT,
+        )
+    except RewardpopError as exc:
+        # 타임아웃/5xx 뒤 자동 재시도하면 이미 접수된 캠페인이 중복될 수 있어
+        # 운영자 확인 전에는 재시도하지 않는다.
+        if exc.retryable:
+            raise RewardpopError(
+                f"{exc.message} 블로그 주문 접수 여부를 리워드팝에서 확인한 뒤 재시도해주세요.",
+                retryable=False,
+                status=exc.status,
+            )
+        raise
+
+    external_order_id = (
+        (body.get("groupId") if isinstance(body, dict) else None)
+        or _find_identifier(body, ORDER_ID_KEYS)
+    )
+    if not external_order_id:
+        logger.error("리워드팝 블로그 주문 응답에서 주문번호를 찾지 못했습니다: %s", body)
+        raise RewardpopError(
+            "블로그 주문은 전송했지만 응답에서 주문번호를 찾지 못했습니다. "
+            "리워드팝 관리자 화면에서 접수 여부를 확인해주세요."
+        )
+
+    status, raw_status = map_external_status(body)
+    return {
+        "external_order_id": external_order_id,
+        "status": status or "sent",
+        "raw_status": raw_status,
+        "counts": extract_counts(body),
+        "raw": body,
+    }
 
 
 def status_summary(db: Session) -> dict:

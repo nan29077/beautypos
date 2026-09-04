@@ -307,7 +307,28 @@ def build_plan(db: Session, target_date: Optional[date_cls] = None,
 
             entry["est_cost"] = entry["unit_price"] * target
             entry["action"] = "dispatch"
-            items.append(entry)
+
+            # VISIT 카테고리는 3가지 액션으로 균등 분배하여 각각 별도 주문으로 접수한다.
+            # SAVE 계열(PLACE_SAVE)과 그 외 카테고리는 기존 단일 주문 흐름을 유지한다.
+            if ad_config.mission_category == "VISIT":
+                _visit_actions = ["WRITE_REVIEW", "FIND_PATH", "SPOT_CHECK"]
+                _base, _remainder = divmod(target, len(_visit_actions))
+                for _i, _action in enumerate(_visit_actions):
+                    _action_target = _base + (_remainder if _i == 0 else 0)
+                    if _action_target <= 0:
+                        continue
+                    _action_entry = {
+                        **entry,
+                        "target": _action_target,
+                        "est_cost": entry["unit_price"] * _action_target,
+                        "mission_action_override": _action,
+                        # ad_config을 복사해 mission_action도 해당 액션으로 맞춘다.
+                        # _point_cost()가 category:action 키로 단가를 조회하기 때문이다.
+                        "ad_config": {**entry["ad_config"], "mission_action": _action},
+                    }
+                    items.append(_action_entry)
+            else:
+                items.append(entry)
 
     balance_info = _apply_balance_gate(items, budget)
 
@@ -407,11 +428,14 @@ def _build_request(item: dict, target_date: date_cls) -> dict:
     """
     cfg = item.get("ad_config") or {}
     keyword_mode = cfg.get("keyword_mode", "MANUAL")
+    # VISIT 분배 시 mission_action_override가 있으면 해당 액션으로 전송한다.
+    # SAVE 계열 등 분배 없는 건은 ad_config의 mission_action을 그대로 쓴다.
+    mission_action = item.get("mission_action_override") or cfg.get("mission_action")
 
     payload = {
         "placeCode": int(item["place_code"]),
         "missionCategory": cfg.get("mission_category"),
-        "missionAction": cfg.get("mission_action"),
+        "missionAction": mission_action,
         "startDate": str(target_date),
         "workDays": 1,
         "dailyQuantity": item["target"],
@@ -442,6 +466,11 @@ def _prepare_row(db: Session, item: dict, target_date: date_cls,
     key = build_idempotency_key(
         source, item["merchant_id"], item["ad_type"], target_date, order_id=order_id,
     )
+    # VISIT 분배 시 액션별로 다른 멱등키를 부여한다.
+    # 형태: auto:{merchant_id}:{ad_type}:{date}:{action}
+    action_override = item.get("mission_action_override")
+    if action_override:
+        key = f"{key}:{action_override}"
     row = db.query(AdDispatch).filter(AdDispatch.idempotency_key == key).first()
     if row is None:
         row = AdDispatch(
@@ -954,6 +983,12 @@ def report(db: Session, start: date_cls, end: date_cls) -> dict:
 
 MANUAL_AD_TYPES = ["blog_review"]
 
+# 블로그 자동 월별 접수 대상. 매월 첫 평일에 한 번 접수하며, 일별 자동 집행(DISPATCHABLE)
+# 경로와는 완전히 분리된 별도 스케줄러/함수를 쓴다.
+# 플레이스 방문(place_traffic)과 달리 블로그는 월 단위 캠페인이라 daily_dispatch에
+# 넣지 않는다. 리워드팝 POST /ads/cloblog 가 열린 시점에 추가했다.
+BLOG_MONTHLY_AD_TYPES = ["blog_review"]
+
 # ADPAY 광고 종류 → 리워드팝 매체 코드(GET /accounts/prices 의 mediaType).
 # 플레이스가 아닌 매체는 missionCategory/missionAction 이 null 이라 이 코드로만 단가를 찾는다.
 MEDIA_TYPE_BY_AD_TYPE = {
@@ -1255,4 +1290,314 @@ def to_dict(row: AdDispatch, merchant_name: Optional[str] = None) -> dict:
         "is_manual": bool(row.is_manual),
         "created_at": fmt_kst(row.created_at),
         "request_json": row.request_json,
+    }
+
+
+# ─── 블로그 월별 자동 접수 ────────────────────────────────────
+#
+# 리워드팝 POST /ads/cloblog 를 통해 매월 첫 평일에 한 번 접수한다.
+# 일별 자동 집행(DISPATCHABLE_AD_TYPES / build_plan / run)과는 완전히 독립된 경로다.
+# 블로그는 월 단위 캠페인이라 workDays 가 월말까지이고, dailyWorkload 는
+# MerchantAdConfig.auto_count 에 저장한 값을 그대로 사용한다.
+#
+# startDate 결정 규칙 (리워드팝 제약):
+#   - 주말(토·일) 접수 불가
+#   - 16:00(KST) 이후 당일 시작 불가 → 다음 평일
+#   - 금요일 16:00 이후 주말 시작일 지정 불가 → 월요일 이후
+
+BLOG_POST_TYPES = ["INFO", "REVIEW", "FREE"]
+BLOG_MIN_DAILY_WORKLOAD = 3
+
+
+def _next_blog_weekday(ref_date: date_cls, now_kst_hour: int) -> date_cls:
+    """리워드팝 제약에 따른 다음 유효한 블로그 시작일.
+
+    ref_date: KST 기준 오늘(또는 임의 기준일)
+    now_kst_hour: 현재 KST 시각(0~23). 16 이상이면 당일 불가.
+
+    규칙:
+      1. 주말이면 다음 월요일.
+      2. 평일 16시 이상이면 다음 평일.
+         (금요일 16시 이상 → 월요일)
+      3. 평일 16시 미만이면 오늘.
+    """
+    d = ref_date
+    # 주말이면 월요일로
+    if d.weekday() >= 5:  # 5=토, 6=일
+        days_ahead = 7 - d.weekday()
+        d = d + timedelta(days=days_ahead)
+        return d
+    # 평일인데 16시 이상이면 다음 평일
+    if now_kst_hour >= 16:
+        d = d + timedelta(days=1)
+        # 넘어간 날이 주말이면 월요일까지
+        while d.weekday() >= 5:
+            d = d + timedelta(days=1)
+    return d
+
+
+def _blog_work_days(start_date: date_cls) -> int:
+    """start_date 부터 해당 월 말일까지의 달력 일수 (start_date 포함)."""
+    from calendar import monthrange
+    _, last_day = monthrange(start_date.year, start_date.month)
+    month_end = date_cls(start_date.year, start_date.month, last_day)
+    return max(1, (month_end - start_date).days + 1)
+
+
+def _blog_config_error(config: "MerchantAdConfig") -> Optional[str]:
+    """블로그 접수에 필요한 필드가 채워져 있는지 확인한다."""
+    if not config.blog_place_url:
+        return "blog_place_url(네이버 모바일 플레이스 URL)이 등록되지 않았습니다"
+    if "m.place.naver.com" not in (config.blog_place_url or ""):
+        return "blog_place_url은 m.place.naver.com으로 시작하는 모바일 URL이어야 합니다"
+    if not config.blog_place_name:
+        return "blog_place_name(업체명)이 등록되지 않았습니다"
+    if not config.blog_main_keyword:
+        return "blog_main_keyword(필수 키워드)가 등록되지 않았습니다"
+    try:
+        work_kw = json.loads(config.blog_work_keywords or "[]")
+        if not isinstance(work_kw, list) or not work_kw:
+            raise ValueError
+    except (TypeError, ValueError):
+        return "blog_work_keywords(작업 키워드)가 올바른 JSON 배열이 아닙니다"
+    try:
+        tags = json.loads(config.blog_tags or "[]")
+        if not isinstance(tags, list) or len(tags) < 5:
+            return "blog_tags(해시태그)는 5개 이상이어야 합니다"
+    except (TypeError, ValueError):
+        return "blog_tags(해시태그)가 올바른 JSON 배열이 아닙니다"
+    if config.blog_post_type not in BLOG_POST_TYPES:
+        return f"blog_post_type은 {BLOG_POST_TYPES} 중 하나여야 합니다"
+    daily = int(config.auto_count or 0)
+    if daily < BLOG_MIN_DAILY_WORKLOAD:
+        return f"일 배포 건수(auto_count)는 최소 {BLOG_MIN_DAILY_WORKLOAD}건 이상이어야 합니다"
+    return None
+
+
+def _build_blog_request(config: "MerchantAdConfig", start_date: date_cls, work_days: int) -> dict:
+    """리워드팝 POST /ads/cloblog 에 보낼 요청 본문을 조립한다."""
+    work_kw = json.loads(config.blog_work_keywords or "[]")
+    tags = json.loads(config.blog_tags or "[]")
+    payload: dict = {
+        "placeUrl": config.blog_place_url,
+        "placeName": config.blog_place_name,
+        "mainKeyword": config.blog_main_keyword,
+        "workKeywords": [str(k).strip() for k in work_kw if str(k).strip()],
+        "tags": [str(t).strip() for t in tags if str(t).strip()],
+        "postType": config.blog_post_type,
+        "startDate": str(start_date),
+        "dailyWorkload": int(config.auto_count),
+        "workDays": work_days,
+    }
+    if config.blog_store_address:
+        payload["storeAddress"] = config.blog_store_address
+    if config.blog_store_phone:
+        payload["storePhone"] = config.blog_store_phone
+    if config.blog_extra_link:
+        payload["extraLink"] = config.blog_extra_link
+    return payload
+
+
+def _already_blog_dispatched_this_month(db: Session, merchant_id: int, month_start: date_cls) -> bool:
+    """이번 달 블로그 자동 접수가 이미 성공(sent/running/done)으로 나갔는지."""
+    from calendar import monthrange
+    _, last_day = monthrange(month_start.year, month_start.month)
+    month_end = date_cls(month_start.year, month_start.month, last_day)
+    return db.query(AdDispatch).filter(
+        AdDispatch.merchant_id == merchant_id,
+        AdDispatch.ad_type == "blog_review",
+        AdDispatch.execution_date >= month_start,
+        AdDispatch.execution_date <= month_end,
+        AdDispatch.source == SOURCE_AUTO,
+        AdDispatch.status.in_(list(EXECUTED_STATUSES) + [STATUS_SENT, STATUS_RUNNING]),
+        AdDispatch.dry_run == False,  # noqa: E712
+    ).first() is not None
+
+
+def build_blog_monthly_plan(
+    db: Session,
+    target_date: Optional[date_cls] = None,
+    merchant_id: Optional[int] = None,
+    now_kst_hour: int = 0,
+) -> dict:
+    """이번 달 블로그 자동 접수 계획을 계산한다. 아무것도 전송하지 않는다.
+
+    target_date: 접수 기준일 (기본: 오늘 KST). 첫 평일 여부 확인에도 쓴다.
+    now_kst_hour: 현재 KST 시각(0~23). startDate 계산에 반영된다.
+    """
+    target_date = target_date or today_kst()
+    integration_on = rewardpop.is_enabled(db)
+    dry_run_on = rewardpop.dry_run_enabled(db)
+
+    from calendar import monthrange
+    _, last_day = monthrange(target_date.year, target_date.month)
+    month_start = date_cls(target_date.year, target_date.month, 1)
+    # 이 달의 첫 평일 계산
+    first_weekday = month_start
+    while first_weekday.weekday() >= 5:
+        first_weekday = first_weekday + timedelta(days=1)
+
+    q = db.query(Merchant).filter(Merchant.is_active == True)  # noqa: E712
+    if merchant_id:
+        q = q.filter(Merchant.id == merchant_id)
+    merchants = q.order_by(Merchant.name.asc()).all()
+
+    items = []
+    for merchant in merchants:
+        entry = {
+            "merchant_id": merchant.id,
+            "merchant_name": merchant.name,
+            "ad_type": "blog_review",
+            "ad_type_label": AD_EXECUTION_TYPE_LABELS.get("blog_review", "블로그 리뷰"),
+            "target_month": f"{target_date.year}-{target_date.month:02d}",
+            "action": "skip",
+            "skip_reason": None,
+            "validation_error": None,
+            "start_date": None,
+            "work_days": None,
+            "daily_workload": None,
+            "request_payload": None,
+        }
+
+        config = _get_ad_config(db, merchant.id, "blog_review")
+        if config is None:
+            entry["skip_reason"] = SKIP_NO_CONFIG
+            items.append(entry)
+            continue
+
+        config_error = _blog_config_error(config)
+        if config_error:
+            entry["skip_reason"] = SKIP_INVALID_CONFIG
+            entry["validation_error"] = config_error
+            items.append(entry)
+            continue
+
+        if _already_blog_dispatched_this_month(db, merchant.id, month_start):
+            entry["skip_reason"] = SKIP_ALREADY_DONE
+            items.append(entry)
+            continue
+
+        if not integration_on:
+            entry["skip_reason"] = SKIP_INTEGRATION_OFF
+            items.append(entry)
+            continue
+
+        start_date = _next_blog_weekday(target_date, now_kst_hour)
+        work_days = _blog_work_days(start_date)
+        payload = _build_blog_request(config, start_date, work_days)
+
+        entry["action"] = "dispatch"
+        entry["start_date"] = str(start_date)
+        entry["work_days"] = work_days
+        entry["daily_workload"] = int(config.auto_count)
+        entry["request_payload"] = payload
+        items.append(entry)
+
+    to_dispatch = [i for i in items if i["action"] == "dispatch"]
+    return {
+        "target_month": f"{target_date.year}-{target_date.month:02d}",
+        "first_weekday_of_month": str(first_weekday),
+        "dry_run": dry_run_on,
+        "integration_enabled": integration_on,
+        "items": items,
+        "dispatch_count": len(to_dispatch),
+        "skip_reason_labels": SKIP_REASON_LABELS,
+    }
+
+
+async def dispatch_blog_monthly(
+    db: Session,
+    target_date: Optional[date_cls] = None,
+    merchant_id: Optional[int] = None,
+    dry_run: Optional[bool] = None,
+    actor_id: Optional[int] = None,
+    now_kst_hour: int = 0,
+) -> dict:
+    """블로그 광고를 이번 달 단위로 리워드팝에 접수한다.
+
+    스케줄러가 매월 첫 평일에 호출하며, 관리자 수동 실행도 같은 경로를 쓴다.
+    멱등키로 중복 접수를 막는다 — 이미 이번 달 접수가 나간 가맹점은 건너뛴다.
+    """
+    target_date = target_date or today_kst()
+    effective_dry_run = (
+        dry_run if dry_run is not None
+        else await run_in_threadpool(rewardpop.dry_run_enabled, db)
+    )
+
+    plan = await run_in_threadpool(
+        build_blog_monthly_plan, db, target_date, merchant_id, now_kst_hour,
+    )
+
+    dispatched, skipped, failed = [], [], []
+    for item in plan["items"]:
+        if item["action"] == "skip":
+            skipped.append(item)
+            continue
+
+        payload = item["request_payload"]
+        # 집행 전 행 기록 (SOURCE_AUTO + ad_type + 해당 월 1일을 execution_date로 사용)
+        from calendar import monthrange
+        month_start = date_cls(target_date.year, target_date.month, 1)
+        key = build_idempotency_key(SOURCE_AUTO, item["merchant_id"], "blog_review", month_start)
+
+        def _upsert_blog_row(db=db, item=item, payload=payload,
+                             effective_dry_run=effective_dry_run, actor_id=actor_id,
+                             month_start=month_start, key=key):
+            row = db.query(AdDispatch).filter(AdDispatch.idempotency_key == key).first()
+            if row is None:
+                row = AdDispatch(
+                    merchant_id=item["merchant_id"], ad_type="blog_review",
+                    execution_date=month_start, source=SOURCE_AUTO,
+                    idempotency_key=key, created_by=actor_id,
+                )
+                db.add(row)
+            row.requested_count = item["daily_workload"]
+            row.request_json = json.dumps(payload, ensure_ascii=False)
+            row.dry_run = effective_dry_run
+            row.skip_reason = None
+            row.error_message = None
+            row.status = STATUS_DRY_RUN if effective_dry_run else STATUS_PENDING
+            db.commit()
+            return row
+
+        row = await run_in_threadpool(_upsert_blog_row)
+
+        if effective_dry_run:
+            dispatched.append({**item, "dispatch_id": row.id, "status": row.status, "error": None})
+            continue
+
+        try:
+            result = await rewardpop.create_blog_order(db, payload)
+        except rewardpop.SpecMissing as exc:
+            await run_in_threadpool(_mark_failed, db, row, exc.message, False)
+            failed.append({**item, "dispatch_id": row.id, "status": STATUS_FAILED, "error": exc.message})
+            continue
+        except rewardpop.RewardpopError as exc:
+            await run_in_threadpool(_mark_failed, db, row, exc.message, exc.retryable)
+            failed.append({**item, "dispatch_id": row.id, "status": STATUS_FAILED, "error": exc.message})
+            continue
+
+        await run_in_threadpool(_mark_sent, db, row, result)
+        dispatched.append({
+            **item,
+            "dispatch_id": row.id,
+            "status": row.status,
+            "external_order_id": result.get("external_order_id"),
+            "error": None,
+        })
+
+    logger.info(
+        "블로그 월별 접수 %s — 전송 %d, 실패 %d, 보류 %d (드라이런=%s)",
+        f"{target_date.year}-{target_date.month:02d}",
+        len(dispatched), len(failed), len(skipped), effective_dry_run,
+    )
+    return {
+        "target_month": plan["target_month"],
+        "dry_run": effective_dry_run,
+        "dispatched": dispatched,
+        "failed": failed,
+        "skipped": skipped,
+        "dispatched_count": len(dispatched),
+        "failed_count": len(failed),
+        "skipped_count": len(skipped),
     }
