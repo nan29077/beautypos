@@ -112,7 +112,7 @@ const mobilePageMeta = {
     'owner-analysis': ['광고 분석', 'fas fa-chart-line'],
     'owner-adorders': ['광고 주문 내역', 'fas fa-bullhorn'],
     'owner-adorder-new': ['새 광고 주문', 'fas fa-plus-circle'],
-    'owner-ad-keywords': ['광고 키워드', 'fas fa-key'],
+    'owner-ad-settings': ['광고 설정', 'fas fa-sliders'],
     'owner-ad-credit': ['광고비', 'fas fa-wallet'],
     crm: ['매장 관리', 'fas fa-user-friends'],
     'owner-info': ['매장 정보', 'fas fa-store'],
@@ -344,7 +344,7 @@ function ownerMobilePages() {
         pages.push('owner-staff', 'owner-staff-sales', 'owner-settlement');
     }
     pages.push('owner-settlements', 'owner-payouts',
-               'owner-receipt-review', 'owner-analysis', 'owner-ad-keywords',
+               'owner-receipt-review', 'owner-analysis', 'owner-ad-settings',
                'owner-ad-credit');
     if (adFeatureFlags.ad_order_mgmt_enabled) {
         pages.push('owner-adorders', 'owner-adorder-new');
@@ -658,14 +658,16 @@ function buildSidebar() {
         <a class="nav-link" href="#" data-page="owner-settlement"><i class="fas fa-coins"></i>정산 분배</a>`;
         }
         html += `
+        <!-- 정산·출금 메뉴: 단말기 앱 이관으로 임시 비활성화 (코드 보존)
         <div class="nav-section">정산 · 출금</div>
         <a class="nav-link" href="#" data-page="owner-settlements"><i class="fas fa-file-invoice-dollar"></i>정산 내역</a>
         <a class="nav-link" href="#" data-page="owner-payouts"><i class="fas fa-money-bill-wave"></i>출금 요청</a>
+        -->
         <div class="nav-section">리뷰 관리</div>
         <a class="nav-link" href="#" data-page="owner-receipt-review"><i class="fas fa-qrcode"></i>영수증 리뷰관리</a>
         <div class="nav-section">광고/마케팅</div>
         <a class="nav-link" href="#" data-page="owner-analysis"><i class="fas fa-chart-line"></i>광고 분석</a>
-        <a class="nav-link" href="#" data-page="owner-ad-keywords"><i class="fas fa-key"></i>광고 키워드</a>
+        <a class="nav-link" href="#" data-page="owner-ad-settings"><i class="fas fa-sliders"></i>광고 설정</a>
         <a class="nav-link" href="#" data-page="owner-ad-credit"><i class="fas fa-wallet"></i>광고비</a>`;
         if (masterOn) {
             html += `
@@ -775,7 +777,7 @@ async function loadPage(page) {
             case 'owner-analysis': await loadOwnerAnalysis(c, t); break;
             case 'owner-adorders': await loadOwnerAdOrders(c, t); break;
             case 'owner-adorder-new': await loadOwnerAdOrderNew(c, t); break;
-            case 'owner-ad-keywords': await loadOwnerAdKeywords(c, t); break;
+            case 'owner-ad-settings': await loadOwnerAdSettings(c, t); break;
             case 'owner-ad-credit': await loadOwnerAdCredit(c, t); break;
             case 'owner-info': await loadOwnerInfo(c, t); break;
             case 'owner-receipt-review': await loadOwnerReceiptReview(c, t); break;
@@ -1483,7 +1485,10 @@ async function loadAdminMerchants(c, t) {
         <td>${m.id}</td><td class="fw-bold">${escapeHtml(m.name)}</td><td>${escapeHtml(m.business_no||'-')}</td>
         <td>${escapeHtml(m.address||'-')}</td><td>${escapeHtml(m.phone||'-')}</td>
         <td>${m.is_active?'<span class="badge bg-success">활성</span>':'<span class="badge bg-danger">비활성</span>'}</td>
-        <td><button class="btn btn-sm btn-outline-primary" onclick="showPGConfig(${m.id})"><i class="fas fa-cog"></i> PG</button></td>
+        <td class="text-nowrap">
+            <button class="btn btn-sm btn-outline-primary me-1" onclick="showPGConfig(${m.id})"><i class="fas fa-cog"></i> PG</button>
+            <button class="btn btn-sm btn-outline-success" onclick="showMerchantAdStatus(${m.id}, '${escapeHtml(m.name).replace(/'/g,"\\'")}')"><i class="fas fa-chart-bar"></i> 광고 현황</button>
+        </td>
     </tr>`).join('');
     c.innerHTML = `<div class="card data-card"><div class="card-header d-flex justify-content-between align-items-center">
         <h5 class="mb-0">가맹점 목록</h5>
@@ -5643,7 +5648,7 @@ async function loadOwnerAdOrderNew(c, t) {
     let tabsHtml = '<ul class="nav nav-tabs ad-order-tabs mb-4" id="adOrderTabs" role="tablist">';
     if (blogOn) tabsHtml += `<li class="nav-item" role="presentation"><button type="button" class="nav-link ${defaultTab==='blog'?'active':''}" data-adtab="blog" role="tab" aria-selected="${defaultTab==='blog'}" onclick="showAdTab('blog')"><i class="fas fa-blog"></i><span>블로그 배포</span></button></li>`;
     if (placeOn) tabsHtml += `<li class="nav-item" role="presentation"><button type="button" class="nav-link ${defaultTab==='place'?'active':''}" data-adtab="place" role="tab" aria-selected="${defaultTab==='place'}" onclick="showAdTab('place')"><i class="fas fa-map-marker-alt"></i><span>플레이스 방문</span></button></li>`;
-    if (shortsOn) tabsHtml += `<li class="nav-item" role="presentation"><button type="button" class="nav-link ${defaultTab==='shorts'?'active':''}" data-adtab="shorts" role="tab" aria-selected="${defaultTab==='shorts'}" onclick="showAdTab('shorts')"><i class="fab fa-youtube"></i><span>쇼츠 배포</span></button></li>`;
+    if (shortsOn) tabsHtml += `<li class="nav-item" role="presentation"><button type="button" class="nav-link" data-adtab="shorts" role="tab" aria-selected="false" onclick="alert('쇼츠 배포는 현재 준비 중입니다. 준비가 완료되면 안내드리겠습니다.')"><i class="fab fa-youtube"></i><span>쇼츠 배포</span></button></li>`;
     tabsHtml += '</ul>';
 
     let bodyHtml = `<div class="workspace-hero mb-3">
@@ -9047,14 +9052,257 @@ async function deleteAdminKeyword(id) {
     } catch (e) { alert(e.message); }
 }
 
-// ── OWNER: 내 광고 키워드 ───────────────────────────────────
-async function loadOwnerAdKeywords(c, t) {
-    t.textContent = '광고 키워드';
-    c.innerHTML = adpayLoadingMarkup('키워드를 불러오는 중입니다');
+// ── OWNER: 광고 설정 (플레이스 방문 키워드 + 블로그 설정) ─────────────
+async function loadOwnerAdSettings(c, t) {
+    t.textContent = '광고 설정';
+    c.innerHTML = adpayLoadingMarkup('광고 설정을 불러오는 중입니다');
     try {
-        c.innerHTML = ownerKeywordMarkup(await apiGet('/api/owner/ad/keywords'));
+        const [kwData, blogData] = await Promise.all([
+            apiGet('/api/owner/ad/keywords'),
+            apiGet('/api/owner/ad/blog-config').catch(() => null),
+        ]);
+        c.innerHTML = ownerAdSettingsMarkup(kwData, blogData);
+        // 블로그 기존 값 채우기
+        if (blogData) fillBlogConfigForm(blogData);
     } catch (e) {
         c.innerHTML = `<div class="alert alert-danger">${escapeHtml(e.message)}</div>`;
+    }
+}
+
+function ownerAdSettingsMarkup(kwData, blogData) {
+    return `
+    <ul class="nav nav-tabs mb-3" id="adSettingsTabs">
+        <li class="nav-item">
+            <button class="nav-link active" data-tab="place" onclick="switchAdSettingsTab('place')">
+                <i class="fas fa-map-marker-alt me-1"></i>플레이스 방문
+            </button>
+        </li>
+        <li class="nav-item">
+            <button class="nav-link" data-tab="blog" onclick="switchAdSettingsTab('blog')">
+                <i class="fas fa-blog me-1"></i>블로그 배포
+            </button>
+        </li>
+    </ul>
+    <div id="adSettingsTabPlace">${ownerKeywordMarkup(kwData)}</div>
+    <div id="adSettingsTabBlog" style="display:none">${ownerBlogConfigMarkup(blogData)}</div>`;
+}
+
+function switchAdSettingsTab(tab) {
+    ['place','blog'].forEach(k => {
+        const panel = document.getElementById(`adSettingsTab${k.charAt(0).toUpperCase()+k.slice(1)}`);
+        if (panel) panel.style.display = (k === tab) ? '' : 'none';
+    });
+    document.querySelectorAll('#adSettingsTabs .nav-link').forEach(el => {
+        el.classList.toggle('active', el.dataset.tab === tab);
+    });
+}
+
+// ── 블로그 설정 3단계 마법사 ─────────────────────────────────
+let _blogStep = 1;
+const _BLOG_STEPS = 3;
+
+function ownerBlogConfigMarkup(d) {
+    return `
+    <div class="card data-card">
+        <div class="card-header">
+            <h5 class="mb-0"><i class="fas fa-blog me-2"></i>블로그 자동 접수 설정</h5>
+            <div class="small text-muted mt-1">설정된 정보로 매월 첫 평일에 블로그 배포가 자동 접수됩니다.</div>
+        </div>
+        <div class="card-body">
+            <!-- 단계 인디케이터 -->
+            <div class="d-flex align-items-center mb-4" id="blogStepIndicator">
+                ${[1,2,3].map(i=>`
+                <div class="d-flex flex-column align-items-center" style="flex:1">
+                    <div id="blogStepCircle${i}" class="rounded-circle d-flex align-items-center justify-content-center fw-bold mb-1"
+                         style="width:32px;height:32px;font-size:.85rem;background:${i===1?'#0d6efd':'#dee2e6'};color:${i===1?'#fff':'#6c757d'};transition:all .3s">
+                        ${i}
+                    </div>
+                    <div class="small text-center" style="font-size:.72rem;color:${i===1?'#0d6efd':'#6c757d'}">${['매장 기본 정보','키워드 설정','포스팅 설정'][i-1]}</div>
+                </div>
+                ${i<3?`<div style="flex:1;height:2px;background:#dee2e6;margin-bottom:20px" id="blogStepLine${i}"></div>`:''}
+                `).join('')}
+            </div>
+
+            <!-- Step 1: 매장 기본 정보 -->
+            <div id="blogStep1">
+                <div class="mb-3">
+                    <label class="form-label fw-bold">네이버 플레이스 URL <span class="text-danger">*</span></label>
+                    <input class="form-control" id="blogPlaceUrl" placeholder="https://m.place.naver.com/restaurant/..." maxlength="500">
+                    <div class="form-text text-muted mt-1" style="font-size:.78rem">
+                        <i class="fas fa-circle-info me-1 text-primary"></i>
+                        네이버 지도 앱 또는 모바일 웹에서 업체 검색 후 업체 상세 페이지 URL을 복사하세요.<br>
+                        예시: <code>https://m.place.naver.com/restaurant/1750900108/home</code><br>
+                        <span class="text-danger">PC 네이버 지도 URL(map.naver.com)은 사용 불가합니다.</span>
+                        반드시 <b>m.place.naver.com</b>으로 시작하는 모바일 URL을 입력해야 합니다.<br>
+                        네이버 앱에서는 업체명 우측 공유 버튼을 눌러 링크를 복사하세요.
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">업체명 <span class="text-danger">*</span></label>
+                    <input class="form-control" id="blogPlaceName" placeholder="예) 홍대 강남돈까스" maxlength="100">
+                </div>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">매장 주소 <span class="text-muted fw-normal">(선택)</span></label>
+                        <input class="form-control" id="blogStoreAddress" placeholder="예) 서울시 마포구 홍익로..." maxlength="200">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">대표번호 <span class="text-muted fw-normal">(선택)</span></label>
+                        <input class="form-control" id="blogStorePhone" placeholder="예) 02-1234-5678" maxlength="30">
+                    </div>
+                </div>
+                <div class="d-flex justify-content-end mt-4">
+                    <button class="btn btn-primary" onclick="blogWizardNext(1)">다음 <i class="fas fa-arrow-right ms-1"></i></button>
+                </div>
+            </div>
+
+            <!-- Step 2: 키워드 설정 -->
+            <div id="blogStep2" style="display:none">
+                <div class="mb-3">
+                    <label class="form-label fw-bold">필수 키워드 <span class="text-danger">*</span></label>
+                    <input class="form-control" id="blogMainKeyword" placeholder="예) 강남 맛집" maxlength="100">
+                    <div class="form-text">블로그 포스팅에 반드시 포함되어야 하는 핵심 키워드 1개를 입력하세요.</div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">작업 키워드 <span class="text-danger">*</span> <span class="text-muted fw-normal small">(1~5개, 쉼표로 구분)</span></label>
+                    <input class="form-control" id="blogWorkKeywords" placeholder="예) 홍대 돈까스, 돈까스 맛집, 점심 맛집">
+                    <div class="form-text">포스팅에 활용할 키워드를 쉼표(,)로 구분해 입력하세요. 최대 5개까지 가능합니다.</div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">해시태그 <span class="text-danger">*</span> <span class="text-muted fw-normal small">(5개 이상, 쉼표로 구분)</span></label>
+                    <input class="form-control" id="blogTags" placeholder="예) 홍대맛집, 강남돈까스, 점심추천, 서울맛집, 돈까스">
+                    <div class="form-text"># 없이 태그명만 입력하세요. 최소 5개 이상 입력해야 합니다.</div>
+                </div>
+                <div class="d-flex justify-content-between mt-4">
+                    <button class="btn btn-outline-secondary" onclick="blogWizardPrev(2)"><i class="fas fa-arrow-left me-1"></i>이전</button>
+                    <button class="btn btn-primary" onclick="blogWizardNext(2)">다음 <i class="fas fa-arrow-right ms-1"></i></button>
+                </div>
+            </div>
+
+            <!-- Step 3: 포스팅 설정 -->
+            <div id="blogStep3" style="display:none">
+                <div class="mb-4">
+                    <label class="form-label fw-bold">포스팅 유형 <span class="text-danger">*</span></label>
+                    <div class="row g-2 mt-1">
+                        ${[['INFO','정보성 포스팅','매장 정보, 메뉴, 위치 등을 소개하는 정보 중심 글'],
+                           ['REVIEW','리뷰 포스팅','실제 방문·이용 후기 형식의 리뷰 글'],
+                           ['FREE','자유 형식','블로거 자율 형식으로 작성']].map(([code,label,desc])=>`
+                        <div class="col-md-4">
+                            <label class="d-block border rounded-3 p-3 cursor-pointer" style="cursor:pointer" onclick="selectBlogPostType('${code}')">
+                                <input type="radio" name="blogPostType" value="${code}" id="blogPostType${code}" class="form-check-input me-2">
+                                <span class="fw-bold">${label}</span>
+                                <div class="small text-muted mt-1">${desc}</div>
+                            </label>
+                        </div>`).join('')}
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">추가 링크 <span class="text-muted fw-normal">(선택)</span></label>
+                    <input class="form-control" id="blogExtraLink" placeholder="예) 인스타그램, 홈페이지 URL 등" maxlength="500">
+                    <div class="form-text">포스팅에 함께 언급할 추가 링크가 있으면 입력하세요.</div>
+                </div>
+                <div id="blogConfigResult" class="mt-2"></div>
+                <div class="d-flex justify-content-between mt-4">
+                    <button class="btn btn-outline-secondary" onclick="blogWizardPrev(3)"><i class="fas fa-arrow-left me-1"></i>이전</button>
+                    <button class="btn btn-success" onclick="saveBlogConfig()"><i class="fas fa-save me-1"></i>설정 저장</button>
+                </div>
+            </div>
+        </div>
+    </div>`;
+}
+
+function selectBlogPostType(code) {
+    const el = document.getElementById(`blogPostType${code}`);
+    if (el) el.checked = true;
+}
+
+function fillBlogConfigForm(d) {
+    const set = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
+    set('blogPlaceUrl', d.blog_place_url);
+    set('blogPlaceName', d.blog_place_name);
+    set('blogStoreAddress', d.blog_store_address);
+    set('blogStorePhone', d.blog_store_phone);
+    set('blogMainKeyword', d.blog_main_keyword);
+    set('blogExtraLink', d.blog_extra_link);
+    if (d.blog_work_keywords && d.blog_work_keywords.length)
+        set('blogWorkKeywords', d.blog_work_keywords.join(', '));
+    if (d.blog_tags && d.blog_tags.length)
+        set('blogTags', d.blog_tags.join(', '));
+    if (d.blog_post_type) selectBlogPostType(d.blog_post_type);
+}
+
+function blogWizardNext(currentStep) {
+    if (currentStep === 1) {
+        const url = (document.getElementById('blogPlaceUrl')?.value || '').trim();
+        const name = (document.getElementById('blogPlaceName')?.value || '').trim();
+        if (!url) { alert('네이버 플레이스 URL을 입력해주세요.'); return; }
+        if (!url.includes('m.place.naver.com')) { alert('m.place.naver.com으로 시작하는 모바일 URL을 입력해주세요.'); return; }
+        if (!name) { alert('업체명을 입력해주세요.'); return; }
+    }
+    if (currentStep === 2) {
+        const main = (document.getElementById('blogMainKeyword')?.value || '').trim();
+        const work = (document.getElementById('blogWorkKeywords')?.value || '').split(',').map(s=>s.trim()).filter(Boolean);
+        const tags = (document.getElementById('blogTags')?.value || '').split(',').map(s=>s.trim()).filter(Boolean);
+        if (!main) { alert('필수 키워드를 입력해주세요.'); return; }
+        if (!work.length || work.length > 5) { alert('작업 키워드를 1~5개 입력해주세요.'); return; }
+        if (tags.length < 5) { alert('해시태그를 5개 이상 입력해주세요.'); return; }
+    }
+    document.getElementById(`blogStep${currentStep}`).style.display = 'none';
+    document.getElementById(`blogStep${currentStep+1}`).style.display = '';
+    _blogStep = currentStep + 1;
+    updateBlogStepIndicator(_blogStep);
+}
+
+function blogWizardPrev(currentStep) {
+    document.getElementById(`blogStep${currentStep}`).style.display = 'none';
+    document.getElementById(`blogStep${currentStep-1}`).style.display = '';
+    _blogStep = currentStep - 1;
+    updateBlogStepIndicator(_blogStep);
+}
+
+function updateBlogStepIndicator(active) {
+    [1,2,3].forEach(i => {
+        const circle = document.getElementById(`blogStepCircle${i}`);
+        if (!circle) return;
+        if (i < active) {
+            circle.style.background = '#198754'; circle.style.color = '#fff';
+            circle.innerHTML = '<i class="fas fa-check" style="font-size:.7rem"></i>';
+        } else if (i === active) {
+            circle.style.background = '#0d6efd'; circle.style.color = '#fff';
+            circle.innerHTML = String(i);
+        } else {
+            circle.style.background = '#dee2e6'; circle.style.color = '#6c757d';
+            circle.innerHTML = String(i);
+        }
+        if (i < 3) {
+            const line = document.getElementById(`blogStepLine${i}`);
+            if (line) line.style.background = i < active ? '#198754' : '#dee2e6';
+        }
+    });
+}
+
+async function saveBlogConfig() {
+    const postType = document.querySelector('input[name="blogPostType"]:checked')?.value;
+    if (!postType) { alert('포스팅 유형을 선택해주세요.'); return; }
+    const work = (document.getElementById('blogWorkKeywords')?.value || '').split(',').map(s=>s.trim()).filter(Boolean);
+    const tags = (document.getElementById('blogTags')?.value || '').split(',').map(s=>s.trim()).filter(Boolean);
+    const payload = {
+        blog_place_url: document.getElementById('blogPlaceUrl')?.value.trim() || null,
+        blog_place_name: document.getElementById('blogPlaceName')?.value.trim() || null,
+        blog_main_keyword: document.getElementById('blogMainKeyword')?.value.trim() || null,
+        blog_work_keywords: work,
+        blog_tags: tags,
+        blog_post_type: postType,
+        blog_store_address: document.getElementById('blogStoreAddress')?.value.trim() || null,
+        blog_store_phone: document.getElementById('blogStorePhone')?.value.trim() || null,
+        blog_extra_link: document.getElementById('blogExtraLink')?.value.trim() || null,
+    };
+    const resultEl = document.getElementById('blogConfigResult');
+    try {
+        await apiPut('/api/owner/ad/blog-config', payload);
+        if (resultEl) resultEl.innerHTML = '<div class="alert alert-success"><i class="fas fa-circle-check me-1"></i>블로그 설정이 저장되었습니다. 매월 첫 평일에 자동 접수됩니다.</div>';
+    } catch(e) {
+        if (resultEl) resultEl.innerHTML = `<div class="alert alert-danger">${escapeHtml(e.message)}</div>`;
     }
 }
 
@@ -9124,7 +9372,7 @@ async function addMyKeyword() {
             keyword,
             ad_type: document.getElementById('okAdType').value,
         });
-        navigate('owner-ad-keywords');
+        navigate('owner-ad-settings');
     } catch (e) {
         showKeywordResult('okResult', false, e.message);
     }
@@ -9133,7 +9381,7 @@ async function addMyKeyword() {
 async function toggleMyKeyword(id, isActive) {
     try {
         await apiPut(`/api/owner/ad/keywords/${id}`, { is_active: isActive });
-        navigate('owner-ad-keywords');
+        navigate('owner-ad-settings');
     } catch (e) { alert(e.message); }
 }
 
@@ -9141,7 +9389,7 @@ async function deleteMyKeyword(id) {
     if (!confirm('이 키워드를 삭제하시겠습니까?')) return;
     try {
         await apiDelete(`/api/owner/ad/keywords/${id}`);
-        navigate('owner-ad-keywords');
+        navigate('owner-ad-settings');
     } catch (e) { alert(e.message); }
 }
 
@@ -9773,6 +10021,124 @@ async function showAdOverrideModal(merchantId, merchantName) {
     };
 
     new bootstrap.Modal(document.getElementById('formModal')).show();
+}
+
+// ── ADMIN: 가맹점별 광고 현황 모달 (키워드 / 블로그 설정 / 집행 통계) ──────
+
+async function showMerchantAdStatus(merchantId, merchantName) {
+    document.getElementById('formModalTitle').textContent = `${merchantName} — 광고 현황`;
+    resetFormModalFooter(false);
+    const body = document.getElementById('formModalBody');
+    body.innerHTML = adpayLoadingMarkup('광고 현황을 불러오는 중입니다');
+    new bootstrap.Modal(document.getElementById('formModal')).show();
+
+    try {
+        const [kwRes, blogRes, statsRes] = await Promise.all([
+            apiGet(`/api/admin/merchants/${merchantId}/keywords`).catch(() => ({ keywords: [] })),
+            apiGet(`/api/admin/merchants/${merchantId}/blog-config`).catch(() => ({ configured: false })),
+            apiGet(`/api/admin/merchants/${merchantId}/ad-dispatch-stats`).catch(() => ({ daily: [], monthly: [] })),
+        ]);
+        body.innerHTML = merchantAdStatusMarkup(kwRes, blogRes, statsRes);
+    } catch (e) {
+        body.innerHTML = `<div class="alert alert-danger">${escapeHtml(e.message)}</div>`;
+    }
+}
+
+function merchantAdStatusMarkup(kwRes, blogRes, statsRes) {
+    // ── 키워드 탭 ──
+    const kwRows = (kwRes.keywords || []).map(k => {
+        const badgeColor = k.status === 'approved' ? 'success' : k.status === 'rejected' ? 'danger' : 'warning';
+        return `<tr>
+            <td class="fw-bold">${escapeHtml(k.keyword)}</td>
+            <td><span class="badge bg-light text-dark border">${escapeHtml(k.ad_type || '공통')}</span></td>
+            <td><span class="badge bg-${badgeColor}">${escapeHtml(k.status_label || k.status)}</span>
+                ${k.reject_reason ? `<div class="small text-danger mt-1">${escapeHtml(k.reject_reason)}</div>` : ''}</td>
+            <td>${k.is_active ? '<span class="badge bg-success">사용</span>' : '<span class="badge bg-secondary">비사용</span>'}</td>
+        </tr>`;
+    }).join('');
+
+    // ── 블로그 탭 ──
+    const blogHtml = blogRes.configured ? `
+        <table class="table table-sm">
+            <tbody>
+                <tr><th style="width:140px">플레이스 URL</th><td><a href="${escapeHtml(blogRes.blog_place_url||'')}" target="_blank" class="small">${escapeHtml(blogRes.blog_place_url||'-')}</a></td></tr>
+                <tr><th>업체명</th><td>${escapeHtml(blogRes.blog_place_name||'-')}</td></tr>
+                <tr><th>필수 키워드</th><td>${escapeHtml(blogRes.blog_main_keyword||'-')}</td></tr>
+                <tr><th>작업 키워드</th><td>${escapeHtml((blogRes.blog_work_keywords||[]).join(', ')||'-')}</td></tr>
+                <tr><th>해시태그</th><td>${escapeHtml((blogRes.blog_tags||[]).join(', ')||'-')}</td></tr>
+                <tr><th>포스팅 유형</th><td>${escapeHtml(blogRes.blog_post_type||'-')}</td></tr>
+                <tr><th>매장 주소</th><td>${escapeHtml(blogRes.blog_store_address||'-')}</td></tr>
+                <tr><th>대표번호</th><td>${escapeHtml(blogRes.blog_store_phone||'-')}</td></tr>
+                <tr><th>추가 링크</th><td>${escapeHtml(blogRes.blog_extra_link||'-')}</td></tr>
+                <tr><th>일별 접수 건수</th><td>${blogRes.daily_workload != null ? blogRes.daily_workload + '건' : '-'}</td></tr>
+            </tbody>
+        </table>` : `<div class="alert alert-warning">블로그 설정이 등록되지 않았습니다.</div>`;
+
+    // ── 집행 통계 탭 ──
+    const adTypeLabel = t => ({ place_traffic: '플레이스 방문', blog_review: '블로그 배포' })[t] || t;
+
+    // 월별 집계
+    const monthlyMap = {};
+    (statsRes.monthly || []).forEach(r => {
+        if (!monthlyMap[r.month]) monthlyMap[r.month] = {};
+        monthlyMap[r.month][r.ad_type] = (monthlyMap[r.month][r.ad_type] || 0) + r.count;
+    });
+    const monthlyRows = Object.keys(monthlyMap).sort().reverse().map(month => {
+        const place = monthlyMap[month]['place_traffic'] || 0;
+        const blog = monthlyMap[month]['blog_review'] || 0;
+        return `<tr><td>${escapeHtml(month)}</td><td>${place.toLocaleString()}</td><td>${blog.toLocaleString()}</td></tr>`;
+    }).join('');
+
+    // 일별 집계 (최근 30일)
+    const dailyMap = {};
+    (statsRes.daily || []).forEach(r => {
+        if (!dailyMap[r.date]) dailyMap[r.date] = {};
+        dailyMap[r.date][r.ad_type] = (dailyMap[r.date][r.ad_type] || 0) + r.count;
+    });
+    const dailyRows = Object.keys(dailyMap).sort().reverse().slice(0, 30).map(date => {
+        const place = dailyMap[date]['place_traffic'] || 0;
+        const blog = dailyMap[date]['blog_review'] || 0;
+        return `<tr><td>${escapeHtml(date)}</td><td>${place.toLocaleString()}</td><td>${blog.toLocaleString()}</td></tr>`;
+    }).join('');
+
+    return `
+    <ul class="nav nav-tabs mb-3" id="merchantAdStatusTabs">
+        <li class="nav-item"><button class="nav-link active" data-mstab="keywords" onclick="switchMerchantAdTab('keywords')"><i class="fas fa-key me-1"></i>플레이스 키워드</button></li>
+        <li class="nav-item"><button class="nav-link" data-mstab="blog" onclick="switchMerchantAdTab('blog')"><i class="fas fa-blog me-1"></i>블로그 설정</button></li>
+        <li class="nav-item"><button class="nav-link" data-mstab="stats" onclick="switchMerchantAdTab('stats')"><i class="fas fa-chart-bar me-1"></i>집행 현황</button></li>
+    </ul>
+
+    <div id="mstabKeywords">
+        ${kwRows ? `<div class="table-responsive"><table class="table table-sm table-hover">
+            <thead><tr><th>키워드</th><th>광고 종류</th><th>상태</th><th>사용</th></tr></thead>
+            <tbody>${kwRows}</tbody>
+        </table></div>` : '<div class="text-muted text-center py-3">등록된 키워드가 없습니다</div>'}
+    </div>
+
+    <div id="mstabBlog" style="display:none">${blogHtml}</div>
+
+    <div id="mstabStats" style="display:none">
+        <h6 class="fw-bold mb-2">월별 집행 현황</h6>
+        ${monthlyRows ? `<div class="table-responsive mb-4"><table class="table table-sm table-hover">
+            <thead><tr><th>월</th><th>플레이스 방문</th><th>블로그 배포</th></tr></thead>
+            <tbody>${monthlyRows}</tbody>
+        </table></div>` : '<div class="text-muted mb-4">집행 내역 없음</div>'}
+        <h6 class="fw-bold mb-2">일별 집행 현황 <span class="text-muted fw-normal small">(최근 30일)</span></h6>
+        ${dailyRows ? `<div class="table-responsive"><table class="table table-sm table-hover">
+            <thead><tr><th>날짜</th><th>플레이스 방문</th><th>블로그 배포</th></tr></thead>
+            <tbody>${dailyRows}</tbody>
+        </table></div>` : '<div class="text-muted">집행 내역 없음</div>'}
+    </div>`;
+}
+
+function switchMerchantAdTab(tab) {
+    ['Keywords', 'Blog', 'Stats'].forEach(k => {
+        const el = document.getElementById(`mstab${k}`);
+        if (el) el.style.display = (k.toLowerCase() === tab) ? '' : 'none';
+    });
+    document.querySelectorAll('#merchantAdStatusTabs .nav-link').forEach(el => {
+        el.classList.toggle('active', el.dataset.mstab === tab);
+    });
 }
 
 async function showAdConfigModal(merchantId, merchantName) {

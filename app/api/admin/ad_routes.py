@@ -990,3 +990,165 @@ def set_merchant_ad_config(
     db.commit()
     return {"ok": True, "merchant_id": merchant.id, "merchant_name": merchant.name,
             "place_code": merchant.place_code}
+
+
+# ═══════════════════════════════════════════════════════════
+# 관리자: 가맹점별 키워드 / 블로그 설정 / 집행 통계 조회
+# ═══════════════════════════════════════════════════════════
+
+from app.models.ad_keyword import MerchantAdKeyword, KEYWORD_STATUS_LABELS  # noqa: E402
+from app.models.ad_dispatch import AdDispatch  # noqa: E402
+from sqlalchemy import func as _func  # noqa: E402
+
+
+@router.get("/merchants/{merchant_id}/keywords")
+def admin_get_merchant_keywords(
+    merchant_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """가맹점이 등록한 플레이스 광고 키워드 목록 조회 (관리자 전용)."""
+    merchant = db.query(Merchant).filter(Merchant.id == merchant_id).first()
+    if not merchant:
+        raise HTTPException(status_code=404, detail="가맹점을 찾을 수 없습니다")
+    keywords = (
+        db.query(MerchantAdKeyword)
+        .filter(MerchantAdKeyword.merchant_id == merchant_id)
+        .order_by(MerchantAdKeyword.status, MerchantAdKeyword.priority)
+        .all()
+    )
+    return {
+        "merchant_id": merchant_id,
+        "merchant_name": merchant.name,
+        "keywords": [
+            {
+                "id": k.id,
+                "keyword": k.keyword,
+                "ad_type": k.ad_type,
+                "status": k.status,
+                "status_label": KEYWORD_STATUS_LABELS.get(k.status, k.status),
+                "is_active": k.is_active,
+                "reject_reason": k.reject_reason,
+                "created_at": str(k.created_at)[:10] if k.created_at else None,
+            }
+            for k in keywords
+        ],
+    }
+
+
+@router.get("/merchants/{merchant_id}/blog-config")
+def admin_get_merchant_blog_config(
+    merchant_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """가맹점이 등록한 블로그 자동 접수 설정 조회 (관리자 전용)."""
+    merchant = db.query(Merchant).filter(Merchant.id == merchant_id).first()
+    if not merchant:
+        raise HTTPException(status_code=404, detail="가맹점을 찾을 수 없습니다")
+    config = (
+        db.query(MerchantAdConfig)
+        .filter(
+            MerchantAdConfig.merchant_id == merchant_id,
+            MerchantAdConfig.ad_type == "blog_review",
+        )
+        .first()
+    )
+    if not config:
+        return {"merchant_id": merchant_id, "merchant_name": merchant.name, "configured": False}
+    import json as _json
+    return {
+        "merchant_id": merchant_id,
+        "merchant_name": merchant.name,
+        "configured": True,
+        "blog_place_url": config.blog_place_url,
+        "blog_place_name": config.blog_place_name,
+        "blog_main_keyword": config.blog_main_keyword,
+        "blog_work_keywords": _json.loads(config.blog_work_keywords or "[]"),
+        "blog_tags": _json.loads(config.blog_tags or "[]"),
+        "blog_post_type": config.blog_post_type,
+        "blog_store_address": config.blog_store_address,
+        "blog_store_phone": config.blog_store_phone,
+        "blog_extra_link": config.blog_extra_link,
+        "daily_workload": config.auto_count,
+    }
+
+
+@router.get("/merchants/{merchant_id}/ad-dispatch-stats")
+def admin_get_merchant_ad_dispatch_stats(
+    merchant_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """가맹점별 일별/월별 광고 집행 건수 조회 (관리자 전용, 최근 30일 + 최근 6개월)."""
+    merchant = db.query(Merchant).filter(Merchant.id == merchant_id).first()
+    if not merchant:
+        raise HTTPException(status_code=404, detail="가맹점을 찾을 수 없습니다")
+
+    from datetime import timedelta
+    today = today_kst()
+    thirty_days_ago = today - timedelta(days=29)
+
+    # 일별 집행 내역 (최근 30일, 광고타입별)
+    daily_rows = (
+        db.query(
+            AdDispatch.execution_date,
+            AdDispatch.ad_type,
+            _func.sum(AdDispatch.requested_count).label("total"),
+        )
+        .filter(
+            AdDispatch.merchant_id == merchant_id,
+            AdDispatch.execution_date >= thirty_days_ago,
+            AdDispatch.execution_date <= today,
+            AdDispatch.dry_run == False,  # noqa: E712
+        )
+        .group_by(AdDispatch.execution_date, AdDispatch.ad_type)
+        .order_by(AdDispatch.execution_date.desc())
+        .all()
+    )
+
+    # 월별 집행 합계 (최근 6개월)
+    six_months_ago_str = (today.replace(day=1) - timedelta(days=1)).replace(day=1)
+    # 6개월 전 1일
+    y, m = today.year, today.month
+    months = []
+    for _ in range(6):
+        months.append(f"{y:04d}-{m:02d}")
+        m -= 1
+        if m == 0:
+            m = 12
+            y -= 1
+    six_months_start = date_type(int(months[-1][:4]), int(months[-1][5:]), 1)
+
+    monthly_rows = (
+        db.query(
+            _func.date_format(AdDispatch.execution_date, "%Y-%m").label("month"),
+            AdDispatch.ad_type,
+            _func.sum(AdDispatch.requested_count).label("total"),
+        )
+        .filter(
+            AdDispatch.merchant_id == merchant_id,
+            AdDispatch.execution_date >= six_months_start,
+            AdDispatch.execution_date <= today,
+            AdDispatch.dry_run == False,  # noqa: E712
+        )
+        .group_by("month", AdDispatch.ad_type)
+        .order_by("month")
+        .all()
+    )
+
+    daily = [
+        {"date": str(r.execution_date), "ad_type": r.ad_type, "count": int(r.total or 0)}
+        for r in daily_rows
+    ]
+    monthly = [
+        {"month": r.month, "ad_type": r.ad_type, "count": int(r.total or 0)}
+        for r in monthly_rows
+    ]
+
+    return {
+        "merchant_id": merchant_id,
+        "merchant_name": merchant.name,
+        "daily": daily,
+        "monthly": monthly,
+    }
