@@ -11,6 +11,7 @@
 """
 import json
 import logging
+import random
 from datetime import date as date_cls, datetime, timedelta
 from typing import Optional
 
@@ -308,10 +309,18 @@ def build_plan(db: Session, target_date: Optional[date_cls] = None,
             entry["est_cost"] = entry["unit_price"] * target
             entry["action"] = "dispatch"
 
-            # VISIT 카테고리는 3가지 액션으로 균등 분배하여 각각 별도 주문으로 접수한다.
+            # VISIT 카테고리는 8가지 액션으로 균등 분배하여 각각 별도 주문으로 접수한다.
+            # 날짜를 시드로 셔플해 매일 다른 순서로 집행된다.
             # SAVE 계열(PLACE_SAVE)과 그 외 카테고리는 기존 단일 주문 흐름을 유지한다.
             if ad_config.mission_category == "VISIT":
-                _visit_actions = ["WRITE_REVIEW", "FIND_PATH", "SPOT_CHECK"]
+                _all_visit_actions = [
+                    "WRITE_REVIEW", "FIND_PATH", "SPOT_CHECK",
+                    "RANDOM_MISSION", "BUSINESS_HOURS", "INTRODUCTION",
+                    "WALK_COUNT", "BUS_STATION",
+                ]
+                _rng = random.Random(str(target_date))
+                _visit_actions = _all_visit_actions[:]
+                _rng.shuffle(_visit_actions)
                 _base, _remainder = divmod(target, len(_visit_actions))
                 for _i, _action in enumerate(_visit_actions):
                     _action_target = _base + (_remainder if _i == 0 else 0)

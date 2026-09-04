@@ -10,6 +10,8 @@ function getUser() {
 
 // 동시에 여러 요청이 401을 받아도 refresh 는 한 번만 호출한다.
 let _refreshInFlight = null;
+// 로그아웃 진행 중 플래그 — 페이지 이동 직전 비동기 응답 에러창을 억제한다.
+let _loggingOut = false;
 
 function refreshAccessToken() {
     if (_refreshInFlight) return _refreshInFlight;
@@ -53,9 +55,9 @@ async function api(path, options = {}) {
         const newToken = (current && current !== sentToken)
             ? current
             : await refreshAccessToken();
-        if (!newToken) { logout(); return null; }
+        if (!newToken) { if (!_loggingOut) logout(); return null; }
         res = await send();
-        if (res.status === 401) { logout(); return null; }
+        if (res.status === 401) { if (!_loggingOut) logout(); return null; }
     }
     return parseApiResponse(res);
 }
@@ -101,6 +103,7 @@ async function parseApiResponse(res) {
     }
 
     if (!res.ok) {
+        if (_loggingOut) throw new Error('로그아웃 중');
         const detail = data ? formatApiDetail(data.detail) : '';
         throw new Error(detail || `서버 오류가 발생했습니다 (HTTP ${res.status})`);
     }
@@ -120,6 +123,7 @@ function apiDelete(path) {
 }
 
 function logout() {
+    _loggingOut = true;
     localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');
     localStorage.removeItem('user');

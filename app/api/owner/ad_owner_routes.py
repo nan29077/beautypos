@@ -1364,6 +1364,36 @@ def owner_ad_execution_summary(
     }
 
 
+# ─── 플레이스 방문 광고 설정 조회 ───────────────────────────────
+
+@router.get("/ad/place-config")
+def owner_get_place_config(
+    merchant_id: Optional[int] = Query(default=None),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_owner),
+):
+    """플레이스 방문 광고 설정(mission_category/mission_action) 조회.
+
+    설정이 없으면 configured=False 로 빈 구조를 반환한다.
+    """
+    merchant = _get_owner_merchant(user, db, merchant_id)
+    config = db.query(MerchantAdConfig).filter(
+        MerchantAdConfig.merchant_id == merchant.id,
+        MerchantAdConfig.ad_type == "place_traffic",
+    ).first()
+    if config is None:
+        return {
+            "configured": False,
+            "mission_category": None,
+            "mission_action": None,
+        }
+    return {
+        "configured": bool(config.mission_category),
+        "mission_category": config.mission_category,
+        "mission_action": config.mission_action,
+    }
+
+
 # ─── 블로그 광고 설정 (blog_review 자동 월별 접수) ───────────
 
 def _blog_config_dict(config: Optional[MerchantAdConfig]) -> dict:

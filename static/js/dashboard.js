@@ -595,7 +595,12 @@ document.addEventListener('keydown', event => {
 });
 
 window.addEventListener('popstate', event => {
-    const page = event.state?.page || location.hash.replace(/^#/, '') || 'home';
+    // state 가 없으면 앱 히스토리 밖으로 나간 것 — 로그인 페이지로 빠지지 않도록 막는다.
+    if (!event.state) {
+        history.pushState({ page: currentPage || 'home' }, '', `#${currentPage || 'home'}`);
+        return;
+    }
+    const page = event.state.page || location.hash.replace(/^#/, '') || 'home';
     if (page !== currentPage && isPageAllowedForCurrentRole(page)) navigate(page, { skipHistory: true });
 });
 
@@ -5657,14 +5662,28 @@ async function loadOwnerAdOrderNew(c, t) {
     </div>${tabsHtml}`;
     if (blogOn) {
         bodyHtml += `<div id="adTabBlog" style="display:${defaultTab==='blog'?'':'none'}">
-        <div class="card data-card"><div class="card-header"><h5><i class="fas fa-blog text-info me-2"></i>블로그 배포 요청</h5></div><div class="card-body">
+        <div class="card data-card"><div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h5 class="mb-0"><i class="fas fa-blog text-info me-2"></i>블로그 배포 요청</h5>
+            <button class="btn btn-sm btn-outline-secondary" onclick="loadBlogConfigToOrder()"><i class="fas fa-download me-1"></i>광고 설정 불러오기</button>
+        </div><div class="card-body">
+            <div id="blogLoadNotice" class="alert alert-info py-2 small mb-3" style="display:none"></div>
             <div class="row g-3">
-                <div class="col-md-6"><label class="form-label">캠페인 이름 <span class="text-danger">*</span></label><input class="form-control" id="blogCampaign" maxlength="300"></div>
+                <div class="col-md-6"><label class="form-label">네이버 플레이스 URL</label><input class="form-control" id="blogPlaceUrl" maxlength="500" placeholder="https://map.naver.com/..."></div>
+                <div class="col-md-6"><label class="form-label">플레이스명 / 매장명 <span class="text-danger">*</span></label><input class="form-control" id="blogCampaign" maxlength="300"></div>
                 <div class="col-md-6"><label class="form-label">매장 주소</label><input class="form-control" id="blogAddr"></div>
                 <div class="col-md-6"><label class="form-label">문의 연락처</label><input class="form-control" id="blogContact"></div>
-                <div class="col-md-6"><label class="form-label">링크 (쉼표 구분)</label><input class="form-control" id="blogLinks"></div>
-                <div class="col-md-6"><label class="form-label">메인 키워드 (최대 5) <span class="text-danger">*</span></label><input class="form-control" id="blogKeywords" placeholder="쉼표로 구분"></div>
-                <div class="col-md-6"><label class="form-label">해시태그 (최대 5)</label><input class="form-control" id="blogHashtags"></div>
+                <div class="col-md-6"><label class="form-label">메인 키워드 <span class="text-danger">*</span></label><input class="form-control" id="blogKeywords" placeholder="쉼표로 구분 (최대 5개)"></div>
+                <div class="col-md-6"><label class="form-label">작업 키워드</label><input class="form-control" id="blogWorkKeywords" placeholder="쉼표로 구분"></div>
+                <div class="col-md-6"><label class="form-label">해시태그</label><input class="form-control" id="blogHashtags" placeholder="쉼표로 구분 (최대 5개)"></div>
+                <div class="col-md-6"><label class="form-label">포스트 유형</label>
+                    <select class="form-select" id="blogPostType">
+                        <option value="">선택 안 함</option>
+                        <option value="INFO">정보성</option>
+                        <option value="REVIEW">리뷰형</option>
+                        <option value="FREE">자유형</option>
+                    </select>
+                </div>
+                <div class="col-md-6"><label class="form-label">추가 링크</label><input class="form-control" id="blogLinks" placeholder="예: 홈페이지 URL"></div>
                 <div class="col-md-6"><label class="form-label">주문 건수 <span class="text-danger">*</span></label><div class="input-group"><input type="number" class="form-control" id="blogOrderCount" min="1" max="10000" value="1" oninput="updateSimpleAdEstimate('blog')"><span class="input-group-text">건</span></div></div>
                 <div class="col-12"><label class="form-label">업체 소개</label><textarea class="form-control" id="blogDesc" rows="3"></textarea></div>
                 <div class="col-12" id="blogEstimateBox">${simpleAdEstimateMarkup('blog', 1)}</div>
@@ -5675,10 +5694,33 @@ async function loadOwnerAdOrderNew(c, t) {
     }
     if (placeOn) {
         bodyHtml += `<div id="adTabPlace" style="display:${defaultTab==='place'?'':'none'}">
-        <div class="card data-card"><div class="card-header"><h5><i class="fas fa-map-marker-alt text-success me-2"></i>플레이스 방문 요청</h5></div><div class="card-body">
+        <div class="card data-card"><div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h5 class="mb-0"><i class="fas fa-map-marker-alt text-success me-2"></i>플레이스 방문 요청</h5>
+            <button class="btn btn-sm btn-outline-secondary" onclick="loadPlaceConfigToOrder()"><i class="fas fa-download me-1"></i>광고 설정 불러오기</button>
+        </div><div class="card-body">
+            <div id="placeLoadNotice" class="alert alert-info py-2 small mb-3" style="display:none"></div>
             <div class="row g-3">
                 <div class="col-md-6"><label class="form-label">플레이스명 또는 ID <span class="text-danger">*</span></label><input class="form-control" id="placeName" maxlength="300"></div>
                 <div class="col-md-6"><label class="form-label">검색 키워드 (최대 3) <span class="text-danger">*</span></label><input class="form-control" id="placeKeywords" placeholder="쉼표로 구분"></div>
+                <div class="col-md-6"><label class="form-label">미션 카테고리</label>
+                    <select class="form-select" id="placeMissionCategory">
+                        <option value="VISIT">VISIT (플레이스 방문)</option>
+                        <option value="SAVE">SAVE (플레이스 저장)</option>
+                    </select>
+                </div>
+                <div class="col-md-6"><label class="form-label">미션 액션</label>
+                    <select class="form-select" id="placeMissionAction">
+                        <option value="WRITE_REVIEW">방문자 리뷰</option>
+                        <option value="FIND_PATH">길찾기</option>
+                        <option value="SPOT_CHECK">명소확인</option>
+                        <option value="RANDOM_MISSION">랜덤 미션</option>
+                        <option value="BUSINESS_HOURS">영업시간</option>
+                        <option value="INTRODUCTION">소개</option>
+                        <option value="WALK_COUNT">도보수</option>
+                        <option value="BUS_STATION">정류장</option>
+                        <option value="PLACE_SAVE">플레이스 저장(SAVE)</option>
+                    </select>
+                </div>
                 <div class="col-md-6"><label class="form-label">주문 건수 <span class="text-danger">*</span></label><div class="input-group"><input type="number" class="form-control" id="placeOrderCount" min="1" max="10000" value="1" oninput="updateSimpleAdEstimate('place')"><span class="input-group-text">건</span></div></div>
                 <div class="col-12" id="placeEstimateBox">${simpleAdEstimateMarkup('place', 1)}</div>
                 <div class="col-12"><button class="btn btn-success" id="placeSubmitBtn" onclick="submitPlaceOrder()"><i class="fas fa-paper-plane me-1"></i>검토 요청하기</button></div>
@@ -5743,20 +5785,53 @@ function showAdTab(tab) {
         el.setAttribute('aria-selected', String(isActive));
     });
 }
+async function loadBlogConfigToOrder() {
+    try {
+        const d = await apiGet('/api/owner/ad/blog-config');
+        if (!d || !d.configured) {
+            alert('광고 설정에 등록된 블로그 설정이 없습니다. 먼저 광고 설정 메뉴에서 등록해 주세요.');
+            return;
+        }
+        const setVal = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.value = v; };
+        setVal('blogPlaceUrl', d.blog_place_url || '');
+        setVal('blogCampaign', d.blog_place_name || '');
+        setVal('blogAddr', d.blog_store_address || '');
+        setVal('blogContact', d.blog_store_phone || '');
+        setVal('blogKeywords', d.blog_main_keyword || '');
+        setVal('blogWorkKeywords', (d.blog_work_keywords || []).join(', '));
+        setVal('blogHashtags', (d.blog_tags || []).join(', '));
+        setVal('blogPostType', d.blog_post_type || '');
+        setVal('blogLinks', d.blog_extra_link || '');
+        const notice = document.getElementById('blogLoadNotice');
+        if (notice) { notice.textContent = '광고 설정에서 불러왔습니다. 필요하면 수정 후 요청하세요.'; notice.style.display = ''; }
+    } catch(e) { alert('불러오기 실패: ' + e.message); }
+}
+
 async function submitBlogOrder() {
     const campaign = document.getElementById('blogCampaign').value.trim();
     const kw = document.getElementById('blogKeywords').value.split(',').map(s=>s.trim()).filter(Boolean);
+    const workKw = document.getElementById('blogWorkKeywords').value.split(',').map(s=>s.trim()).filter(Boolean);
     const links = document.getElementById('blogLinks').value.split(',').map(s=>s.trim()).filter(Boolean);
     const ht = document.getElementById('blogHashtags').value.split(',').map(s=>s.trim()).filter(Boolean);
     const orderCount = parseInt(document.getElementById('blogOrderCount').value, 10);
-    if (campaign.length < 2) { alert('캠페인 이름을 2자 이상 입력해주세요'); return; }
+    if (campaign.length < 2) { alert('플레이스명/매장명을 2자 이상 입력해주세요'); return; }
     if (!kw.length || kw.length > 5) { alert('메인 키워드를 1~5개 입력해주세요'); return; }
     if (ht.length > 5) { alert('해시태그는 최대 5개까지 입력할 수 있습니다'); return; }
     if (!Number.isInteger(orderCount) || orderCount < 1 || orderCount > 10000) { alert('주문 건수를 1~10,000건으로 입력해주세요'); return; }
     const btn = document.getElementById('blogSubmitBtn');
     btn.disabled = true;
     try {
-        const res = await apiPost('/api/owner/ad/blog-orders', { campaign_name: campaign, address: document.getElementById('blogAddr').value, contact: document.getElementById('blogContact').value, links, main_keywords: kw, hashtags: ht, description: document.getElementById('blogDesc').value, extra_image_link: '', order_count: orderCount });
+        const res = await apiPost('/api/owner/ad/blog-orders', {
+            campaign_name: campaign,
+            address: document.getElementById('blogAddr').value,
+            contact: document.getElementById('blogContact').value,
+            links,
+            main_keywords: kw,
+            hashtags: ht,
+            description: document.getElementById('blogDesc').value,
+            extra_image_link: document.getElementById('blogPlaceUrl').value.trim() || '',
+            order_count: orderCount,
+        });
         document.getElementById('blogResult').innerHTML = `<div class="alert alert-success">요청 #${res.id}이 접수되었습니다. 주문 내역으로 이동합니다.</div>`;
         setTimeout(() => navigate('owner-adorders'), 700);
     } catch(e) {
@@ -6372,6 +6447,21 @@ async function submitShortsOrder() {
     }
 }
 
+async function loadPlaceConfigToOrder() {
+    try {
+        const d = await apiGet('/api/owner/ad/place-config');
+        if (!d || !d.configured) {
+            alert('광고 설정에 등록된 플레이스 방문 설정이 없습니다. 먼저 광고 설정 메뉴에서 등록해 주세요.');
+            return;
+        }
+        const setVal = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.value = v; };
+        setVal('placeMissionCategory', d.mission_category || 'VISIT');
+        setVal('placeMissionAction', d.mission_action || 'WRITE_REVIEW');
+        const notice = document.getElementById('placeLoadNotice');
+        if (notice) { notice.textContent = '광고 설정에서 불러왔습니다. 플레이스명과 키워드를 확인 후 요청하세요.'; notice.style.display = ''; }
+    } catch(e) { alert('불러오기 실패: ' + e.message); }
+}
+
 async function submitPlaceOrder() {
     const placeName = document.getElementById('placeName').value.trim();
     const kw = document.getElementById('placeKeywords').value.split(',').map(s=>s.trim()).filter(Boolean);
@@ -6382,7 +6472,11 @@ async function submitPlaceOrder() {
     const btn = document.getElementById('placeSubmitBtn');
     btn.disabled = true;
     try {
-        const res = await apiPost('/api/owner/ad/place-traffic-orders', { place_name_or_id: placeName, search_keywords: kw, order_count: orderCount });
+        const res = await apiPost('/api/owner/ad/place-traffic-orders', {
+            place_name_or_id: placeName,
+            search_keywords: kw,
+            order_count: orderCount,
+        });
         document.getElementById('placeResult').innerHTML = `<div class="alert alert-success">요청 #${res.id}이 접수되었습니다. 주문 내역으로 이동합니다.</div>`;
         setTimeout(() => navigate('owner-adorders'), 700);
     } catch(e) {
@@ -9339,13 +9433,9 @@ function ownerKeywordMarkup(d) {
         <div class="card-body">
             ${blockedNotice}
             <div class="row g-2 align-items-end mb-3">
-                <div class="col-md-5">
+                <div class="col-md-9">
                     <label class="form-label small fw-bold">키워드</label>
                     <input class="form-control" id="okKeyword" maxlength="60" placeholder="예) 지역명 + 업종명">
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label small fw-bold">광고 종류</label>
-                    <select class="form-select" id="okAdType">${keywordAdTypeOptions(d.ad_types, '')}</select>
                 </div>
                 <div class="col-md-3">
                     <button class="btn btn-primary w-100" onclick="addMyKeyword()"><i class="fas fa-plus me-1"></i>등록</button>
@@ -9370,7 +9460,7 @@ async function addMyKeyword() {
     try {
         await apiPost('/api/owner/ad/keywords', {
             keyword,
-            ad_type: document.getElementById('okAdType').value,
+            ad_type: 'place_traffic',
         });
         navigate('owner-ad-settings');
     } catch (e) {
