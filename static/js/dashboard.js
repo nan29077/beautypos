@@ -726,7 +726,7 @@ function navigate(page, options = {}) {
     closeMobileMenu();
     updateMobileNavigation(page);
     updateAdminMobileHeader(page);
-    if ((isRoleMobile() || isAdminMobile()) && !options.skipHistory) {
+    if (!options.skipHistory) {
         const url = `${location.pathname}${location.search}#${page}`;
         if (options.replaceHistory) history.replaceState({ page }, '', url);
         else if (location.hash !== `#${page}`) history.pushState({ page }, '', url);
@@ -5630,111 +5630,107 @@ function closeOwnerExecPanel() {
 
 async function loadOwnerAdOrderNew(c, t) {
     t.textContent = '새 광고 주문';
-    // 플래그·단가 최신 로드
-    let flags = adFeatureFlags;
-    try { flags = await apiGet('/api/feature-flags'); adFeatureFlags = flags; } catch(e) {}
+    // 단가 최신 로드
     try { adPricing = await apiGet('/api/owner/ad/pricing'); } catch(e) {}
-    const blogOn = flags.ad_blog_enabled;
-    const placeOn = flags.ad_place_traffic_enabled;
-    const shortsOn = flags.ad_shorts_enabled;
 
-    // 전부 OFF면 안내 메시지
-    if (!blogOn && !placeOn && !shortsOn) {
-        c.innerHTML = `<div class="card border-0 shadow-sm"><div class="card-body text-center py-5">
-            <i class="fas fa-exclamation-triangle text-warning" style="font-size:3rem"></i>
-            <h5 class="mt-3 mb-2">현재 사용 가능한 광고 주문 유형이 없습니다</h5>
-            <p class="text-muted mb-0">관리자에게 문의하여 블로그 배포 · 플레이스 방문 · 쇼츠 배포 기능을 활성화해 주세요.</p>
-        </div></div>`;
-        return;
-    }
+    // 탭: 블로그·플레이스는 항상 표시. 쇼츠는 준비 중 안내만.
+    const tabsHtml = `<ul class="nav nav-tabs ad-order-tabs mb-4" id="adOrderTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button type="button" class="nav-link active" data-adtab="blog" role="tab" aria-selected="true" onclick="showAdTab('blog')">
+                <i class="fas fa-blog"></i><span>블로그 배포</span>
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button type="button" class="nav-link" data-adtab="place" role="tab" aria-selected="false" onclick="showAdTab('place')">
+                <i class="fas fa-map-marker-alt"></i><span>플레이스 방문</span>
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button type="button" class="nav-link" data-adtab="shorts" role="tab" aria-selected="false"
+                onclick="alert('쇼츠 배포는 현재 준비 중입니다. 준비가 완료되면 안내드리겠습니다.')">
+                <i class="fab fa-youtube"></i><span>쇼츠 배포 <span class="badge bg-secondary ms-1" style="font-size:.65rem">준비 중</span></span>
+            </button>
+        </li>
+    </ul>`;
 
-    // 기본 탭: 켜져 있는 유형 중 앞선 것
-    const defaultTab = blogOn ? 'blog' : (placeOn ? 'place' : 'shorts');
-    let tabsHtml = '<ul class="nav nav-tabs ad-order-tabs mb-4" id="adOrderTabs" role="tablist">';
-    if (blogOn) tabsHtml += `<li class="nav-item" role="presentation"><button type="button" class="nav-link ${defaultTab==='blog'?'active':''}" data-adtab="blog" role="tab" aria-selected="${defaultTab==='blog'}" onclick="showAdTab('blog')"><i class="fas fa-blog"></i><span>블로그 배포</span></button></li>`;
-    if (placeOn) tabsHtml += `<li class="nav-item" role="presentation"><button type="button" class="nav-link ${defaultTab==='place'?'active':''}" data-adtab="place" role="tab" aria-selected="${defaultTab==='place'}" onclick="showAdTab('place')"><i class="fas fa-map-marker-alt"></i><span>플레이스 방문</span></button></li>`;
-    if (shortsOn) tabsHtml += `<li class="nav-item" role="presentation"><button type="button" class="nav-link" data-adtab="shorts" role="tab" aria-selected="false" onclick="alert('쇼츠 배포는 현재 준비 중입니다. 준비가 완료되면 안내드리겠습니다.')"><i class="fab fa-youtube"></i><span>쇼츠 배포</span></button></li>`;
-    tabsHtml += '</ul>';
+    const blogTabHtml = `<div id="adTabBlog">
+    <div class="card data-card"><div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <h5 class="mb-0"><i class="fas fa-blog text-info me-2"></i>블로그 배포 요청</h5>
+        <button class="btn btn-sm btn-outline-secondary" onclick="loadBlogConfigToOrder()"><i class="fas fa-download me-1"></i>광고 설정 불러오기</button>
+    </div><div class="card-body">
+        <div id="blogLoadNotice" class="alert alert-info py-2 small mb-3" style="display:none"></div>
+        <div class="row g-3">
+            <div class="col-md-6"><label class="form-label">네이버 플레이스 URL</label><input class="form-control" id="blogPlaceUrl" maxlength="500" placeholder="https://m.place.naver.com/..."></div>
+            <div class="col-md-6"><label class="form-label">플레이스명 / 매장명 <span class="text-danger">*</span></label><input class="form-control" id="blogCampaign" maxlength="300"></div>
+            <div class="col-md-6"><label class="form-label">매장 주소</label><input class="form-control" id="blogAddr"></div>
+            <div class="col-md-6"><label class="form-label">문의 연락처</label><input class="form-control" id="blogContact"></div>
+            <div class="col-md-6"><label class="form-label">메인 키워드 <span class="text-danger">*</span></label><input class="form-control" id="blogKeywords" placeholder="쉼표로 구분 (최대 5개)"></div>
+            <div class="col-md-6"><label class="form-label">작업 키워드</label><input class="form-control" id="blogWorkKeywords" placeholder="쉼표로 구분"></div>
+            <div class="col-md-6"><label class="form-label">해시태그</label><input class="form-control" id="blogHashtags" placeholder="쉼표로 구분 (최대 5개)"></div>
+            <div class="col-md-6"><label class="form-label">포스트 유형</label>
+                <select class="form-select" id="blogPostType">
+                    <option value="">선택 안 함</option>
+                    <option value="INFO">정보성</option>
+                    <option value="REVIEW">리뷰형</option>
+                    <option value="FREE">자유형</option>
+                </select>
+            </div>
+            <div class="col-md-6"><label class="form-label">추가 링크</label><input class="form-control" id="blogLinks" placeholder="예: 홈페이지 URL"></div>
+            <div class="col-md-6"><label class="form-label">주문 건수 <span class="text-danger">*</span></label><div class="input-group"><input type="number" class="form-control" id="blogOrderCount" min="1" max="10000" value="1" oninput="updateSimpleAdEstimate('blog')"><span class="input-group-text">건</span></div></div>
+            <div class="col-12"><label class="form-label">업체 소개</label><textarea class="form-control" id="blogDesc" rows="3"></textarea></div>
+            <div class="col-12" id="blogEstimateBox">${simpleAdEstimateMarkup('blog', 1)}</div>
+            <div class="col-12"><button class="btn btn-primary" id="blogSubmitBtn" onclick="submitBlogOrder()"><i class="fas fa-paper-plane me-1"></i>검토 요청하기</button></div>
+        </div><div id="blogResult" class="mt-3"></div>
+    </div></div>
+    </div>`;
 
-    let bodyHtml = `<div class="workspace-hero mb-3">
+    const placeTabHtml = `<div id="adTabPlace" style="display:none">
+    <div class="card data-card"><div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <h5 class="mb-0"><i class="fas fa-map-marker-alt text-success me-2"></i>플레이스 방문 요청</h5>
+        <button class="btn btn-sm btn-outline-secondary" onclick="loadPlaceConfigToOrder()"><i class="fas fa-download me-1"></i>광고 설정 불러오기</button>
+    </div><div class="card-body">
+        <div id="placeLoadNotice" class="alert alert-info py-2 small mb-3" style="display:none"></div>
+        <div class="row g-3">
+            <div class="col-md-6"><label class="form-label">플레이스명 또는 ID <span class="text-danger">*</span></label><input class="form-control" id="placeName" maxlength="300"></div>
+            <div class="col-md-6"><label class="form-label">검색 키워드 (최대 3) <span class="text-danger">*</span></label><input class="form-control" id="placeKeywords" placeholder="쉼표로 구분"></div>
+            <div class="col-md-6"><label class="form-label">미션 카테고리</label>
+                <select class="form-select" id="placeMissionCategory">
+                    <option value="VISIT">VISIT (플레이스 방문)</option>
+                    <option value="SAVE">SAVE (플레이스 저장)</option>
+                </select>
+            </div>
+            <div class="col-md-6"><label class="form-label">미션 액션</label>
+                <select class="form-select" id="placeMissionAction">
+                    <option value="WRITE_REVIEW">방문자 리뷰</option>
+                    <option value="FIND_PATH">길찾기</option>
+                    <option value="SPOT_CHECK">명소확인</option>
+                    <option value="RANDOM_MISSION">랜덤 미션</option>
+                    <option value="BUSINESS_HOURS">영업시간</option>
+                    <option value="INTRODUCTION">소개</option>
+                    <option value="WALK_COUNT">도보수</option>
+                    <option value="BUS_STATION">정류장</option>
+                    <option value="PLACE_SAVE">플레이스 저장(SAVE)</option>
+                </select>
+            </div>
+            <div class="col-md-6"><label class="form-label">주문 건수 <span class="text-danger">*</span></label><div class="input-group"><input type="number" class="form-control" id="placeOrderCount" min="1" max="10000" value="1" oninput="updateSimpleAdEstimate('place')"><span class="input-group-text">건</span></div></div>
+            <div class="col-12" id="placeEstimateBox">${simpleAdEstimateMarkup('place', 1)}</div>
+            <div class="col-12"><button class="btn btn-success" id="placeSubmitBtn" onclick="submitPlaceOrder()"><i class="fas fa-paper-plane me-1"></i>검토 요청하기</button></div>
+        </div><div id="placeResult" class="mt-3"></div>
+    </div></div>
+    </div>`;
+
+    const shortsTabHtml = `<div id="adTabShorts" style="display:none">
+    <div class="card data-card"><div class="card-body text-center py-5">
+        <i class="fab fa-youtube text-danger" style="font-size:3rem"></i>
+        <h5 class="mt-3 mb-2">쇼츠 배포는 준비 중입니다</h5>
+        <p class="text-muted mb-0">준비가 완료되면 안내드리겠습니다.</p>
+    </div></div>
+    </div>`;
+
+    c.innerHTML = `<div class="workspace-hero mb-3">
         <div><span class="workspace-eyebrow">NEW CAMPAIGN</span><h2>새 광고 주문</h2><p>필수 정보를 입력하면 관리자가 검토 후 집행 상태를 안내합니다.</p></div>
         <div class="workspace-hero-icon"><i class="fas fa-bullhorn"></i></div>
-    </div>${tabsHtml}`;
-    if (blogOn) {
-        bodyHtml += `<div id="adTabBlog" style="display:${defaultTab==='blog'?'':'none'}">
-        <div class="card data-card"><div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-            <h5 class="mb-0"><i class="fas fa-blog text-info me-2"></i>블로그 배포 요청</h5>
-            <button class="btn btn-sm btn-outline-secondary" onclick="loadBlogConfigToOrder()"><i class="fas fa-download me-1"></i>광고 설정 불러오기</button>
-        </div><div class="card-body">
-            <div id="blogLoadNotice" class="alert alert-info py-2 small mb-3" style="display:none"></div>
-            <div class="row g-3">
-                <div class="col-md-6"><label class="form-label">네이버 플레이스 URL</label><input class="form-control" id="blogPlaceUrl" maxlength="500" placeholder="https://map.naver.com/..."></div>
-                <div class="col-md-6"><label class="form-label">플레이스명 / 매장명 <span class="text-danger">*</span></label><input class="form-control" id="blogCampaign" maxlength="300"></div>
-                <div class="col-md-6"><label class="form-label">매장 주소</label><input class="form-control" id="blogAddr"></div>
-                <div class="col-md-6"><label class="form-label">문의 연락처</label><input class="form-control" id="blogContact"></div>
-                <div class="col-md-6"><label class="form-label">메인 키워드 <span class="text-danger">*</span></label><input class="form-control" id="blogKeywords" placeholder="쉼표로 구분 (최대 5개)"></div>
-                <div class="col-md-6"><label class="form-label">작업 키워드</label><input class="form-control" id="blogWorkKeywords" placeholder="쉼표로 구분"></div>
-                <div class="col-md-6"><label class="form-label">해시태그</label><input class="form-control" id="blogHashtags" placeholder="쉼표로 구분 (최대 5개)"></div>
-                <div class="col-md-6"><label class="form-label">포스트 유형</label>
-                    <select class="form-select" id="blogPostType">
-                        <option value="">선택 안 함</option>
-                        <option value="INFO">정보성</option>
-                        <option value="REVIEW">리뷰형</option>
-                        <option value="FREE">자유형</option>
-                    </select>
-                </div>
-                <div class="col-md-6"><label class="form-label">추가 링크</label><input class="form-control" id="blogLinks" placeholder="예: 홈페이지 URL"></div>
-                <div class="col-md-6"><label class="form-label">주문 건수 <span class="text-danger">*</span></label><div class="input-group"><input type="number" class="form-control" id="blogOrderCount" min="1" max="10000" value="1" oninput="updateSimpleAdEstimate('blog')"><span class="input-group-text">건</span></div></div>
-                <div class="col-12"><label class="form-label">업체 소개</label><textarea class="form-control" id="blogDesc" rows="3"></textarea></div>
-                <div class="col-12" id="blogEstimateBox">${simpleAdEstimateMarkup('blog', 1)}</div>
-                <div class="col-12"><button class="btn btn-primary" id="blogSubmitBtn" onclick="submitBlogOrder()"><i class="fas fa-paper-plane me-1"></i>검토 요청하기</button></div>
-            </div><div id="blogResult" class="mt-3"></div>
-        </div></div>
-    </div>`;
-    }
-    if (placeOn) {
-        bodyHtml += `<div id="adTabPlace" style="display:${defaultTab==='place'?'':'none'}">
-        <div class="card data-card"><div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-            <h5 class="mb-0"><i class="fas fa-map-marker-alt text-success me-2"></i>플레이스 방문 요청</h5>
-            <button class="btn btn-sm btn-outline-secondary" onclick="loadPlaceConfigToOrder()"><i class="fas fa-download me-1"></i>광고 설정 불러오기</button>
-        </div><div class="card-body">
-            <div id="placeLoadNotice" class="alert alert-info py-2 small mb-3" style="display:none"></div>
-            <div class="row g-3">
-                <div class="col-md-6"><label class="form-label">플레이스명 또는 ID <span class="text-danger">*</span></label><input class="form-control" id="placeName" maxlength="300"></div>
-                <div class="col-md-6"><label class="form-label">검색 키워드 (최대 3) <span class="text-danger">*</span></label><input class="form-control" id="placeKeywords" placeholder="쉼표로 구분"></div>
-                <div class="col-md-6"><label class="form-label">미션 카테고리</label>
-                    <select class="form-select" id="placeMissionCategory">
-                        <option value="VISIT">VISIT (플레이스 방문)</option>
-                        <option value="SAVE">SAVE (플레이스 저장)</option>
-                    </select>
-                </div>
-                <div class="col-md-6"><label class="form-label">미션 액션</label>
-                    <select class="form-select" id="placeMissionAction">
-                        <option value="WRITE_REVIEW">방문자 리뷰</option>
-                        <option value="FIND_PATH">길찾기</option>
-                        <option value="SPOT_CHECK">명소확인</option>
-                        <option value="RANDOM_MISSION">랜덤 미션</option>
-                        <option value="BUSINESS_HOURS">영업시간</option>
-                        <option value="INTRODUCTION">소개</option>
-                        <option value="WALK_COUNT">도보수</option>
-                        <option value="BUS_STATION">정류장</option>
-                        <option value="PLACE_SAVE">플레이스 저장(SAVE)</option>
-                    </select>
-                </div>
-                <div class="col-md-6"><label class="form-label">주문 건수 <span class="text-danger">*</span></label><div class="input-group"><input type="number" class="form-control" id="placeOrderCount" min="1" max="10000" value="1" oninput="updateSimpleAdEstimate('place')"><span class="input-group-text">건</span></div></div>
-                <div class="col-12" id="placeEstimateBox">${simpleAdEstimateMarkup('place', 1)}</div>
-                <div class="col-12"><button class="btn btn-success" id="placeSubmitBtn" onclick="submitPlaceOrder()"><i class="fas fa-paper-plane me-1"></i>검토 요청하기</button></div>
-            </div><div id="placeResult" class="mt-3"></div>
-        </div></div>
-    </div>`;
-    }
-    if (shortsOn) {
-        bodyHtml += `<div id="adTabShorts" style="display:${defaultTab==='shorts'?'':'none'}">
-        <div id="shortsFormHost">${adpayLoadingMarkup('쇼츠 주문 옵션을 불러오는 중')}</div>
-    </div>`;
-    }
-    c.innerHTML = bodyHtml;
-    if (shortsOn) renderShortsOrderForm();
+    </div>${tabsHtml}${blogTabHtml}${placeTabHtml}${shortsTabHtml}`;
 }
 
 function simpleAdEstimateData(type, count) {
