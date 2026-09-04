@@ -890,7 +890,7 @@ async function loadHomePage(c, t) {
                         <h5 class="mb-0"><i class="fas fa-clock text-info me-2"></i>최근 결제</h5>
                         <a href="#" onclick="navigate('admin-transactions')" class="small text-primary text-decoration-none">전체 →</a>
                     </div>
-                    <div class="card-body p-0" style="max-height:220px;overflow-y:auto">
+                    <div class="card-body p-0 mobile-unclip" style="max-height:220px;overflow-y:auto">
                         <div class="list-group list-group-flush">
                             ${(stats.recent_transactions||[]).map(tx => `
                             <div class="list-group-item d-flex justify-content-between align-items-center px-3 py-2" style="font-size:.82rem">
@@ -933,7 +933,7 @@ async function loadHomePage(c, t) {
             <div class="col-lg-5">
                 <div class="card data-card shadow-sm h-100" style="border-radius:14px">
                     <div class="card-header"><h5 class="mb-0"><i class="fas fa-trophy text-warning me-2"></i>이번달 TOP 가맹점</h5></div>
-                    <div class="card-body p-0" style="max-height:220px;overflow-y:auto">
+                    <div class="card-body p-0 mobile-unclip" style="max-height:220px;overflow-y:auto">
                         <div class="list-group list-group-flush" id="topMerchantsList"></div>
                     </div>
                 </div>
@@ -945,7 +945,7 @@ async function loadHomePage(c, t) {
             <div class="col-lg-8">
                 <div class="card data-card shadow-sm" style="border-radius:14px">
                     <div class="card-header"><h5 class="mb-0"><i class="fas fa-bell text-danger me-2"></i>알림 & 최근 활동</h5></div>
-                    <div class="card-body p-0" id="adminAlertActivity" style="max-height:260px;overflow-y:auto"></div>
+                    <div class="card-body p-0 mobile-unclip" id="adminAlertActivity" style="max-height:260px;overflow-y:auto"></div>
                 </div>
             </div>
             <div class="col-lg-4">
@@ -4324,7 +4324,7 @@ async function loadAnalysisOverview(period) {
 function renderTodayStatus(box, d) {
     const m = d.my_place;
     if (!m) {
-        box.innerHTML = `<div class="card border-0 shadow-sm"><div class="card-body text-center py-4">
+        box.innerHTML = `<div class="card border-0 shadow-sm analysis-empty"><div class="card-body analysis-empty-body text-center py-4">
             <i class="fas fa-store fa-2x text-muted mb-2 d-block opacity-50"></i>
             <p class="mb-1 fw-bold">아직 우리 매장이 등록되지 않았어요</p>
             <p class="text-muted small mb-3"><strong>광고 분석설정</strong> 버튼을 눌러 네이버 플레이스 주소와 검색어를 등록해 주세요.</p>
@@ -9924,12 +9924,18 @@ function updateAutoCountVisibility(merchantId, adType) {
 }
 
 // ─── ADMIN: 광고 실행 현황 ─────────────────────────────────
-let adExecViewMode = 'table';   // 'table' | 'cards'
+let adExecViewMode = null;   // 'table' | 'cards' (최초 진입 시 화면 폭에 맞춰 결정)
+
+/** 광고 실행 현황 기본 보기: 모바일은 10열 표 대신 카드 목록으로 연다. */
+function defaultAdExecView() {
+    return isMobileViewport() ? 'cards' : 'table';
+}
 let adExecSummary = null;
 
 async function loadAdminAdExecutions(c, t) {
     t.textContent = '광고 실행 현황';
     const today = new Date().toISOString().slice(0, 10);
+    if (!adExecViewMode) adExecViewMode = defaultAdExecView();
 
     c.innerHTML = `
     <div class="card data-card mb-3">
@@ -9950,11 +9956,11 @@ async function loadAdminAdExecutions(c, t) {
                     <div class="btn-group" role="group" aria-label="보기 방식 전환">
                         <button type="button" class="btn btn-outline-primary ${adExecViewMode === 'table' ? 'active' : ''}"
                             id="adexec_view_table" onclick="setAdExecView('table')" title="테이블 보기" aria-label="테이블 보기">
-                            <i class="fas fa-table"></i>
+                            <i class="fas fa-table"></i><span class="d-md-none ms-1">테이블</span>
                         </button>
                         <button type="button" class="btn btn-outline-primary ${adExecViewMode === 'cards' ? 'active' : ''}"
                             id="adexec_view_cards" onclick="setAdExecView('cards')" title="카드 리스트 보기" aria-label="카드 리스트 보기">
-                            <i class="fas fa-th-large"></i>
+                            <i class="fas fa-th-large"></i><span class="d-md-none ms-1">카드</span>
                         </button>
                     </div>
                 </div>
@@ -10009,7 +10015,7 @@ function renderAdExecutions() {
         body.innerHTML = '<div class="alert alert-light border text-center py-4"><i class="fas fa-inbox me-2"></i>표시할 가맹점이 없습니다.</div>';
         return;
     }
-    body.innerHTML = adExecViewMode === 'table' ? _adExecTable(rows) : _adExecCards(rows);
+    body.innerHTML = adExecViewMode === 'cards' ? _adExecCards(rows) : _adExecTable(rows);
 }
 
 function _execStatus(it) {
@@ -10024,7 +10030,7 @@ function _execInput(m, it) {
         <input type="number" class="form-control" id="ex_${m.merchant_id}_${it.ad_type}" value="${it.today_executed}" min="0"
             aria-label="${escapeHtml(m.merchant_name)} ${escapeHtml(it.ad_type_label)} 오늘 집행 건수">
         <button class="btn btn-outline-primary" onclick="saveAdExecution(${m.merchant_id}, '${it.ad_type}')"
-            title="집행 건수 저장" aria-label="집행 건수 저장"><i class="fas fa-save"></i></button>
+            title="집행 건수 저장" aria-label="집행 건수 저장"><i class="fas fa-save"></i><span class="d-md-none ms-1">저장</span></button>
     </div>`;
 }
 

@@ -3071,7 +3071,7 @@ body[data-page="admin-metrics"] .card[style*="linear-gradient"] { background: li
         min-height: 82px;
         border-radius: 14px !important;
     }
-    body.role-mobile-ui[data-page="owner-analysis"] #analysisToday .card-body {
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisToday .card-body:not(.analysis-empty-body) {
         min-height: 80px;
         padding: 11px 12px !important;
         display: grid;
@@ -3080,7 +3080,7 @@ body[data-page="admin-metrics"] .card[style*="linear-gradient"] { background: li
         gap: 2px 12px;
         text-align: left !important;
     }
-    body.role-mobile-ui[data-page="owner-analysis"] #analysisToday .card-body > .small {
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisToday .card-body:not(.analysis-empty-body) > .small {
         font-size: .7rem !important;
         line-height: 1.3;
         white-space: nowrap;
@@ -3090,12 +3090,32 @@ body[data-page="admin-metrics"] .card[style*="linear-gradient"] { background: li
         color: #10243e;
         font-size: 1.35rem !important;
     }
-    body.role-mobile-ui[data-page="owner-analysis"] #analysisToday .card-body > div:last-child {
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisToday .card-body:not(.analysis-empty-body) > div:last-child {
         grid-column: 1 / -1;
         margin-top: 2px !important;
         font-size: .65rem !important;
         line-height: 1.35;
         text-align: left;
+    }
+
+    /* 매장 미등록 안내 카드 — 지표 카드용 2열 그리드에서 제외한다.
+       그리드에 들어가면 안내 문구가 좁은 1열에 갇히고, 그 위에 걸린
+       white-space: nowrap 때문에 글자가 상자 밖으로 흘러 버튼 밑을 지나간다. */
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-empty-body {
+        display: block !important;
+        text-align: center !important;
+        padding: 22px 16px !important;
+        min-height: 0 !important;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-empty-body p {
+        white-space: normal !important;
+        word-break: keep-all;
+        font-size: .82rem;
+        line-height: 1.55;
+    }
+    body.role-mobile-ui[data-page="owner-analysis"] .analysis-empty-body .btn {
+        width: 100%;
+        margin-top: 6px;
     }
 
     body.role-mobile-ui[data-page="owner-analysis"] .card {
@@ -3334,7 +3354,7 @@ body[data-page="admin-metrics"] .card[style*="linear-gradient"] { background: li
     body.role-mobile-ui[data-page="owner-analysis"] #analysisToday > .row {
         gap: 5px;
     }
-    body.role-mobile-ui[data-page="owner-analysis"] #analysisToday .card-body {
+    body.role-mobile-ui[data-page="owner-analysis"] #analysisToday .card-body:not(.analysis-empty-body) {
         padding-right: 10px !important;
         padding-left: 10px !important;
     }
@@ -3659,6 +3679,69 @@ body[data-page="admin-metrics"] .card[style*="linear-gradient"] { background: li
         display: block;
         margin-top: 2px;
         font-size: .67rem;
+    }
+
+    /* 데스크톱에서 열 높이를 맞추려고 넣은 내부 스크롤 상자.
+       모바일에서는 세로로 쌓이므로 상자를 풀어 페이지 스크롤에 맡긴다.
+       (마지막 줄이 카드 밑단에 반쯤 잘려 보이던 문제) */
+    body.admin-mobile-ui .mobile-unclip {
+        max-height: none !important;
+        overflow-y: visible !important;
+    }
+
+    /* 광고 실행 현황 — 카드 보기: 지표를 2열로 정렬해 줄바꿈이 들쭉날쭉하지 않게 */
+    body.admin-mobile-ui[data-page="admin-ad-executions"] .ad-exec-item + .ad-exec-item {
+        margin-top: 10px;
+        padding-top: 10px;
+        border-top: 1px solid #eef2f6;
+    }
+    body.admin-mobile-ui[data-page="admin-ad-executions"] .ad-exec-item > .d-flex.flex-wrap {
+        display: grid !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 4px 10px !important;
+    }
+    body.admin-mobile-ui[data-page="admin-ad-executions"] .ad-exec-item > .d-flex.flex-wrap > span {
+        display: flex;
+        justify-content: space-between;
+        gap: 6px;
+        min-width: 0;
+        font-size: .74rem;
+    }
+    /* '(월 목표 없음)' 같은 부연은 줄을 흐트러뜨리므로 값 아래로 내린다 */
+    body.admin-mobile-ui[data-page="admin-ad-executions"] .ad-exec-item > .d-flex.flex-wrap > span > small {
+        flex: 0 0 100%;
+        order: 3;
+        margin-top: 1px;
+        font-size: .66rem;
+        text-align: right;
+    }
+    body.admin-mobile-ui[data-page="admin-ad-executions"] .ad-exec-item > .d-flex.flex-wrap > span {
+        flex-wrap: wrap;
+    }
+    /* 집행 건수 입력칸은 카드 폭을 꽉 채운다 */
+    body.admin-mobile-ui[data-page="admin-ad-executions"] .ad-exec-input {
+        max-width: none;
+        width: 100%;
+    }
+    body.admin-mobile-ui[data-page="admin-ad-executions"] .ad-exec-input .form-control {
+        min-width: 0;
+    }
+    body.admin-mobile-ui[data-page="admin-ad-executions"] .ad-exec-input .btn {
+        flex: 0 0 76px;
+    }
+    /* 보기 전환 버튼 묶음이 필터 아래로 자연스럽게 내려오도록 */
+    body.admin-mobile-ui[data-page="admin-ad-executions"] .card-body > .row > .col-auto {
+        flex: 1 1 100%;
+        max-width: 100%;
+    }
+    body.admin-mobile-ui[data-page="admin-ad-executions"] .card-body > .row > .col-auto.ms-auto {
+        margin-left: 0 !important;
+    }
+    body.admin-mobile-ui[data-page="admin-ad-executions"] .btn-group[role="group"] {
+        width: 100%;
+    }
+    body.admin-mobile-ui[data-page="admin-ad-executions"] .btn-group[role="group"] .btn {
+        flex: 1 1 0;
     }
 }
 
