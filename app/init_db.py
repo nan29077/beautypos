@@ -4,7 +4,7 @@ Run: python -m app.init_db
 """
 import time
 import sys
-from sqlalchemy import inspect, text
+from sqlalchemy import text
 from app.database import engine, Base, SessionLocal
 from app.models import *  # noqa: F401, F403 — import all models to register them
 from app.seed import run_seed, seed_crm_demo, seed_plans, seed_general_owner
@@ -41,151 +41,18 @@ def wait_for_db(max_retries=30, delay=2):
 
 
 def _ensure_columns():
-    """create_all 은 기존 테이블에 컬럼을 추가하지 않으므로, 신규 컬럼을 멱등하게 보강한다.
-    (개발: SQLite / 운영: MariaDB 모두 ADD COLUMN 지원)
+    """[REMOVED] 기동 시점의 레거시 컬럼 보정은 더 이상 하지 않는다.
 
-    [LEGACY] 이 목록은 alembic 도입 전에 반영된 컬럼의 구버전 DB 보정용으로만 유지한다.
-    새 스키마 변경은 여기에 추가하지 말고 alembic 마이그레이션으로 작성할 것:
+    예전에는 alembic 도입 전 DB 를 맞추려고 여기에서 ALTER TABLE 을 돌렸지만,
+    앱이 운영 DB 에 DDL 을 직접 실행하는 구조 자체가 위험하다.
+    스키마 변경은 전부 alembic 마이그레이션으로만 반영한다:
       alembic revision --autogenerate -m "..."  → 배포 시 deploy.sh 가 upgrade head 실행.
-    운영 DB(beautypos)는 2026-08-13 에 head(a1b2c3d4e5f6)로 stamp 되어 alembic 이 관리한다."""
-    # (table, column, DDL type, default)
-    pending = [
-        ("staff", "share_rate", "NUMERIC(5,4)", "0.5"),
-        ("crm_customers", "anniversary", "DATE", "NULL"),
-        ("crm_customers", "allergy_memo", "TEXT", "NULL"),
-        ("crm_customers", "hair_memo", "TEXT", "NULL"),
-        ("crm_customers", "photo_url", "VARCHAR(500)", "NULL"),
-        ("crm_customers", "preferred_staff_id", "INTEGER", "NULL"),
-        ("crm_customers", "preferred_service", "VARCHAR(200)", "NULL"),
-        ("crm_customers", "last_message_at", "DATETIME", "NULL"),
-        ("crm_services", "category", "VARCHAR(50)", "NULL"),
-        ("crm_reservations", "end_at", "DATETIME", "NULL"),
-        ("crm_reservations", "duration_min", "INTEGER", "NULL"),
-        ("crm_reservations", "reminder_sent_at", "DATETIME", "NULL"),
-        ("ad_place_profiles", "analysis_keyword", "VARCHAR(200)", "NULL"),
-        ("ad_metrics", "search_keyword", "VARCHAR(200)", "NULL"),
-        # 커미션 구조 개편 (2026-07)
-        ("fee_policies", "merchant_fee_rate", "NUMERIC(5,4)", "0.05"),
-        ("settlements", "merchant_fee_amount", "NUMERIC(14,2)", "0"),
-        ("settlements", "company_profit_amount", "NUMERIC(14,2)", "0"),
-        ("settlements", "sales_manager_user_id", "INTEGER", "NULL"),
-        ("users", "referral_code", "VARCHAR(50)", "NULL"),
-        ("users", "business_type", "VARCHAR(20)", "'beauty'"),
-        # 거래 취소 기능
-        ("transactions", "status", "VARCHAR(9)", "'APPROVED'"),
-        ("transactions", "cancelled_at", "DATETIME", "NULL"),
-        ("transactions", "cancel_reason", "VARCHAR(255)", "NULL"),
-        # 광고 주문 수량·단가 스냅샷
-        ("ad_order_blog_details", "order_count", "INTEGER", "1"),
-        ("ad_order_blog_details", "unit_price", "NUMERIC(12,2)", "0"),
-        ("ad_order_blog_details", "est_total_cost", "NUMERIC(14,2)", "0"),
-        ("ad_order_place_traffic_details", "order_count", "INTEGER", "1"),
-        ("ad_order_place_traffic_details", "unit_price", "NUMERIC(12,2)", "0"),
-        ("ad_order_place_traffic_details", "est_total_cost", "NUMERIC(14,2)", "0"),
-    ]
-    with engine.connect() as conn:
-        for table, column, ddl_type, default in pending:
-            try:
-                cols = {row[1] for row in conn.execute(text(f"PRAGMA table_info({table})"))} \
-                    if engine.dialect.name == "sqlite" else None
-                if cols is None:
-                    # 비-SQLite: information_schema 로 존재 여부 확인
-                    # table_schema 를 현재 DB로 한정하지 않으면 같은 RDS 인스턴스의
-                    # 다른 데이터베이스에 있는 동명 컬럼을 보고 ALTER 를 건너뛴다.
-                    res = conn.execute(text(
-                        "SELECT column_name FROM information_schema.columns "
-                        "WHERE table_schema = DATABASE() "
-                        "AND table_name = :t AND column_name = :c"
-                    ), {"t": table, "c": column})
-                    exists = res.first() is not None
-                else:
-                    exists = column in cols
-                if not exists:
-                    conn.execute(text(
-                        f"ALTER TABLE {table} ADD COLUMN {column} {ddl_type} DEFAULT {default}"
-                    ))
-                    conn.commit()
-                    print(f"   ➕ Added column {table}.{column}")
-            except Exception as e:
-                print(f"   ⚠️ Could not ensure {table}.{column}: {e}")
+    운영 DB(beautypos)는 2026-08-13 에 alembic 으로 편입되었고,
+    과거 pending 목록의 컬럼은 모두 마이그레이션에 포함되어 있다.
 
-    # SQLite 전용: fee_policies.merchant_id 를 nullable 로 재구성 (전역 기본값 지원)
-    _rebuild_fee_policies_for_nullable_merchant(engine)
-
-
-def _rebuild_fee_policies_for_nullable_merchant(engine_):
-    """fee_policies.merchant_id 를 nullable 로 변경.
-
-    SQLite: 테이블 재생성으로 처리.
-    MariaDB/MySQL: ALTER TABLE MODIFY COLUMN 으로 처리.
+    호출부 호환을 위해 함수만 남긴 no-op 이다.
     """
-    with engine_.begin() as conn:
-        try:
-            if engine_.dialect.name == "sqlite":
-                pragma = list(conn.execute(text("PRAGMA table_info(fee_policies)")))
-                if not pragma:
-                    return
-                merchant_id_col = next((r for r in pragma if r[1] == "merchant_id"), None)
-                if merchant_id_col is None or merchant_id_col[3] == 0:
-                    return  # 이미 nullable
-                conn.execute(text("""
-                    CREATE TABLE IF NOT EXISTS _fee_policies_new (
-                        id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-                        merchant_id INTEGER REFERENCES merchants(id),
-                        merchant_fee_rate NUMERIC(5,4) DEFAULT 0.05,
-                        pg_fee_rate NUMERIC(5,4) DEFAULT 0.03,
-                        vat_inclusive_rate NUMERIC(5,4),
-                        updated_at DATETIME
-                    )
-                """))
-                conn.execute(text(
-                    "INSERT OR IGNORE INTO _fee_policies_new "
-                    "(id, merchant_id, merchant_fee_rate, pg_fee_rate, vat_inclusive_rate, updated_at) "
-                    "SELECT id, merchant_id, "
-                    "COALESCE(merchant_fee_rate, 0.05), pg_fee_rate, vat_inclusive_rate, updated_at "
-                    "FROM fee_policies"
-                ))
-                conn.execute(text("DROP TABLE fee_policies"))
-                conn.execute(text("ALTER TABLE _fee_policies_new RENAME TO fee_policies"))
-                print("   ♻️  Rebuilt fee_policies with nullable merchant_id (SQLite)")
-            elif engine_.dialect.name in ("mysql", "mariadb"):
-                # MODIFY COLUMN is idempotent — safe to run even if already nullable
-                conn.execute(text(
-                    "ALTER TABLE fee_policies MODIFY COLUMN merchant_id INT NULL"
-                ))
-                print("   ♻️  Ensured fee_policies.merchant_id is nullable (MariaDB)")
-        except Exception as e:
-            print(f"   ⚠️ Could not make fee_policies.merchant_id nullable: {e}")
-
-
-def _remove_retired_features():
-    """Permanently remove storage for the retired rent-payment and luxury features."""
-    retired_tables = [
-        "luxury_product_orders",
-        "luxury_products",
-        "rent_payments",
-        "landlord_sales_assignments",
-        "tenants",
-        "landlord_profiles",
-    ]
-    with engine.begin() as conn:
-        for table in retired_tables:
-            conn.execute(text(f"DROP TABLE IF EXISTS {table}"))
-        conn.execute(text(
-            "DELETE FROM merchant_pg_configs WHERE provider_id IN "
-            "(SELECT id FROM pg_providers WHERE code = 'ongi')"
-        ))
-        conn.execute(text("DELETE FROM pg_providers WHERE code = 'ongi'"))
-        conn.execute(text("DELETE FROM users WHERE role IN ('LANDLORD', 'landlord')"))
-        terminal_columns = {column["name"] for column in inspect(conn).get_columns("terminal_devices")}
-        if "api_key_plain" in terminal_columns:
-            conn.execute(text("UPDATE terminal_devices SET api_key_plain = NULL"))
-            conn.execute(text("ALTER TABLE terminal_devices DROP COLUMN api_key_plain"))
-        if engine.dialect.name in {"mysql", "mariadb"}:
-            conn.execute(text(
-                "ALTER TABLE users MODIFY role "
-                "ENUM('ADMIN','SALES','OWNER','DESIGNER') NOT NULL"
-            ))
+    return
 
 
 def _ensure_shorts_ad_support():
@@ -264,7 +131,7 @@ def init_db():
 
     print("🔧 Creating tables...")
     Base.metadata.create_all(bind=engine)
-    _remove_retired_features()
+    # 폐지 기능 정리(DROP/DELETE)는 alembic c4e9b71fa2d5 로 옮겼다. 여기서는 하지 않는다.
     _ensure_columns()
     _ensure_shorts_ad_support()
     print("✅ Tables created")

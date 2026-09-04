@@ -7,6 +7,10 @@ from datetime import datetime, date, timezone, timedelta
 from enum import Enum
 
 
+# 단건 결제 금액 상한 (1억원). 카드 단말기 한 건이 이 금액을 넘을 일은 없다.
+MAX_TRANSACTION_AMOUNT = 100_000_000
+
+
 # ─── Auth ────────────────────────────────────────────────────
 
 class RegisterRequest(BaseModel):
@@ -109,7 +113,11 @@ class DesignerUpdate(BaseModel):
 class TerminalTransactionCreate(BaseModel):
     merchant_id: int
     terminal_id: Optional[str] = None  # terminal_serial
-    amount: float = Field(..., gt=0, description="결제 금액 (0보다 커야 함)")
+    # 상한이 없으면 단말기 오작동·오타 한 번으로 비정상 금액이 정산까지 흘러간다.
+    amount: float = Field(
+        ..., gt=0, le=MAX_TRANSACTION_AMOUNT,
+        description="결제 금액 (0 초과, 1억원 이하)",
+    )
     installment_months: int = Field(0, ge=0, le=60, description="할부 개월수 (0~60)")
     staff_code: Optional[str] = None
     card_brand: Optional[str] = None
@@ -260,18 +268,19 @@ class FeePolicyUpdate(BaseModel):
 
 
 class GlobalFeeSettingsUpdate(BaseModel):
-    merchant_fee_rate: float  # 미용실 부과 총 수수료율
-    pg_fee_rate: float        # PG사 실비용
-    sales_commission_rate: float  # 전역 기본 영업 커미션율
+    # 요율은 0~1 (0%~100%) 범위의 소수다. 음수·1 초과 값은 정산 금액을 뒤집으므로 막는다.
+    merchant_fee_rate: float = Field(..., ge=0, le=1)  # 미용실 부과 총 수수료율
+    pg_fee_rate: float = Field(..., ge=0, le=1)        # PG사 실비용
+    sales_commission_rate: float = Field(..., ge=0, le=1)  # 전역 기본 영업 커미션율
 
 
 class MerchantFeeOverrideUpdate(BaseModel):
-    merchant_fee_rate: Optional[float] = None  # None 이면 전역값 사용
-    pg_fee_rate: Optional[float] = None        # None 이면 전역값 사용
+    merchant_fee_rate: Optional[float] = Field(None, ge=0, le=1)  # None 이면 전역값 사용
+    pg_fee_rate: Optional[float] = Field(None, ge=0, le=1)        # None 이면 전역값 사용
 
 
 class SalesCommissionOverrideUpdate(BaseModel):
-    commission_rate: Optional[float] = None  # None 이면 전역값 사용
+    commission_rate: Optional[float] = Field(None, ge=0, le=1)  # None 이면 전역값 사용
 
 
 class SalesAssignmentCreate(BaseModel):

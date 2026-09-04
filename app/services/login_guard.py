@@ -33,14 +33,30 @@ def _now() -> float:
     return time.monotonic()
 
 
+# 신뢰하는 리버스 프록시 홉 수. 우리 배포는 Nginx 1대가 앞에 있으므로 1이다.
+# X-Forwarded-For 의 **뒤에서** 이 수만큼 들어간 값이 프록시가 본 실제 접속자 IP 다.
+_TRUSTED_PROXY_HOPS = 1
+
+
 def client_ip(request: Optional[Request]) -> str:
-    """요청자 IP. 프록시 뒤라면 X-Forwarded-For 의 첫 값을 쓴다."""
+    """요청자 IP.
+
+    X-Forwarded-For 의 *첫* 값은 클라이언트가 마음대로 위조할 수 있다.
+    (예: `X-Forwarded-For: 1.2.3.4` 를 매 요청 바꿔 보내면 IP 기준 잠금이 무력화된다)
+    신뢰할 수 있는 것은 우리 프록시가 직접 덧붙인 마지막 홉뿐이므로,
+    뒤에서 _TRUSTED_PROXY_HOPS 번째 값만 사용한다.
+    """
     if request is None:
         return "-"
+    peer = request.client.host if request.client else "-"
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "-"
+        hops = [part.strip() for part in forwarded.split(",") if part.strip()]
+        if hops:
+            # 홉이 부족하면(헤더가 잘렸거나 프록시가 없으면) 가장 왼쪽 값이 최선이다.
+            index = max(0, len(hops) - _TRUSTED_PROXY_HOPS)
+            return hops[index]
+    return peer
 
 
 def _keys(email: str, ip: str) -> Tuple[str, ...]:

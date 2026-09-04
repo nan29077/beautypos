@@ -187,6 +187,9 @@ def list_my_payout_requests(db: Session = Depends(get_db), user: User = Depends(
 
 @router.post("/payout-requests")
 def create_payout_request(req: PayoutRequestCreate, db: Session = Depends(get_db), user: User = Depends(require_sales)):
+    # 동시에 두 번 신청하면 둘 다 "잔액 충분"으로 읽고 통과한다.
+    # 신청자 행을 잠가 잔액 계산 ~ 신청 생성까지를 직렬화한다. (SQLite 는 무시)
+    db.query(User).filter(User.id == user.id).with_for_update().first()
     available = get_available_payout(db, user.id, user.role)
     if Decimal(str(req.amount)) > available:
         raise HTTPException(status_code=400, detail=f"출금 가능 금액({available:,.0f}원)을 초과했습니다")

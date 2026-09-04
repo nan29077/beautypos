@@ -5,11 +5,12 @@
 인증 시간이 선형으로 늘어난다(단말기 500대면 요청 하나에 bcrypt 500회).
 
 그래서 조회용 지문(fingerprint)을 따로 둔다.
-    api_key_fingerprint = HMAC-SHA256(JWT_SECRET_KEY, 평문 키)  — 결정적, 인덱스 조회용
+    api_key_fingerprint = HMAC-SHA256(TERMINAL_FINGERPRINT_KEY, 평문 키)  — 결정적, 인덱스 조회용
     api_key_hash        = bcrypt(평문 키)                        — 실제 검증용 (그대로 유지)
 
-지문으로 후보 한 행을 찾고 그 행만 bcrypt 로 검증한다. 지문은 서버 비밀(JWT_SECRET_KEY)
-이 섞인 HMAC 이라, DB 만 유출돼도 사전 대입으로 원본 키를 되찾기 어렵다.
+지문으로 후보 한 행을 찾고 그 행만 bcrypt 로 검증한다. 지문은 서버 비밀(TERMINAL_FINGERPRINT_KEY,
+미설정 시 JWT_SECRET_KEY 로 하위 호환)이 섞인 HMAC 이라, DB 만 유출돼도 사전 대입으로
+원본 키를 되찾기 어렵다.
 
 지문이 아직 없는 레거시 행은 예전처럼 전체 순회로 찾아내고, 찾은 순간 지문을 채워
 다음 요청부터는 빠른 경로를 타게 한다.
@@ -40,8 +41,12 @@ def generate_api_key() -> str:
 
 
 def fingerprint(api_key: str) -> str:
-    """조회용 지문. 같은 키는 항상 같은 값이 나온다."""
-    secret = get_settings().JWT_SECRET_KEY.encode("utf-8")
+    """조회용 지문. 같은 키는 항상 같은 값이 나온다.
+
+    HMAC 키는 TERMINAL_FINGERPRINT_KEY 를 쓴다. 미설정이면 기존 지문과 호환되도록
+    JWT_SECRET_KEY 로 폴백한다 (app/config.py 의 terminal_fingerprint_key).
+    """
+    secret = get_settings().terminal_fingerprint_key.encode("utf-8")
     return hmac.new(secret, (api_key or "").encode("utf-8"), hashlib.sha256).hexdigest()
 
 

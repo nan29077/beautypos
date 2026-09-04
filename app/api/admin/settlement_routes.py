@@ -1,7 +1,7 @@
 """Admin routes — fee-policy, fee-policy-overview, settlements, sales-assignments,
 sales-managers, transactions, staff 분배율, commission-visibility 등 payout 을 제외한
 정산/수수료 관련 전부."""
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -31,8 +31,30 @@ from app.schemas.schemas import (
     CommissionVisibilityUpdate, StaffShareRateUpdate,
 )
 from app.api.admin._helpers import _validate_commission_rate, _validate_merchant_commission_fit
+from app.utils.kst import KST, kst_day_start_utc
 
 router = APIRouter()
+
+
+def _parse_kst_bound(value: str, *, next_day: bool = False) -> datetime:
+    """조회 조건으로 들어온 날짜/일시 문자열을 KST 로 해석해 naive UTC 로 변환한다.
+
+    DB 에는 naive UTC 로 저장되므로, "YYYY-MM-DD" 만 들어오면 그 날의
+    00:00 KST 를 UTC 로 환산해야 한국 기준 하루 경계와 맞는다.
+    next_day=True 면 다음 날 00:00 KST (상한 경계) 를 돌려준다.
+
+    ValueError 는 호출부에서 400 으로 변환한다.
+    """
+    text = value.strip()
+    parsed = datetime.fromisoformat(text)
+    if len(text) <= 10:  # 날짜만 (YYYY-MM-DD)
+        day = parsed.date() + (timedelta(days=1) if next_day else timedelta(0))
+        return kst_day_start_utc(day)
+    # 시각까지 들어온 경우 — KST 로 간주하고 UTC 로 환산
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=KST)
+    utc_naive = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+    return utc_naive + timedelta(days=1) if next_day else utc_naive
 
 
 # ─── Transactions ────────────────────────────────────────────
@@ -46,8 +68,9 @@ def list_all_transactions(
     db: Session = Depends(get_db), _=Depends(require_admin),
 ):
     try:
-        dt_from = datetime.fromisoformat(date_from) if date_from else None
-        dt_to = datetime.fromisoformat(date_to) + timedelta(days=1) if date_to else None
+        # 입력은 KST 기준 날짜, DB 는 naive UTC — 경계를 KST 로 맞춘다.
+        dt_from = _parse_kst_bound(date_from) if date_from else None
+        dt_to = _parse_kst_bound(date_to, next_day=True) if date_to else None
     except ValueError:
         raise HTTPException(status_code=400, detail="날짜 형식이 올바르지 않습니다 (YYYY-MM-DD)")
 
@@ -57,7 +80,7 @@ def list_all_transactions(
     if dt_from:
         q = q.filter(Transaction.created_at >= dt_from)
     if dt_to:
-        q = q.filter(Transaction.created_at <= dt_to)
+        q = q.filter(Transaction.created_at < dt_to)
     total_count = q.count()
     # Calculate total from filtered query
     amount_q = db.query(func.coalesce(func.sum(Transaction.amount), 0)).filter(
@@ -68,7 +91,7 @@ def list_all_transactions(
     if dt_from:
         amount_q = amount_q.filter(Transaction.created_at >= dt_from)
     if dt_to:
-        amount_q = amount_q.filter(Transaction.created_at <= dt_to)
+        amount_q = amount_q.filter(Transaction.created_at < dt_to)
     total_amount = float(amount_q.scalar())
 
     txns = q.order_by(Transaction.created_at.desc()).offset(offset).limit(limit).all()
@@ -442,20 +465,20 @@ def calculate_settlement(
     - 회사 순수익 = 플랫폼 수익 - 영업 커미션
     - 미용실 실수령액(net) = 결제액 - merchant_fee
     """
-    from datetime import datetime as dt
     merchant = db.query(Merchant).filter(Merchant.id == merchant_id).first()
     if not merchant:
         raise HTTPException(status_code=404, detail="가맹점을 찾을 수 없습니다")
 
     try:
-        start = dt.fromisoformat(period_start)
-        end = dt.fromisoformat(period_end)
+        # 정산 기간은 KST 기준으로 받고 naive UTC 경계로 환산한다.
+        start = _parse_kst_bound(period_start)
+        end_exclusive = _parse_kst_bound(period_end, next_day=True)
     except ValueError:
         raise HTTPException(status_code=400, detail="날짜 형식이 올바르지 않습니다 (ISO 8601: YYYY-MM-DD 또는 YYYY-MM-DDTHH:MM:SS)")
-    if start > end:
+    if start >= end_exclusive:
         raise HTTPException(status_code=400, detail="시작일이 종료일보다 늦을 수 없습니다")
-    if end.hour == 0 and end.minute == 0 and end.second == 0:
-        end = end + timedelta(days=1) - timedelta(microseconds=1)
+    # 저장/중복검사에 쓰는 종료 시각은 기간 마지막 순간 (경계 미포함 값 - 1μs)
+    end = end_exclusive - timedelta(microseconds=1)
 
     # 같은 기간으로 재호출 시 Settlement 중복 생성 방지 (기간 겹침 검사)
     existing = db.query(Settlement).filter(
@@ -469,7 +492,7 @@ def calculate_settlement(
     txns = db.query(Transaction).filter(
         Transaction.merchant_id == merchant_id,
         Transaction.created_at >= start,
-        Transaction.created_at <= end,
+        Transaction.created_at < end_exclusive,
         Transaction.status == TransactionStatus.APPROVED,
     ).all()
 

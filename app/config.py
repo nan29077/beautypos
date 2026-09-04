@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     # Encryption
     ENCRYPTION_KEY: str = "c2VjcmV0LWVuY3J5cHRpb24ta2V5LWZvci1hZHBheQ=="
 
+    # 단말기 API 키 지문(HMAC) 전용 키.
+    # 비워두면 하위 호환을 위해 JWT_SECRET_KEY 를 쓰지만, 운영에서는 따로 두어야
+    # JWT 서명 키가 유출돼도 단말기 지문을 역산할 수 없다. (terminal_fingerprint_key 참조)
+    TERMINAL_FINGERPRINT_KEY: str = ""
+
     # OAuth
     KAKAO_CLIENT_ID: str = ""
     KAKAO_CLIENT_SECRET: str = ""
@@ -65,6 +70,11 @@ class Settings(BaseSettings):
     def cors_origins(self) -> list[str]:
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
 
+    @property
+    def terminal_fingerprint_key(self) -> str:
+        """단말기 지문 HMAC 키. 미설정이면 JWT_SECRET_KEY 로 하위 호환한다."""
+        return self.TERMINAL_FINGERPRINT_KEY.strip() or self.JWT_SECRET_KEY
+
     @model_validator(mode="after")
     def validate_production_security(self):
         if self.APP_ENV.lower() in {"production", "prod"}:
@@ -74,6 +84,13 @@ class Settings(BaseSettings):
                 raise ValueError("JWT_SECRET_KEY must be a unique value of at least 32 characters in production")
             if self.ENCRYPTION_KEY == "c2VjcmV0LWVuY3J5cHRpb24ta2V5LWZvci1hZHBheQ==":
                 raise ValueError("ENCRYPTION_KEY must be replaced in production")
+            insecure_db_passwords = {"", "adpay_secret_2024", "adpay", "password"}
+            if not self.DATABASE_URL_OVERRIDE and self.DB_PASSWORD in insecure_db_passwords:
+                raise ValueError("DB_PASSWORD must be replaced with a unique value in production")
+            if "adpay_secret_2024" in self.DATABASE_URL:
+                raise ValueError("Default DB password must not be used in production")
+            if self.TERMINAL_FINGERPRINT_KEY.strip() and len(self.TERMINAL_FINGERPRINT_KEY.strip()) < 32:
+                raise ValueError("TERMINAL_FINGERPRINT_KEY must be at least 32 characters in production")
             if "*" in self.cors_origins:
                 raise ValueError("Wildcard CORS origins are not allowed in production")
         return self

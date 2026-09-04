@@ -385,15 +385,39 @@ def create_sales_user(
 
 
 @router.put("/users/{uid}/role")
-def update_user_role(uid: int, role: str = Query(...), db: Session = Depends(get_db), _=Depends(require_admin)):
-    """사용자 역할 변경"""
+def update_user_role(
+    uid: int,
+    role: str = Query(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """사용자 역할 변경.
+
+    관리자 권한을 잃으면 되돌릴 사람이 없어지므로 두 가지를 막는다.
+      1) 자기 자신의 역할 변경 (실수로 스스로 강등)
+      2) 마지막 활성 ADMIN 의 강등 (관리자 0명 상태)
+    """
     user = db.query(User).filter(User.id == uid).first()
     if not user:
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
     valid_roles = [r.value for r in UserRole]
     if role not in valid_roles:
         raise HTTPException(status_code=400, detail=f"유효하지 않은 역할입니다. 사용 가능: {valid_roles}")
-    user.role = UserRole(role)
+
+    new_role = UserRole(role)
+    if user.id == current_user.id and new_role != user.role:
+        raise HTTPException(status_code=400, detail="자기 자신의 역할은 변경할 수 없습니다.")
+
+    if user.role == UserRole.ADMIN and new_role != UserRole.ADMIN:
+        remaining_admins = db.query(User).filter(
+            User.role == UserRole.ADMIN,
+            User.is_active == True,  # noqa: E712
+            User.id != user.id,
+        ).count()
+        if remaining_admins == 0:
+            raise HTTPException(status_code=400, detail="마지막 관리자 계정은 다른 역할로 바꿀 수 없습니다.")
+
+    user.role = new_role
     db.commit()
     return {"ok": True, "role": role}
 

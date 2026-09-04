@@ -63,6 +63,10 @@ _RE_PLACE_ID_PATH = re.compile(r"/(?:place|entry|restaurant|hairshop|beauty|hosp
 _RE_PLACE_ID_ANY = re.compile(r"/(\d{6,})(?:[/?#]|$)")
 _RE_AD_DOC_ID = re.compile(r"_nad-")
 
+# 단축 URL 해석 등 외부 요청을 허용할 호스트 화이트리스트.
+# 이 목록에 정확히 일치하거나 그 하위 도메인인 경우에만 요청한다 (SSRF 방지).
+ALLOWED_NAVER_HOSTS = ("naver.me", "naver.com")
+
 
 def _headers(mobile: bool = True, referer: str = "https://m.search.naver.com/") -> Dict[str, str]:
     """네이버가 봇으로 판단하지 않도록 일반 브라우저와 동일한 헤더를 구성한다."""
@@ -130,6 +134,28 @@ async def _get_once(client, url, params, headers) -> Optional[httpx.Response]:
 
 # ─── place_id 추출 ───────────────────────────────────────────
 
+def _is_allowed_naver_host(url: str) -> bool:
+    """요청 대상이 네이버 도메인인지 정확히 검사한다.
+
+    `"naver.me" in url` 같은 부분 문자열 검사는
+    `https://evil.com/?x=naver.me` 처럼 임의 호스트를 통과시켜 SSRF 로 이어진다.
+    호스트가 화이트리스트와 정확히 같거나 그 하위 도메인일 때만 허용한다.
+    """
+    try:
+        parts = urlsplit((url or "").strip())
+    except ValueError:
+        return False
+    if parts.scheme not in ("http", "https"):
+        return False
+    host = (parts.hostname or "").lower().rstrip(".")
+    if not host:
+        return False
+    return any(
+        host == allowed or host.endswith("." + allowed)
+        for allowed in ALLOWED_NAVER_HOSTS
+    )
+
+
 def extract_place_id(url: str) -> Optional[str]:
     """네이버 플레이스 URL에서 place_id를 추출한다. 실패하면 None."""
     raw = (url or "").strip()
@@ -168,7 +194,7 @@ async def resolve_place_id(
     direct = extract_place_id(url)
     if direct:
         return direct
-    if not url or "naver.me" not in url:
+    if not _is_allowed_naver_host(url):
         return None
 
     own_client = client is None

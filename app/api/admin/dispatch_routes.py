@@ -14,10 +14,13 @@ from app.auth.dependencies import require_admin
 from app.database import get_db
 from app.models.ad_dispatch import (
     AdDispatch, DISPATCH_STATUSES, DISPATCH_STATUS_CODES, SKIP_REASON_LABELS,
+    SOURCE_MANUAL, build_idempotency_key,
 )
 from app.models.merchant import Merchant
 from app.models.user import User
-from app.schemas.schemas import AdDispatchRun
+from app.schemas.schemas import (
+    AdDispatchRun, ManualDispatchComplete, ManualDispatchRevert,
+)
 from app.services import ad_dispatch, rewardpop
 from app.utils.kst import today_kst
 
@@ -160,3 +163,70 @@ def dispatch_report(
     if start_date > end_date:
         raise HTTPException(status_code=400, detail="시작일이 종료일보다 늦습니다")
     return ad_dispatch.report(db, start_date, end_date)
+
+
+# ─── 수동 접수 큐 (블로그 배포) ─────────────────────────────
+#
+# 리워드팝에 등록 API 가 없는 광고는 자동 전송을 하지 않는다. 대신 최고관리자가
+# 정한 월 목표를 일 단위로 쪼개 "오늘 접수할 목록"만 만들어 주고, 관리자가
+# 리워드팝 어드민에서 접수한 뒤 완료 처리하면 진도표·집계에 자동 반영된다.
+
+@router.get("/ad-dispatch/manual-queue")
+async def manual_queue(
+    date: Optional[str] = Query(default=None, description="기준일 (YYYY-MM-DD, 기본 오늘)"),
+    merchant_id: Optional[int] = Query(default=None),
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """오늘 사람이 접수해야 할 블로그 배포 목록. 아무것도 전송하지 않는다.
+
+    리워드팝 공급 단가(클로 블로그 원가)를 함께 읽어 필요 포인트까지 보여준다.
+    단가 조회가 실패해도 목록은 그대로 나온다.
+    """
+    return await ad_dispatch.manual_queue(db, _parse_date(date), merchant_id)
+
+
+@router.post("/ad-dispatch/manual-queue/complete")
+def complete_manual_dispatch(
+    req: ManualDispatchComplete,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """리워드팝 어드민에서 접수를 마쳤다고 표시한다.
+
+    같은 가맹점·광고·날짜에 행이 하나뿐이라 여러 번 눌러도 실적이 두 배가 되지 않는다.
+    수량을 고쳐 다시 누르면 그 값으로 덮어쓴다.
+    """
+    try:
+        row = ad_dispatch.complete_manual(
+            db,
+            merchant_id=req.merchant_id,
+            ad_type=req.ad_type,
+            day=req.execution_date or today_kst(),
+            count=req.count,
+            external_order_id=req.external_order_id,
+            note=req.note,
+            actor_id=admin.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return ad_dispatch.to_dict(row, row.merchant.name if row.merchant else None)
+
+
+@router.post("/ad-dispatch/manual-queue/revert")
+def revert_manual_dispatch(
+    req: ManualDispatchRevert,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """잘못 누른 완료 처리를 되돌린다. 원장의 행은 남고 실적에서만 빠진다."""
+    day = req.execution_date or today_kst()
+    key = build_idempotency_key(SOURCE_MANUAL, req.merchant_id, req.ad_type, day)
+    row = db.query(AdDispatch).filter(AdDispatch.idempotency_key == key).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="되돌릴 접수 기록이 없습니다")
+    try:
+        row = ad_dispatch.revert_manual(db, row, admin.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return ad_dispatch.to_dict(row, row.merchant.name if row.merchant else None)

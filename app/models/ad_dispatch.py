@@ -21,6 +21,7 @@ from app.database import Base
 # ─── 집행 출처 ──────────────────────────────────────────────
 SOURCE_AUTO = "auto"    # 스케줄러(또는 관리자 수동 실행)가 플랜 목표대로 집행
 SOURCE_ORDER = "order"  # 매장이 크레딧으로 넣은 추가 주문
+SOURCE_MANUAL = "manual"  # 외부 API 가 없어 관리자가 손으로 접수하는 광고 (블로그 배포)
 
 # ─── 상태 ───────────────────────────────────────────────────
 STATUS_PENDING = "pending"    # 행만 만들고 아직 전송 전
@@ -32,6 +33,12 @@ STATUS_STOPPED = "stopped"    # 리워드팝에서 중지(STOP) — 일부만 �
 STATUS_FAILED = "failed"      # 실패 (재시도 대상일 수 있음)
 STATUS_SKIPPED = "skipped"    # 사전 점검에서 건너뜀 (호출하지 않음)
 
+# 수동 접수 전용 상태 — 리워드팝에 등록 API 가 없는 광고(블로그 배포)용.
+# 시스템이 "오늘 몇 건 접수해야 하는지"만 계산해 큐에 올리고, 관리자가
+# 리워드팝 어드민에서 직접 접수한 뒤 완료 처리한다.
+STATUS_MANUAL_QUEUED = "manual_queued"  # 접수 대기 — 아직 아무것도 나가지 않았다
+STATUS_MANUAL_DONE = "manual_done"      # 관리자가 외부 접수를 마쳤다고 표시함
+
 DISPATCH_STATUSES = [
     (STATUS_PENDING, "전송 대기"),
     (STATUS_DRY_RUN, "드라이런"),
@@ -41,6 +48,8 @@ DISPATCH_STATUSES = [
     (STATUS_STOPPED, "중지됨"),
     (STATUS_FAILED, "실패"),
     (STATUS_SKIPPED, "보류"),
+    (STATUS_MANUAL_QUEUED, "수동 접수 대기"),
+    (STATUS_MANUAL_DONE, "수동 접수 완료"),
 ]
 DISPATCH_STATUS_CODES = [code for code, _ in DISPATCH_STATUSES]
 DISPATCH_STATUS_LABELS = dict(DISPATCH_STATUSES)
@@ -50,7 +59,15 @@ DISPATCH_STATUS_LABELS = dict(DISPATCH_STATUSES)
 # STOPPED 도 여기 들어간다. 중지된 캠페인은 이미 리워드팝에 접수돼 일부가 나갔고,
 # 이 집합이 곧 "오늘 이미 나갔는가"(_already_executed) 판정 기준이기 때문이다.
 # 빼면 같은 날 같은 가맹점에 주문이 한 번 더 나간다 — 리워드팝에는 취소 API 가 없다.
-EXECUTED_STATUSES = {STATUS_SENT, STATUS_RUNNING, STATUS_DONE, STATUS_STOPPED}
+#
+# MANUAL_DONE 도 여기 들어간다. 관리자가 리워드팝 어드민에서 실제로 접수를 마친 건이라
+# 진도표(AdExecution)와 기간 집계에 실적으로 잡혀야 한다. MANUAL_QUEUED 는 들어가지 않는다
+# — 아직 아무것도 접수되지 않았고, 그 상태로 실적에 잡히면 진도표가 부풀려진다.
+EXECUTED_STATUSES = {STATUS_SENT, STATUS_RUNNING, STATUS_DONE, STATUS_STOPPED,
+                     STATUS_MANUAL_DONE}
+
+# 사람이 손으로 처리하는 상태들. 재시도·상태조회 대상에서 제외할 때 쓴다.
+MANUAL_STATUSES = {STATUS_MANUAL_QUEUED, STATUS_MANUAL_DONE}
 
 # ─── 보류 사유 ──────────────────────────────────────────────
 SKIP_NO_KEYWORD = "no_keyword"
@@ -63,6 +80,7 @@ SKIP_LOW_BALANCE = "low_balance"
 SKIP_NO_CONFIG = "no_config"      # 매장별 리워드팝 집행 설정 미등록
 SKIP_NO_PLACE_CODE = "no_place_code"  # 네이버 플레이스 코드 미등록
 SKIP_INVALID_CONFIG = "invalid_config"  # 공식 API 규격과 맞지 않는 설정
+SKIP_NO_EXTERNAL_API = "no_external_api"  # 리워드팝에 등록 API 가 없는 광고 (블로그 배포)
 
 SKIP_REASON_LABELS = {
     SKIP_NO_KEYWORD: "승인된 키워드 없음",
@@ -75,6 +93,7 @@ SKIP_REASON_LABELS = {
     SKIP_NO_CONFIG: "리워드팝 집행 설정 미등록",
     SKIP_NO_PLACE_CODE: "네이버 플레이스 코드 미등록",
     SKIP_INVALID_CONFIG: "리워드팝 집행 설정 오류",
+    SKIP_NO_EXTERNAL_API: "리워드팝 등록 API 없음 — 수동 접수",
 }
 
 # 재시도 상한과 간격(분). 지수 백오프 — 무한 재시도는 포인트를 태운다.
@@ -156,12 +175,25 @@ class AdDispatch(Base):
 
     @property
     def retryable(self) -> bool:
+        # 수동 접수 건은 우리가 보낸 요청이 아니므로 재시도 대상이 아니다.
+        if self.source == SOURCE_MANUAL:
+            return False
         return self.status == STATUS_FAILED and self.retry_count < MAX_RETRY
+
+    @property
+    def is_manual(self) -> bool:
+        return self.source == SOURCE_MANUAL or self.status in MANUAL_STATUSES
 
 
 def build_idempotency_key(source: str, merchant_id: int, ad_type: str,
                           execution_date, order_id=None) -> str:
-    """재실행해도 같은 값이 나오는 키. 자동 집행은 하루 한 번으로 고정된다."""
+    """재실행해도 같은 값이 나오는 키. 자동 집행은 하루 한 번으로 고정된다.
+
+    수동 접수(SOURCE_MANUAL)도 같은 규칙을 쓴다 — 가맹점·광고·날짜당 한 행이라
+    관리자가 완료 버튼을 두 번 눌러도 실적이 두 배가 되지 않는다.
+    """
     if source == SOURCE_ORDER and order_id:
         return f"order:{order_id}:{ad_type}"
+    if source == SOURCE_MANUAL:
+        return f"manual:{merchant_id}:{ad_type}:{execution_date}"
     return f"auto:{merchant_id}:{ad_type}:{execution_date}"

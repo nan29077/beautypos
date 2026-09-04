@@ -48,6 +48,9 @@ def create_owner_payout_request(
 ):
     """정산금 출금을 신청한다. 최고관리자가 승인/거절한다."""
     _get_owner_merchant(user, db)  # 가맹점이 없는 계정은 신청할 수 없다
+    # 동시에 두 번 신청하면 둘 다 "잔액 충분"으로 읽고 통과한다.
+    # 신청자 행을 잠가 잔액 계산 ~ 신청 생성까지를 직렬화한다. (SQLite 는 무시)
+    db.query(User).filter(User.id == user.id).with_for_update().first()
     available = get_available_payout(db, user.id, user.role)
     if Decimal(str(req.amount)) > available:
         raise HTTPException(status_code=400, detail=f"출금 가능 금액({available:,.0f}원)을 초과했습니다")

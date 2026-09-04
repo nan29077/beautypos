@@ -28,14 +28,18 @@ from app.models.ad_dispatch import (
     SKIP_LOW_BALANCE,
     SKIP_NO_CONFIG,
     SKIP_NO_KEYWORD,
+    SKIP_NO_EXTERNAL_API,
     SKIP_NO_PLACE_CODE,
     SKIP_NO_PLAN,
     SKIP_NO_PRICE,
     SKIP_REASON_LABELS,
     SKIP_ZERO_TARGET,
     SOURCE_AUTO,
+    SOURCE_MANUAL,
     SOURCE_ORDER,
     STATUS_DRY_RUN,
+    STATUS_MANUAL_DONE,
+    STATUS_MANUAL_QUEUED,
     STATUS_FAILED,
     STATUS_DONE,
     STATUS_PENDING,
@@ -934,6 +938,293 @@ def report(db: Session, start: date_cls, end: date_cls) -> dict:
     }
 
 
+# ─── 수동 접수 큐 (블로그 배포) ─────────────────────────────
+#
+# 리워드팝에는 클로 블로그 상품이 있고 GET /accounts/prices 로 단가도 조회되지만,
+# 그걸 접수하는 엔드포인트가 공개 API 에 없다 (/ads/cloblog 는 404).
+# 그래서 블로그는 "자동 전송"이 아니라 "자동 배분 + 사람이 접수"로 돌린다.
+#
+#   시스템이 하는 일 — 최고관리자가 넣은 월 목표를 일 단위로 쪼개 오늘 접수할 목록을 만든다.
+#   사람이 하는 일   — 리워드팝 어드민에서 그만큼 접수하고 완료 버튼을 누른다.
+#   그 다음은 자동   — 진도표(AdExecution)와 기간 집계에 플레이스와 똑같이 반영된다.
+#
+# 일/월 분배 계산은 plan_service 의 것을 그대로 쓴다. 플레이스 방문과 같은 함수라
+# 나중에 리워드팝이 블로그 접수 API 를 열어주면 MANUAL_AD_TYPES 에서 빼고
+# DISPATCHABLE_AD_TYPES 로 옮기기만 하면 된다 — 분배·집계 로직은 손댈 것이 없다.
+
+MANUAL_AD_TYPES = ["blog_review"]
+
+# ADPAY 광고 종류 → 리워드팝 매체 코드(GET /accounts/prices 의 mediaType).
+# 플레이스가 아닌 매체는 missionCategory/missionAction 이 null 이라 이 코드로만 단가를 찾는다.
+MEDIA_TYPE_BY_AD_TYPE = {
+    "blog_review": "cloblog",
+}
+
+
+def supply_unit_price(by_media: Optional[dict], ad_type: str) -> Optional[dict]:
+    """리워드팝 공급 단가(원가) 1건. 못 찾으면 None.
+
+    한 매체에 단가가 여러 개 오면 **가장 낮은 값을 쓰지 않고 가장 높은 값**을 쓴다.
+    필요 포인트를 적게 잡았다가 접수 도중 잔액이 모자라는 쪽이,
+    넉넉히 잡아뒀다가 남는 쪽보다 훨씬 나쁘다.
+    """
+    media = MEDIA_TYPE_BY_AD_TYPE.get(ad_type)
+    if not media or not by_media:
+        return None
+    values = by_media.get(media)
+    if not values:
+        return None
+    return {"media_type": media, "price": float(max(values)), "ambiguous": len(values) > 1}
+
+MANUAL_STATE_TODO = "todo"      # 오늘 접수해야 함
+MANUAL_STATE_DONE = "done"      # 접수 완료 처리됨
+MANUAL_STATE_SKIP = "skip"      # 오늘 할 일 없음 (목표 0 · 플랜 없음 · 단가 미설정)
+
+
+def _manual_row(db: Session, merchant_id: int, ad_type: str, day: date_cls) -> Optional[AdDispatch]:
+    key = build_idempotency_key(SOURCE_MANUAL, merchant_id, ad_type, day)
+    return db.query(AdDispatch).filter(AdDispatch.idempotency_key == key).first()
+
+
+def _manual_month_done(db: Session, merchant_id: int, ad_type: str, day: date_cls) -> int:
+    """이번 달 들어 실제로 접수 완료된 누적 건수."""
+    first, last = plan_service.month_bounds(day)
+    rows = db.query(AdDispatch).filter(
+        AdDispatch.merchant_id == merchant_id,
+        AdDispatch.ad_type == ad_type,
+        AdDispatch.execution_date >= first,
+        AdDispatch.execution_date <= last,
+        AdDispatch.status == STATUS_MANUAL_DONE,
+        AdDispatch.dry_run == False,  # noqa: E712
+    ).all()
+    return sum(int(r.requested_count or 0) for r in rows)
+
+
+def _manual_meta(row: Optional[AdDispatch]) -> dict:
+    """완료 처리할 때 남긴 메모·처리자 정보. 스키마를 늘리지 않으려고 response_json 에 담는다."""
+    if row is None or not row.response_json:
+        return {}
+    try:
+        data = json.loads(row.response_json)
+    except (TypeError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def build_manual_queue(db: Session, target_date: Optional[date_cls] = None,
+                       merchant_id: Optional[int] = None,
+                       by_media: Optional[dict] = None) -> dict:
+    """오늘 사람이 접수해야 할 목록. 아무것도 전송하지 않고 행도 만들지 않는다.
+
+    행을 미리 만들지 않는 이유 — 화면을 열어봤다는 이유만으로 원장에 행이 쌓이면
+    "무엇이 실제로 처리됐는지"가 흐려진다. 행은 완료 처리할 때 처음 생긴다.
+
+    by_media 를 넘기면 리워드팝 공급 단가(원가)와 필요 포인트까지 함께 계산한다.
+    외부 호출이 필요해 여기서 직접 조회하지 않는다 — manual_queue 참고.
+    """
+    target_date = target_date or today_kst()
+    pricing = ad_pricing.get_ad_pricing(db)
+
+    q = db.query(Merchant).filter(Merchant.is_active == True)  # noqa: E712
+    if merchant_id:
+        q = q.filter(Merchant.id == merchant_id)
+    merchants = q.order_by(Merchant.name.asc()).all()
+
+    items = []
+    for merchant in merchants:
+        plan = plan_service.get_current_plan(db, merchant.id)
+        for ad_type in MANUAL_AD_TYPES:
+            unit_price = _unit_price(pricing, ad_type)
+            supply = supply_unit_price(by_media, ad_type)
+            monthly = plan_service.effective_monthly_target(db, merchant.id, ad_type, plan) if plan else 0
+            target = plan_service.daily_target_for_date(monthly, target_date)
+            row = _manual_row(db, merchant.id, ad_type, target_date)
+            meta = _manual_meta(row)
+            done = row is not None and row.status == STATUS_MANUAL_DONE
+
+            entry = {
+                "merchant_id": merchant.id,
+                "merchant_name": merchant.name,
+                "place_code": merchant.place_code,
+                "ad_type": ad_type,
+                "ad_type_label": AD_EXECUTION_TYPE_LABELS.get(ad_type, ad_type),
+                "monthly_target": monthly,
+                # 이 달 며칠까지 왔으면 몇 건이 쌓여 있어야 하는지 — 밀린 정도를 본다
+                "month_expected": plan_service.expected_target_through_date(monthly, target_date),
+                "month_done": _manual_month_done(db, merchant.id, ad_type, target_date),
+                "daily_description": plan_service.daily_target_description(monthly, target_date),
+                "target": target,
+                "unit_price": unit_price,
+                "est_cost": unit_price * target,
+                # 리워드팝에서 실제로 빠지는 원가. 단가를 못 읽었으면 None
+                "supply_unit_price": supply["price"] if supply else None,
+                "supply_ambiguous": bool(supply and supply["ambiguous"]),
+                "required_points": supply["price"] * target if supply else None,
+                "margin": (unit_price - supply["price"]) * target if supply else None,
+                "keywords": [],
+                "state": MANUAL_STATE_TODO,
+                "skip_reason": None,
+                "dispatch_id": row.id if row else None,
+                "done_count": int(row.requested_count or 0) if done else 0,
+                "external_order_id": row.external_order_id if row else None,
+                "note": meta.get("note"),
+                "completed_at": meta.get("completed_at"),
+            }
+
+            if not plan:
+                entry["state"] = MANUAL_STATE_SKIP
+                entry["skip_reason"] = SKIP_NO_PLAN
+            elif target <= 0:
+                entry["state"] = MANUAL_STATE_SKIP
+                entry["skip_reason"] = SKIP_ZERO_TARGET
+            elif unit_price <= 0:
+                entry["state"] = MANUAL_STATE_SKIP
+                entry["skip_reason"] = SKIP_NO_PRICE
+            elif done:
+                entry["state"] = MANUAL_STATE_DONE
+            else:
+                # 승인된 키워드가 있으면 접수할 때 쓰라고 보여준다. 없어도 막지 않는다
+                # — 자동 전송이 아니라 사람이 접수하는 것이라 판단은 관리자가 한다.
+                picked = ad_keyword.pick_for_date(
+                    ad_keyword.usable_keywords(db, merchant.id, ad_type),
+                    target_date, KEYWORDS_PER_DISPATCH,
+                )
+                entry["keywords"] = [k.keyword for k in picked]
+
+            items.append(entry)
+
+    todo = [i for i in items if i["state"] == MANUAL_STATE_TODO]
+    done_items = [i for i in items if i["state"] == MANUAL_STATE_DONE]
+    priced = [i for i in todo if i["required_points"] is not None]
+    return {
+        "date": str(target_date),
+        "ad_types": [
+            {"code": c, "label": AD_EXECUTION_TYPE_LABELS.get(c, c)} for c in MANUAL_AD_TYPES
+        ],
+        "items": items,
+        "todo_count": len(todo),
+        "todo_total": sum(i["target"] for i in todo),
+        "todo_cost": sum(i["est_cost"] for i in todo),
+        "done_count": len(done_items),
+        "done_total": sum(i["done_count"] for i in done_items),
+        # 오늘 접수분이 리워드팝 포인트를 얼마나 먹는지. 단가를 못 읽은 건은 빠져 있다
+        "required_points": sum(i["required_points"] for i in priced) if priced else None,
+        "unpriced_count": len(todo) - len(priced),
+        "supply_price_error": None,
+        "skip_reason_labels": SKIP_REASON_LABELS,
+        # 이 광고가 왜 자동이 아니라 수동인지 — 화면 안내 문구가 이 라벨을 쓴다
+        "manual_reason": SKIP_NO_EXTERNAL_API,
+        "manual_reason_label": SKIP_REASON_LABELS[SKIP_NO_EXTERNAL_API],
+    }
+
+
+async def manual_queue(db: Session, target_date: Optional[date_cls] = None,
+                       merchant_id: Optional[int] = None) -> dict:
+    """수동 접수 큐 + 리워드팝 공급 단가(원가).
+
+    단가 조회가 실패해도 큐 자체는 그대로 보여준다 — 조회 장애로 그날 접수를
+    통째로 막지 않는다. 대신 왜 원가가 비었는지 화면에 사유를 남긴다.
+    """
+    by_media, error = None, None
+    if await run_in_threadpool(rewardpop.is_enabled, db):
+        try:
+            prices = await rewardpop.get_prices(db)
+            by_media = prices.get("by_media") or None
+        except rewardpop.RewardpopError as exc:
+            error = exc.message
+            logger.info("수동 접수 큐 — 공급 단가 조회 실패: %s", exc.message)
+    else:
+        error = "리워드팝 연동이 꺼져 있어 공급 단가를 읽지 못했습니다."
+
+    queue = await run_in_threadpool(build_manual_queue, db, target_date, merchant_id, by_media)
+    queue["supply_price_error"] = error
+    return queue
+
+
+def complete_manual(db: Session, merchant_id: int, ad_type: str, day: date_cls,
+                    count: Optional[int] = None, external_order_id: Optional[str] = None,
+                    note: Optional[str] = None, actor_id: Optional[int] = None) -> AdDispatch:
+    """관리자가 외부에서 접수를 마쳤다고 표시한다.
+
+    같은 가맹점·광고·날짜에 행이 하나뿐이므로(멱등키) 여러 번 눌러도
+    실적이 중복으로 쌓이지 않는다. 수량을 고쳐 다시 누르면 그 값으로 덮어쓴다.
+    """
+    if ad_type not in MANUAL_AD_TYPES:
+        raise ValueError(
+            f"'{ad_type}' 은 수동 접수 대상이 아닙니다 (대상: {', '.join(MANUAL_AD_TYPES)})"
+        )
+    merchant = db.query(Merchant).filter(Merchant.id == merchant_id).first()
+    if merchant is None:
+        raise ValueError("가맹점을 찾을 수 없습니다")
+
+    plan = plan_service.get_current_plan(db, merchant_id)
+    monthly = plan_service.effective_monthly_target(db, merchant_id, ad_type, plan) if plan else 0
+    target = plan_service.daily_target_for_date(monthly, day)
+    # 수량을 안 넘기면 그날 목표만큼 접수한 것으로 본다.
+    final_count = int(count if count is not None else target)
+    if final_count < 1:
+        raise ValueError("접수 수량은 1건 이상이어야 합니다")
+
+    unit_price = _unit_price(ad_pricing.get_ad_pricing(db), ad_type)
+
+    key = build_idempotency_key(SOURCE_MANUAL, merchant_id, ad_type, day)
+    row = db.query(AdDispatch).filter(AdDispatch.idempotency_key == key).first()
+    if row is None:
+        row = AdDispatch(
+            merchant_id=merchant_id, ad_type=ad_type, execution_date=day,
+            source=SOURCE_MANUAL, idempotency_key=key, created_by=actor_id,
+        )
+        db.add(row)
+
+    row.requested_count = final_count
+    # 사람이 직접 확인한 수라 요청 수 = 실제 나간 수로 본다.
+    row.delivered_count = final_count
+    row.status = STATUS_MANUAL_DONE
+    row.skip_reason = None
+    row.error_message = None
+    row.next_retry_at = None
+    row.dry_run = False
+    row.external_order_id = (external_order_id or "").strip() or None
+    row.cost_amount = unit_price * final_count
+    row.response_json = json.dumps({
+        "manual": True,
+        "note": (note or "").strip() or None,
+        "completed_by": actor_id,
+        "completed_at": datetime.utcnow().isoformat(timespec="seconds"),
+        "daily_target": target,
+    }, ensure_ascii=False)
+    db.commit()
+
+    sync_execution(db, merchant_id, ad_type, day)
+    logger.info("수동 접수 완료 — 가맹점 %s / %s / %s / %d건",
+                merchant_id, ad_type, day, final_count)
+    return row
+
+
+def revert_manual(db: Session, row: AdDispatch, actor_id: Optional[int] = None) -> AdDispatch:
+    """완료 처리를 되돌린다. 행은 남기고 실적에서만 뺀다.
+
+    행을 지우지 않는 이유 — 누가 언제 잘못 눌렀는지가 원장에서 사라지면
+    나중에 매장과 건수를 두고 다툴 때 확인할 방법이 없다.
+    """
+    if row.source != SOURCE_MANUAL:
+        raise ValueError("수동 접수 건이 아닙니다")
+    meta = _manual_meta(row)
+    meta.update({
+        "reverted": True,
+        "reverted_by": actor_id,
+        "reverted_at": datetime.utcnow().isoformat(timespec="seconds"),
+    })
+    row.status = STATUS_MANUAL_QUEUED
+    row.delivered_count = None
+    row.cost_amount = 0
+    row.response_json = json.dumps(meta, ensure_ascii=False)
+    db.commit()
+    # 실적에서 빠지도록 다시 계산한다 (0 건이면 AdExecution 도 0 이 된다).
+    sync_execution(db, row.merchant_id, row.ad_type, row.execution_date)
+    return row
+
+
 # ─── 직렬화 ─────────────────────────────────────────────────
 
 def to_dict(row: AdDispatch, merchant_name: Optional[str] = None) -> dict:
@@ -961,6 +1252,7 @@ def to_dict(row: AdDispatch, merchant_name: Optional[str] = None) -> dict:
         "retryable": row.retryable,
         "cost_amount": float(row.cost_amount or 0),
         "dry_run": bool(row.dry_run),
+        "is_manual": bool(row.is_manual),
         "created_at": fmt_kst(row.created_at),
         "request_json": row.request_json,
     }

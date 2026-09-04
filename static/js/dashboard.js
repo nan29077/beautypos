@@ -204,6 +204,18 @@ function safeUrl(value) {
     return '';
 }
 
+// 인라인 이벤트 핸들러(onclick="fn('...')") 의 작은따옴표 문자열 안에 값을 넣기 위한 헬퍼.
+// HTML 속성값은 JS 파싱 전에 엔티티가 먼저 복원되므로, JS 이스케이프를 먼저 하고
+// 그 결과를 HTML 이스케이프해야 속성/문자열 양쪽을 모두 탈출할 수 없다.
+function escapeJsAttr(value) {
+    return escapeHtml(
+        String(value ?? '')
+            .replace(/\\/g, '\\\\')
+            .replace(/'/g, "\\'")
+            .replace(/\r?\n/g, ' ')
+    );
+}
+
 function roleLabel(r) {
     return {admin:'최고관리자', sales:'영업관리자', owner:'사장님', designer:'직원'}[r] || r;
 }
@@ -882,8 +894,8 @@ async function loadHomePage(c, t) {
                         <div class="list-group list-group-flush">
                             ${(stats.recent_transactions||[]).map(tx => `
                             <div class="list-group-item d-flex justify-content-between align-items-center px-3 py-2" style="font-size:.82rem">
-                                <div><div class="fw-bold">${formatMoney(tx.amount)}</div><small class="text-muted">${tx.merchant_name}</small></div>
-                                <div class="text-end"><span class="badge bg-secondary bg-opacity-10 text-secondary">${tx.card_brand||'-'}</span><br><small class="text-muted">${formatDate(tx.created_at)}</small></div>
+                                <div><div class="fw-bold">${formatMoney(tx.amount)}</div><small class="text-muted">${escapeHtml(tx.merchant_name)}</small></div>
+                                <div class="text-end"><span class="badge bg-secondary bg-opacity-10 text-secondary">${escapeHtml(tx.card_brand||'-')}</span><br><small class="text-muted">${formatDate(tx.created_at)}</small></div>
                             </div>`).join('') || '<div class="p-3 text-muted text-center">결제 내역 없음</div>'}
                         </div>
                     </div>
@@ -942,7 +954,7 @@ async function loadHomePage(c, t) {
                     <div class="card-body">
                         <ul class="list-unstyled mb-0" style="font-size:.88rem">
                             <li class="mb-2 d-flex justify-content-between"><span class="text-muted">역할</span><span class="badge bg-danger">최고관리자</span></li>
-                            <li class="mb-2 d-flex justify-content-between"><span class="text-muted">이메일</span><span class="fw-bold" style="font-size:.78rem">${currentUser.email}</span></li>
+                            <li class="mb-2 d-flex justify-content-between"><span class="text-muted">이메일</span><span class="fw-bold" style="font-size:.78rem">${escapeHtml(currentUser.email)}</span></li>
                             <li class="mb-2 d-flex justify-content-between"><span class="text-muted">신규가입</span><span class="fw-bold text-primary" id="newUsersMonth">-</span></li>
                             <li class="mb-2 d-flex justify-content-between"><span class="text-muted">상태</span><span class="badge bg-success">활성</span></li>
                             <li class="d-flex justify-content-between"><span class="text-muted">버전</span><span class="fw-bold">v1.3.0</span></li>
@@ -1000,7 +1012,7 @@ async function loadHomePage(c, t) {
                         <div class="list-group-item d-flex justify-content-between align-items-center px-3 py-2">
                             <div class="d-flex align-items-center gap-2">
                                 <span class="badge ${i<3?'bg-warning text-dark':'bg-light text-muted'} rounded-circle" style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:.72rem">${i+1}</span>
-                                <span class="fw-bold" style="font-size:.85rem">${m.name}</span>
+                                <span class="fw-bold" style="font-size:.85rem">${escapeHtml(m.name)}</span>
                             </div>
                             <div class="text-end">
                                 <div class="fw-bold text-success" style="font-size:.82rem">${formatMoney(m.sales)}</div>
@@ -1018,9 +1030,9 @@ async function loadHomePage(c, t) {
                 // 알림
                 if (enhanced.alerts.length > 0) {
                     alertHtml += enhanced.alerts.map(a => `
-                        <div class="list-group-item list-group-item-${a.type} d-flex align-items-center gap-2 px-3 py-2 border-0" style="cursor:pointer" onclick="navigate('${a.link}')">
+                        <div class="list-group-item list-group-item-${a.type} d-flex align-items-center gap-2 px-3 py-2 border-0" style="cursor:pointer" onclick="navigate('${escapeJsAttr(a.link)}')">
                             <i class="fas fa-${a.icon}"></i>
-                            <span style="font-size:.85rem">${a.text}</span>
+                            <span style="font-size:.85rem">${escapeHtml(a.text)}</span>
                             <i class="fas fa-chevron-right ms-auto" style="font-size:.7rem;opacity:.5"></i>
                         </div>
                     `).join('');
@@ -1031,7 +1043,7 @@ async function loadHomePage(c, t) {
                     <div class="list-group-item d-flex align-items-start gap-2 px-3 py-2 border-0">
                         <div class="mt-1"><i class="fas fa-${a.icon} text-${a.color}" style="font-size:.75rem"></i></div>
                         <div class="flex-grow-1">
-                            <div style="font-size:.82rem">${a.text}</div>
+                            <div style="font-size:.82rem">${escapeHtml(a.text)}</div>
                             <small class="text-muted">${formatDate(a.created_at)} · <span class="badge bg-${a.status==='pending'?'warning':a.status==='paid'||a.status==='approved'||a.status==='done'?'success':a.status==='rejected'?'danger':'secondary'}" style="font-size:.65rem">${a.status}</span></small>
                         </div>
                     </div>
@@ -1116,8 +1128,8 @@ async function loadHomePage(c, t) {
                         <i class="fas fa-store text-white"></i>
                     </div>
                     <div>
-                        <h5 class="mb-0 text-white fw-bold">${stats.merchant_name}</h5>
-                        <small class="text-white-50">${stats.category || ''} ${stats.address ? '· ' + stats.address : ''}</small>
+                        <h5 class="mb-0 text-white fw-bold">${escapeHtml(stats.merchant_name)}</h5>
+                        <small class="text-white-50">${escapeHtml(stats.category || '')} ${stats.address ? '· ' + escapeHtml(stats.address) : ''}</small>
                     </div>
                 </div>
                 <div class="d-flex gap-2">
@@ -1208,7 +1220,7 @@ async function loadHomePage(c, t) {
                             return `
                             <div class="d-flex align-items-center gap-2 mb-2 py-1">
                                 <span style="width:24px;text-align:center;">${medal}</span>
-                                <span class="fw-bold" style="width:60px;font-size:.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${s.name}</span>
+                                <span class="fw-bold" style="width:60px;font-size:.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(s.name)}</span>
                                 <div class="flex-grow-1">
                                     <div style="height:18px;background:#f0f2f5;border-radius:9px;overflow:hidden;">
                                         <div style="width:${barWidth}%;height:100%;background:linear-gradient(90deg,#0ea5e9,#38bdf8);border-radius:9px;transition:width .5s;"></div>
@@ -1248,8 +1260,8 @@ async function loadHomePage(c, t) {
                                     ${recentTxns.map(tx => `
                                     <tr>
                                         <td style="padding-left:1.2rem;" class="fw-bold">${formatMoney(tx.amount)}</td>
-                                        <td>${tx.staff_name || '<span class="text-muted">사장님</span>'}</td>
-                                        <td><span class="badge bg-secondary bg-opacity-10 text-secondary">${tx.card_brand || '-'}</span></td>
+                                        <td>${escapeHtml(tx.staff_name) || '<span class="text-muted">사장님</span>'}</td>
+                                        <td><span class="badge bg-secondary bg-opacity-10 text-secondary">${escapeHtml(tx.card_brand || '-')}</span></td>
                                         <td class="text-muted" style="font-size:.8rem;">${formatDate(tx.created_at)}</td>
                                     </tr>`).join('')}
                                 </tbody>
@@ -1426,8 +1438,8 @@ async function loadHomePage(c, t) {
         <div class="row g-3">
             <div class="col-12">
                 <div class="card data-card mb-3"><div class="card-body text-center py-3">
-                    <span class="text-muted">직원:</span> <strong>${stats.staff_name}</strong>
-                    <span class="badge bg-secondary ms-2">코드: ${stats.staff_code}</span>
+                    <span class="text-muted">직원:</span> <strong>${escapeHtml(stats.staff_name)}</strong>
+                    <span class="badge bg-secondary ms-2">코드: ${escapeHtml(stats.staff_code)}</span>
                 </div></div>
             </div>
             <div class="col-md-6">
@@ -1441,8 +1453,8 @@ async function loadHomePage(c, t) {
             <div class="col-md-6">
                 <div class="card data-card h-100"><div class="card-header"><h5>내 정보</h5></div><div class="card-body">
                     <ul class="list-unstyled mb-0">
-                        <li class="mb-2 d-flex justify-content-between"><span class="text-muted">이름</span><span class="fw-bold">${stats.staff_name}</span></li>
-                        <li class="mb-2 d-flex justify-content-between"><span class="text-muted">직원코드</span><code>${stats.staff_code}</code></li>
+                        <li class="mb-2 d-flex justify-content-between"><span class="text-muted">이름</span><span class="fw-bold">${escapeHtml(stats.staff_name)}</span></li>
+                        <li class="mb-2 d-flex justify-content-between"><span class="text-muted">직원코드</span><code>${escapeHtml(stats.staff_code)}</code></li>
                         <li class="d-flex justify-content-between"><span class="text-muted">이번달 건수</span><span class="fw-bold">${stats.total_transactions}건</span></li>
                     </ul>
                 </div></div>
@@ -1468,8 +1480,8 @@ async function loadAdminMerchants(c, t) {
     t.textContent = '가맹점 관리';
     const merchants = await apiGet('/api/admin/merchants');
     let rows = merchants.map(m => `<tr>
-        <td>${m.id}</td><td class="fw-bold">${m.name}</td><td>${m.business_no||'-'}</td>
-        <td>${m.address||'-'}</td><td>${m.phone||'-'}</td>
+        <td>${m.id}</td><td class="fw-bold">${escapeHtml(m.name)}</td><td>${escapeHtml(m.business_no||'-')}</td>
+        <td>${escapeHtml(m.address||'-')}</td><td>${escapeHtml(m.phone||'-')}</td>
         <td>${m.is_active?'<span class="badge bg-success">활성</span>':'<span class="badge bg-danger">비활성</span>'}</td>
         <td><button class="btn btn-sm btn-outline-primary" onclick="showPGConfig(${m.id})"><i class="fas fa-cog"></i> PG</button></td>
     </tr>`).join('');
@@ -1541,8 +1553,8 @@ async function loadAdminPG(c, t) {
     t.textContent = 'PG 설정';
     const merchants = await apiGet('/api/admin/merchants');
     const providers = await apiGet('/api/admin/pg-providers');
-    let provOpts = providers.map(p => `<option value="${p.id}">${p.name} (${p.code})</option>`).join('');
-    let merchOpts = merchants.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
+    let provOpts = providers.map(p => `<option value="${p.id}">${escapeHtml(p.name)} (${escapeHtml(p.code)})</option>`).join('');
+    let merchOpts = merchants.map(m => `<option value="${m.id}">${escapeHtml(m.name)}</option>`).join('');
     c.innerHTML = `<div class="row g-4">
         <div class="col-md-5">
             <div class="card data-card"><div class="card-header"><h5>PG 연동 등록</h5></div><div class="card-body">
@@ -1570,7 +1582,7 @@ async function loadPGConfigs() {
     if (configs.length === 0) { el.innerHTML = '<p class="text-muted text-center py-3">등록된 PG 없음</p>'; return; }
     el.innerHTML = `<div class="table-responsive"><table class="table table-sm"><thead><tr><th>PG사</th><th>MID</th><th>SECRET</th><th>상태</th><th>테스트</th></tr></thead><tbody>
     ${configs.map(cfg => `<tr>
-        <td class="fw-bold">${cfg.provider_name}</td><td><code>${cfg.mid}</code></td><td>${cfg.secret_masked}</td>
+        <td class="fw-bold">${escapeHtml(cfg.provider_name)}</td><td><code>${escapeHtml(cfg.mid)}</code></td><td>${escapeHtml(cfg.secret_masked)}</td>
         <td>${statusBadge(cfg.status)}</td>
         <td><button class="btn btn-sm btn-outline-warning" onclick="testPG(${mid},${cfg.id})"><i class="fas fa-vial"></i></button>
             <span id="pgTestResult${cfg.id}"></span></td>
@@ -1640,7 +1652,7 @@ async function loadAdminTerminals(c, t) {
 async function loadAdminTransactions(c, t) {
     t.textContent = '전체 결제 내역';
     const merchants = await apiGet('/api/admin/merchants');
-    let merchOpts = '<option value="">전체 가맹점</option>' + merchants.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
+    let merchOpts = '<option value="">전체 가맹점</option>' + merchants.map(m => `<option value="${m.id}">${escapeHtml(m.name)}</option>`).join('');
 
     c.innerHTML = `
     <div class="card data-card mb-3">
@@ -1701,9 +1713,9 @@ async function reloadAdminTransactions() {
             <div class="table-responsive"><table class="table table-hover table-sm">
                 <thead><tr><th>ID</th><th>가맹점</th><th>금액</th><th>할부</th><th>카드</th><th>직원</th><th>승인번호</th><th>결제일시</th></tr></thead>
                 <tbody>${txns.length ? txns.map(tx => `<tr>
-                    <td>${tx.id}</td><td>${tx.merchant_name || tx.merchant_id}</td><td class="fw-bold">${formatMoney(tx.amount)}</td>
-                    <td>${tx.installment_months||'일시불'}</td><td>${tx.card_brand||'-'}</td>
-                    <td>${tx.staff_name||'<span class="text-muted">사장님</span>'}</td><td><code>${tx.approval_code||'-'}</code></td>
+                    <td>${tx.id}</td><td>${escapeHtml(tx.merchant_name || tx.merchant_id)}</td><td class="fw-bold">${formatMoney(tx.amount)}</td>
+                    <td>${tx.installment_months||'일시불'}</td><td>${escapeHtml(tx.card_brand||'-')}</td>
+                    <td>${escapeHtml(tx.staff_name)||'<span class="text-muted">사장님</span>'}</td><td><code>${escapeHtml(tx.approval_code||'-')}</code></td>
                     <td>${formatDate(tx.created_at)}</td>
                 </tr>`).join('') : '<tr><td colspan="8" class="text-center text-muted py-4">조건에 맞는 결제 내역이 없습니다</td></tr>'}</tbody>
             </table></div>`;
@@ -1724,7 +1736,7 @@ async function loadAdminSettlements(c, t) {
     t.textContent = '정산 관리';
     const merchants = await apiGet('/api/admin/merchants');
     const settlements = await apiGet('/api/admin/settlements');
-    let merchOpts = merchants.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
+    let merchOpts = merchants.map(m => `<option value="${m.id}">${escapeHtml(m.name)}</option>`).join('');
     c.innerHTML = `<div class="row g-4">
         <div class="col-md-5">
             <div class="card data-card"><div class="card-header"><h5>정산 계산</h5></div><div class="card-body">
@@ -2197,7 +2209,7 @@ async function loadAdminFeePolicies(c, t) {
     let rows = overview.map(o => {
         const salesBadge = o.has_sales_manager
             ? `<span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25">
-                <i class="fas fa-user-tie me-1"></i>${o.sales_manager_name}
+                <i class="fas fa-user-tie me-1"></i>${escapeHtml(o.sales_manager_name)}
                 <span class="ms-1 fw-bold">${o.commission_rate_pct}%</span>
                </span>`
             : `<span class="badge bg-secondary bg-opacity-10 text-secondary">미배정</span>`;
@@ -2209,8 +2221,8 @@ async function loadAdminFeePolicies(c, t) {
         return `<tr>
             <td>${o.merchant_id}</td>
             <td>
-                <div class="fw-bold">${o.merchant_name}</div>
-                ${o.category ? `<small class="text-muted">${o.category}</small>` : ''}
+                <div class="fw-bold">${escapeHtml(o.merchant_name)}</div>
+                ${o.category ? `<small class="text-muted">${escapeHtml(o.category)}</small>` : ''}
             </td>
             <td class="text-muted">${(o.pg_fee_rate_excl_vat_pct ?? o.pg_fee_rate_pct).toFixed(2)}%
                 <small class="d-block text-muted">부가세 별도</small></td>
@@ -2242,7 +2254,7 @@ async function loadAdminFeePolicies(c, t) {
                         </div>
                         <button class="btn btn-sm btn-outline-danger" onclick="removeSalesFromPolicy(${o.assignment_id})" title="영업관리자 해제"><i class="fas fa-unlink"></i></button>
                        </div>`
-                    : `<button class="btn btn-sm btn-outline-primary" onclick="showAssignSalesModal(${o.merchant_id}, '${o.merchant_name.replace(/'/g, "\\'")}')">
+                    : `<button class="btn btn-sm btn-outline-primary" onclick="showAssignSalesModal(${o.merchant_id}, '${escapeJsAttr(o.merchant_name)}')">
                         <i class="fas fa-user-plus me-1"></i>배정
                        </button>`
                 }
@@ -2959,7 +2971,7 @@ async function executeAdOrderFromDetail(orderId) {
 async function loadAdminMetrics(c, t) {
     t.textContent = '광고 분석 관리';
     const merchants = await apiGet('/api/admin/merchants');
-    let opts = merchants.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
+    let opts = merchants.map(m => `<option value="${m.id}">${escapeHtml(m.name)}</option>`).join('');
     c.innerHTML = `
     <div class="workspace-hero mb-3">
         <div>
@@ -3093,7 +3105,7 @@ async function loadAdminSalesAssign(c, t) {
         apiGet('/api/admin/sales-managers'),
     ]);
 
-    const merchantOpts = merchants.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
+    const merchantOpts = merchants.map(m => `<option value="${m.id}">${escapeHtml(m.name)}</option>`).join('');
     const salesOpts = salesManagers.map(u => `<option value="${u.id}">${escapeHtml(u.name)} (${escapeHtml(u.email)})</option>`).join('');
 
     c.innerHTML = `
@@ -3338,7 +3350,7 @@ async function loadAdminSalesManagers(c, t) {
         const refLink = salesRefLink(u.referral_code);
         const assignRows = myAssigns.map(a => `
             <tr>
-                <td class="fw-bold">${a.merchant_name || '-'}</td>
+                <td class="fw-bold">${escapeHtml(a.merchant_name || '-')}</td>
                 <td class="text-primary fw-bold">${(a.commission_rate*100).toFixed(2)}%</td>
                 <td>${(10000 * a.commission_rate).toLocaleString('ko-KR',{maximumFractionDigits:0})}원</td>
                 <td>${a.is_active ? '<span class="badge bg-success">활성</span>' : '<span class="badge bg-secondary">비활성</span>'}</td>
@@ -3495,8 +3507,8 @@ async function loadSalesMerchants(c, t) {
     c.innerHTML = `<div class="card data-card"><div class="card-header"><h5>담당 가맹점 현황</h5></div><div class="card-body">
         <div class="row g-3">${merchants.map(m => `
             <div class="col-md-6"><div class="card border shadow-sm"><div class="card-body">
-                <h6 class="fw-bold"><i class="fas fa-store text-primary me-2"></i>${m.name}</h6>
-                <p class="text-muted small mb-1">${m.address||''} | ${m.phone||''}</p>
+                <h6 class="fw-bold"><i class="fas fa-store text-primary me-2"></i>${escapeHtml(m.name)}</h6>
+                <p class="text-muted small mb-1">${escapeHtml(m.address||'')} | ${escapeHtml(m.phone||'')}</p>
                 <p class="mb-2">커미션율: <strong class="text-primary">${(m.commission_rate*100).toFixed(1)}%</strong></p>
                 <div class="d-flex gap-2 mb-2">
                     <select class="form-select form-select-sm" id="salesRange${m.id}"><option value="all">전체</option><option value="month">이번달</option><option value="week">이번주</option><option value="day">오늘</option></select>
@@ -3661,8 +3673,8 @@ async function reloadOwnerTx() {
         <thead><tr><th>ID</th><th>금액</th><th>할부</th><th>카드</th><th>직원</th><th>승인번호</th><th>일시</th></tr></thead>
         <tbody>${txns.map(tx => `<tr>
             <td>${tx.id}</td><td class="fw-bold">${formatMoney(tx.amount)}</td>
-            <td>${tx.installment_months||'일시불'}</td><td>${tx.card_brand||'-'}</td>
-            <td>${tx.staff_name||'<span class="text-muted">사장님</span>'}</td><td><code>${tx.approval_code||'-'}</code></td>
+            <td>${tx.installment_months||'일시불'}</td><td>${escapeHtml(tx.card_brand||'-')}</td>
+            <td>${escapeHtml(tx.staff_name)||'<span class="text-muted">사장님</span>'}</td><td><code>${escapeHtml(tx.approval_code||'-')}</code></td>
             <td>${formatDate(tx.created_at)}</td>
         </tr>`).join('')}</tbody>
     </table></div>`;
@@ -3683,7 +3695,7 @@ async function loadOwnerStaff(c, t) {
         <div class="table-responsive"><table class="table table-hover align-middle staff-mgmt-table">
             <thead><tr><th>ID</th><th>이름</th><th>코드</th><th>직원 분배율</th><th>상태</th><th>액션</th></tr></thead>
             <tbody>${staff.map(s => `<tr>
-                <td data-label="ID">${s.id}</td><td class="fw-bold" data-label="이름">${s.name}</td><td data-label="코드"><code>${s.staff_code}</code></td>
+                <td data-label="ID">${s.id}</td><td class="fw-bold" data-label="이름">${escapeHtml(s.name)}</td><td data-label="코드"><code>${escapeHtml(s.staff_code)}</code></td>
                 <td data-label="분배율" style="max-width:200px">
                     <div class="input-group input-group-sm">
                         <input type="number" class="form-control" id="share_${s.id}" value="${Math.round((s.share_rate??0.5)*100)}" min="0" max="100" step="1" style="max-width:80px">
@@ -3801,8 +3813,8 @@ function renderSettlementBreakdown(data) {
         : '';
     const colClass = showComm ? 'col-6 col-md-3' : 'col-6 col-md-4';
     const designerRows = (data.designers||[]).map(d => `<tr>
-        <td class="fw-bold">${d.name}</td>
-        <td><code>${d.staff_code}</code></td>
+        <td class="fw-bold">${escapeHtml(d.name)}</td>
+        <td><code>${escapeHtml(d.staff_code)}</code></td>
         <td class="text-end">${formatMoney(d.gross)}<br><small class="text-muted">${d.count}건</small></td>
         <td class="text-end text-secondary">-${formatMoney(d.pg_fee)}</td>
         ${showComm ? `<td class="text-end text-secondary">-${formatMoney(d.sales_commission||0)}</td>` : ''}
@@ -4021,7 +4033,7 @@ async function loadOwnerStaffSales(c, t) {
     }
     c.innerHTML = `<div class="card data-card"><div class="card-header"><h5>직원별 매출 조회</h5></div><div class="card-body">
         <div class="row g-3 mb-3">
-            <div class="col-md-4"><label class="form-label">직원</label><select class="form-select" id="staffSalesSel">${staff.map(s=>`<option value="${s.id}">${s.name} (코드:${s.staff_code})</option>`).join('')}</select></div>
+            <div class="col-md-4"><label class="form-label">직원</label><select class="form-select" id="staffSalesSel">${staff.map(s=>`<option value="${s.id}">${escapeHtml(s.name)} (코드:${escapeHtml(s.staff_code)})</option>`).join('')}</select></div>
             <div class="col-md-4"><label class="form-label">기간</label><select class="form-select" id="staffSalesRange"><option value="all">전체</option><option value="month">이번달</option><option value="week">이번주</option><option value="day">오늘</option></select></div>
             <div class="col-md-4 d-flex align-items-end"><button class="btn btn-primary w-100" onclick="loadStaffSalesData()"><i class="fas fa-search me-1"></i>조회</button></div>
         </div><div id="staffSalesResult"></div>
@@ -4144,9 +4156,9 @@ async function showDailyDetail(dateStr) {
                     <thead class="table-light"><tr><th>금액</th><th>카드</th><th>직원</th><th>승인번호</th><th>시간</th></tr></thead>
                     <tbody>${data.transactions.map(tx => `<tr>
                         <td class="fw-bold">${formatMoney(tx.amount)}</td>
-                        <td>${tx.card_brand||'-'}</td>
-                        <td>${tx.staff_name||'<span class="text-muted">사장님</span>'}</td>
-                        <td><code>${tx.approval_code||'-'}</code></td>
+                        <td>${escapeHtml(tx.card_brand||'-')}</td>
+                        <td>${escapeHtml(tx.staff_name)||'<span class="text-muted">사장님</span>'}</td>
+                        <td><code>${escapeHtml(tx.approval_code||'-')}</code></td>
                         <td class="text-muted" style="font-size:.8rem;">${tx.created_at ? tx.created_at.split(' ')[1]?.substring(0,5) || formatDate(tx.created_at) : '-'}</td>
                     </tr>`).join('')}</tbody>
                 </table></div>`;
@@ -6499,7 +6511,7 @@ async function loadCRM(c, t){
         <div class="page-header mb-3 d-flex align-items-start flex-wrap gap-2">
             <div>
                 <h2 class="fw-bold mb-1"><i class="fas fa-user-friends me-2" style="color:#667eea"></i>고객관리 프로그램</h2>
-                <p class="text-muted mb-0">${crmMe.merchant_name||''} · 고객, 직원, 서비스 메뉴와 메시지를 간결하게 관리합니다${crmMe.is_designer?' <span class="badge bg-info ms-1">직원</span>':''}</p>
+                <p class="text-muted mb-0">${escapeHtml(crmMe.merchant_name||'')} · 고객, 직원, 서비스 메뉴와 메시지를 간결하게 관리합니다${crmMe.is_designer?' <span class="badge bg-info ms-1">직원</span>':''}</p>
             </div>
             ${scopeToggle}
         </div>
@@ -6632,7 +6644,7 @@ function crmCustomerTable(data){
                 <div style="width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.82rem">${escapeHtml((c.name||'?')[0])}</div>
                 <div><div class="fw-bold">${escapeHtml(c.name)}${c.allergy_memo?' <i class="fas fa-triangle-exclamation text-warning" title="알레르기/주의"></i>':''}</div><small class="text-muted">${escapeHtml(c.phone)||'-'}</small></div>
             </div></td>
-            <td><span class="badge" style="background:${gc};font-size:.7rem">${c.grade}</span></td>
+            <td><span class="badge" style="background:${gc};font-size:.7rem">${escapeHtml(c.grade)}</span></td>
             <td>${crmTagBadges(c.tags,c.auto_tags)}</td>
             <td class="text-center fw-bold">${c.visit_count}회${c.visit_cycle_days?`<small class="text-muted d-block">주기 ${c.visit_cycle_days}일</small>`:''}</td>
             <td class="text-end fw-bold">${formatMoney(c.total_spent)}<small class="text-muted d-block">객단가 ${formatMoney(c.avg_ticket)}</small></td>
@@ -6731,7 +6743,7 @@ async function crmCustomerDetail(id){
         const body=`
             <div class="d-flex align-items-center gap-3 mb-3">
                 <div style="width:54px;height:54px;border-radius:50%;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:1.3rem;overflow:hidden">${safeUrl(c.photo_url)?`<img src="${safeUrl(c.photo_url)}" style="width:100%;height:100%;object-fit:cover">`:escapeHtml((c.name||'?')[0])}</div>
-                <div><div class="d-flex align-items-center gap-2"><span class="fs-5 fw-bold">${escapeHtml(c.name)}</span><span class="badge" style="background:${gc}">${c.grade}</span></div><small class="text-muted">${escapeHtml(c.phone)||'-'}</small></div>
+                <div><div class="d-flex align-items-center gap-2"><span class="fs-5 fw-bold">${escapeHtml(c.name)}</span><span class="badge" style="background:${gc}">${escapeHtml(c.grade)}</span></div><small class="text-muted">${escapeHtml(c.phone)||'-'}</small></div>
             </div>
             <div class="row g-2 mb-3">
                 <div class="col-3"><div class="bg-light rounded-3 p-2 text-center"><div class="fw-bold">${c.visit_count}</div><small class="text-muted">방문</small></div></div>
@@ -6754,7 +6766,7 @@ async function crmCustomerDetail(id){
                 <div class="tab-pane fade" id="cdVisits"><table class="table table-sm align-middle"><thead class="table-light"><tr><th>날짜</th><th>서비스</th><th>담당</th><th class="text-end">금액</th><th></th></tr></thead><tbody>${(c.visits||[]).map(v=>`<tr><td>${crmDateOnly(v.visit_date)}</td><td>${escapeHtml(v.service_name)||'-'}</td><td>${escapeHtml(v.staff_name)||'-'}</td><td class="text-end">${formatMoney(v.amount)}</td><td><button class="btn btn-sm btn-outline-danger border-0" onclick="crmDeleteVisit(${v.id},${id})"><i class="fas fa-trash"></i></button></td></tr>`).join('')||`<tr><td colspan="5" class="text-center text-muted py-3">방문 이력 없음</td></tr>`}</tbody></table></div>
                 <div class="tab-pane fade" id="cdMessages">
                     <div class="fw-bold small mb-1">메시지</div>
-                    <table class="table table-sm align-middle"><tbody>${(c.messages||[]).map(m=>`<tr><td>${m.channel}</td><td>${escapeHtml(m.content)}</td><td class="text-muted text-nowrap">${crmDateOnly(m.sent_at)}</td></tr>`).join('')||`<tr><td class="text-center text-muted py-2">발송 내역 없음</td></tr>`}</tbody></table>
+                    <table class="table table-sm align-middle"><tbody>${(c.messages||[]).map(m=>`<tr><td>${escapeHtml(m.channel)}</td><td>${escapeHtml(m.content)}</td><td class="text-muted text-nowrap">${crmDateOnly(m.sent_at)}</td></tr>`).join('')||`<tr><td class="text-center text-muted py-2">발송 내역 없음</td></tr>`}</tbody></table>
                 </div>
             </div>`;
         const footer=`
@@ -6868,7 +6880,7 @@ function crmRenderDayCalendar(cal){
     for(let h=startH;h<=endH;h++) hours.push(h);
     const staff=cal.staff.length?cal.staff:[{id:0,name:'전체'}];
     const colW=Math.max(140, Math.floor(760/staff.length));
-    let header=`<div style="display:flex;border-bottom:2px solid #eef2ff"><div style="width:50px;flex-shrink:0"></div>${staff.map(s=>`<div style="flex:1;min-width:${colW}px;text-align:center;font-weight:700;padding:6px;color:#667eea">${s.name}</div>`).join('')}</div>`;
+    let header=`<div style="display:flex;border-bottom:2px solid #eef2ff"><div style="width:50px;flex-shrink:0"></div>${staff.map(s=>`<div style="flex:1;min-width:${colW}px;text-align:center;font-weight:700;padding:6px;color:#667eea">${escapeHtml(s.name)}</div>`).join('')}</div>`;
     let gridRows=hours.map(h=>`<div style="display:flex;height:${H}px;border-bottom:1px solid #f3f4f6"><div style="width:50px;flex-shrink:0;font-size:.72rem;color:#9ca3af;text-align:right;padding-right:6px">${h}:00</div>${staff.map(()=>`<div style="flex:1;min-width:${colW}px;border-left:1px solid #f8fafc"></div>`).join('')}</div>`).join('');
     let events=cal.events.map(ev=>{
         const dt=new Date(ev.reserved_at.replace(' ','T'));
@@ -7027,8 +7039,8 @@ async function crmRenderAnalytics(body){
         try{
             const a=await apiGet(`/api/crm/stats/analytics?range=${range}&${crmScopeQS()}`);
             const kpi=(label,val,sub)=>`<div class="col-6 col-lg-3"><div class="card data-card h-100"><div class="card-body py-3 text-center"><div class="fs-4 fw-bold">${val}</div><small class="text-muted">${label}</small>${sub?`<div><small class="text-muted">${sub}</small></div>`:''}</div></div></div>`;
-            const svcRows=(a.by_service||[]).slice(0,8).map(x=>`<tr><td class="fw-bold">${x.name}</td><td class="text-end">${x.count}건</td><td class="text-end">${formatMoney(x.revenue)}</td></tr>`).join('')||`<tr><td colspan="3" class="text-center text-muted py-3">데이터 없음</td></tr>`;
-            const staffRows=(a.by_staff||[]).map(x=>`<tr><td class="fw-bold">${x.staff_name}</td><td class="text-end">${x.count}건</td><td class="text-end">${formatMoney(x.revenue)}</td></tr>`).join('')||`<tr><td colspan="3" class="text-center text-muted py-3">데이터 없음</td></tr>`;
+            const svcRows=(a.by_service||[]).slice(0,8).map(x=>`<tr><td class="fw-bold">${escapeHtml(x.name)}</td><td class="text-end">${x.count}건</td><td class="text-end">${formatMoney(x.revenue)}</td></tr>`).join('')||`<tr><td colspan="3" class="text-center text-muted py-3">데이터 없음</td></tr>`;
+            const staffRows=(a.by_staff||[]).map(x=>`<tr><td class="fw-bold">${escapeHtml(x.staff_name)}</td><td class="text-end">${x.count}건</td><td class="text-end">${formatMoney(x.revenue)}</td></tr>`).join('')||`<tr><td colspan="3" class="text-center text-muted py-3">데이터 없음</td></tr>`;
             box.innerHTML=`
                 <div class="row g-3 mb-3">
                     ${kpi('총 매출',formatMoney(a.total_revenue),a.total_visits+'건')}
@@ -7161,7 +7173,7 @@ async function crmMsgRender(tab){
                 </div></div></div>`;
         } else if(tab==='templates'){
             const tpls=await apiGet('/api/crm/message-templates');
-            const rows=tpls.map(t=>`<tr><td class="fw-bold">${escapeHtml(t.name)}</td><td><span class="badge bg-secondary">${t.channel}</span></td><td>${escapeHtml(t.category)||'-'}</td><td class="text-muted small">${escapeHtml(t.body)}</td><td class="text-end"><button class="btn btn-sm btn-outline-primary border-0" onclick='crmTemplateForm(${JSON.stringify(t).replace(/'/g,"&#39;")})'><i class="fas fa-pen"></i></button><button class="btn btn-sm btn-outline-danger border-0" onclick="crmTemplateDelete(${t.id})"><i class="fas fa-trash"></i></button></td></tr>`).join('')||`<tr><td colspan="5" class="text-center text-muted py-3">템플릿이 없습니다.</td></tr>`;
+            const rows=tpls.map(t=>`<tr><td class="fw-bold">${escapeHtml(t.name)}</td><td><span class="badge bg-secondary">${escapeHtml(t.channel)}</span></td><td>${escapeHtml(t.category)||'-'}</td><td class="text-muted small">${escapeHtml(t.body)}</td><td class="text-end"><button class="btn btn-sm btn-outline-primary border-0" onclick='crmTemplateForm(${JSON.stringify(t).replace(/'/g,"&#39;")})'><i class="fas fa-pen"></i></button><button class="btn btn-sm btn-outline-danger border-0" onclick="crmTemplateDelete(${t.id})"><i class="fas fa-trash"></i></button></td></tr>`).join('')||`<tr><td colspan="5" class="text-center text-muted py-3">템플릿이 없습니다.</td></tr>`;
             box.innerHTML=`<div class="card data-card"><div class="card-header d-flex justify-content-between align-items-center"><h6 class="mb-0">메시지 템플릿</h6><button class="btn btn-sm btn-primary" onclick="crmTemplateForm()"><i class="fas fa-plus me-1"></i>템플릿 추가</button></div><div class="card-body p-0"><div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead class="table-light"><tr><th>이름</th><th>채널</th><th>분류</th><th>내용</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div><div class="card-footer small text-muted">치환변수: {고객명} {매장명} {포인트}</div></div>`;
         } else if(tab==='log'){
             const logs=await apiGet('/api/crm/messages');
@@ -7173,7 +7185,7 @@ async function crmMsgRender(tab){
 async function crmMessageForm(opts){
     opts=opts||{};
     const tpls=opts.templates||await apiGet('/api/crm/message-templates');
-    const tplOpts=`<option value="">직접 입력</option>`+tpls.map(t=>`<option value="${t.id}" ${opts.template_id===t.id?'selected':''} data-body="${(t.body||'').replace(/"/g,'&quot;')}" data-ch="${t.channel}">${t.name}</option>`).join('');
+    const tplOpts=`<option value="">직접 입력</option>`+tpls.map(t=>`<option value="${t.id}" ${opts.template_id===t.id?'selected':''} data-body="${escapeHtml(t.body||'')}" data-ch="${escapeHtml(t.channel)}">${escapeHtml(t.name)}</option>`).join('');
     const segSel = opts.customer_id ? `<input type="hidden" id="smCust" value="${opts.customer_id}">` :
         `<div class="col-12"><label class="form-label">대상 세그먼트</label><select class="form-select" id="smSeg"><option value="all" ${opts.segment==='all'?'selected':''}>전체 고객</option><option value="dormant" ${opts.segment==='dormant'?'selected':''}>휴면 고객</option><option value="birthday" ${opts.segment==='birthday'?'selected':''}>이달 생일</option><option value="vip" ${opts.segment==='vip'?'selected':''}>VIP·GOLD</option></select></div>`;
     const body=`<div class="row g-3">
@@ -7206,10 +7218,10 @@ function crmMessageToCustomer(id,name){ crmMessageForm({customer_id:id, title:`$
 function crmTemplateForm(existing){
     const t=existing||{}; const isEdit=!!(existing&&existing.id);
     const body=`<div class="row g-3">
-        <div class="col-md-6"><label class="form-label">템플릿명 <span class="text-danger">*</span></label><input class="form-control" id="tfName" value="${t.name||''}"></div>
+        <div class="col-md-6"><label class="form-label">템플릿명 <span class="text-danger">*</span></label><input class="form-control" id="tfName" value="${escapeHtml(t.name||'')}"></div>
         <div class="col-md-3"><label class="form-label">채널</label><select class="form-select" id="tfChannel"><option value="sms" ${t.channel==='sms'?'selected':''}>SMS</option><option value="alimtalk" ${t.channel==='alimtalk'?'selected':''}>알림톡</option></select></div>
-        <div class="col-md-3"><label class="form-label">분류</label><input class="form-control" id="tfCat" value="${t.category||''}" placeholder="reminder 등"></div>
-        <div class="col-12"><label class="form-label">내용 <small class="text-muted">({고객명} {매장명} {포인트})</small></label><textarea class="form-control" id="tfBody" rows="3">${t.body||''}</textarea></div>
+        <div class="col-md-3"><label class="form-label">분류</label><input class="form-control" id="tfCat" value="${escapeHtml(t.category||'')}" placeholder="reminder 등"></div>
+        <div class="col-12"><label class="form-label">내용 <small class="text-muted">({고객명} {매장명} {포인트})</small></label><textarea class="form-control" id="tfBody" rows="3">${escapeHtml(t.body||'')}</textarea></div>
         <div class="col-12"><div id="tfResult"></div></div>
     </div>`;
     crmModal(isEdit?'템플릿 수정':'템플릿 추가', body, `<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">닫기</button><button type="button" class="btn btn-primary" onclick="crmTemplateSave(${isEdit?t.id:'null'})">${isEdit?'수정':'추가'}</button>`);
@@ -7254,8 +7266,8 @@ function crmOpenServicePrice(id){ const service=crmServiceCache.find(item=>item.
 function crmServiceForm(existing){
     const s=existing||{}; const isEdit=!!(existing&&existing.id);
     const body=`<div class="row g-3">
-        <div class="col-md-6"><label class="form-label">서비스명 <span class="text-danger">*</span></label><input class="form-control" id="sfName" value="${s.name||''}"></div>
-        <div class="col-md-6"><label class="form-label">카테고리</label><input class="form-control" id="sfCat" list="sfCatList" value="${s.category||''}" placeholder="예) 기본/프리미엄/관리/추가"><datalist id="sfCatList"><option value="기본"><option value="프리미엄"><option value="관리"><option value="추가"><option value="기타"></datalist></div>
+        <div class="col-md-6"><label class="form-label">서비스명 <span class="text-danger">*</span></label><input class="form-control" id="sfName" value="${escapeHtml(s.name||'')}"></div>
+        <div class="col-md-6"><label class="form-label">카테고리</label><input class="form-control" id="sfCat" list="sfCatList" value="${escapeHtml(s.category||'')}" placeholder="예) 기본/프리미엄/관리/추가"><datalist id="sfCatList"><option value="기본"><option value="프리미엄"><option value="관리"><option value="추가"><option value="기타"></datalist></div>
         <div class="col-md-6"><label class="form-label">가격</label><input class="form-control" id="sfPrice" type="number" value="${s.price!=null?s.price:0}"></div>
         <div class="col-md-6"><label class="form-label">소요(분)</label><input class="form-control" id="sfDur" type="number" value="${s.duration_min!=null?s.duration_min:60}"></div>
         ${isEdit?`<div class="col-12"><div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="sfActive" ${s.is_active!==false?'checked':''}><label class="form-check-label">활성</label></div></div>`:''}
@@ -7274,7 +7286,7 @@ async function crmServiceDelete(id){ if(!confirm('이 서비스를 삭제할까�
 async function crmServicePriceForm(sid,name){
     const prices=await apiGet(`/api/crm/services/${sid}/prices`);
     const priceMap={}; prices.forEach(p=>priceMap[p.staff_id]=p.price);
-    const rows=crmStaffCache.map(st=>`<tr><td>${st.name}</td><td><div class="input-group input-group-sm"><input class="form-control" id="spp_${st.id}" type="number" value="${priceMap[st.id]!=null?priceMap[st.id]:''}" placeholder="기본가 사용"><button class="btn btn-outline-primary" onclick="crmServicePriceSave(${sid},${st.id})">저장</button></div></td></tr>`).join('');
+    const rows=crmStaffCache.map(st=>`<tr><td>${escapeHtml(st.name)}</td><td><div class="input-group input-group-sm"><input class="form-control" id="spp_${st.id}" type="number" value="${priceMap[st.id]!=null?priceMap[st.id]:''}" placeholder="기본가 사용"><button class="btn btn-outline-primary" onclick="crmServicePriceSave(${sid},${st.id})">저장</button></div></td></tr>`).join('');
     crmModal(`${name} — 직원별 단가`, `<table class="table align-middle"><thead class="table-light"><tr><th>직원</th><th>단가(원)</th></tr></thead><tbody>${rows||'<tr><td colspan=2 class="text-muted text-center">직원 없음</td></tr>'}</tbody></table><div class="small text-muted">비워두면 서비스 기본가가 적용됩니다.</div>`, `<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">닫기</button>`);
 }
 async function crmServicePriceSave(sid,staffId){
@@ -7315,19 +7327,19 @@ async function loadOwnerInfo(c, t) {
                     <div class="row g-3">
                         <div class="col-md-6">
                             <label class="form-label fw-bold">매장명</label>
-                            <input class="form-control" id="infoName" value="${info.name || ''}">
+                            <input class="form-control" id="infoName" value="${escapeHtml(info.name || '')}">
                         </div>
                         <div class="col-md-6">
                             <label class="form-label fw-bold">사업자번호</label>
-                            <input class="form-control" id="infoBizNo" value="${info.business_no || ''}">
+                            <input class="form-control" id="infoBizNo" value="${escapeHtml(info.business_no || '')}">
                         </div>
                         <div class="col-12">
                             <label class="form-label fw-bold">주소</label>
-                            <input class="form-control" id="infoAddr" value="${info.address || ''}">
+                            <input class="form-control" id="infoAddr" value="${escapeHtml(info.address || '')}">
                         </div>
                         <div class="col-md-6">
                             <label class="form-label fw-bold">연락처</label>
-                            <input class="form-control" id="infoPhone" value="${info.phone || ''}">
+                            <input class="form-control" id="infoPhone" value="${escapeHtml(info.phone || '')}">
                         </div>
                         <div class="col-md-6">
                             <label class="form-label fw-bold">분야 <span class="text-danger">*</span></label>
@@ -7341,7 +7353,7 @@ async function loadOwnerInfo(c, t) {
                         </div>
                         <div class="col-md-6">
                             <label class="form-label fw-bold">네이버 플레이스 URL</label>
-                            <input class="form-control" id="infoPlaceUrl" value="${info.place_url || ''}" placeholder="https://map.naver.com/...">
+                            <input class="form-control" id="infoPlaceUrl" value="${escapeHtml(info.place_url || '')}" placeholder="https://map.naver.com/...">
                         </div>
                         <div class="col-12">
                             <button class="btn btn-primary" onclick="saveMerchantInfo()"><i class="fas fa-save me-1"></i>매장 정보 저장</button>
@@ -7361,8 +7373,8 @@ async function loadOwnerInfo(c, t) {
                 <div class="card-header"><h5><i class="fas fa-chart-pie me-2"></i>매장 현황</h5></div>
                 <div class="card-body">
                     <ul class="list-unstyled">
-                        <li class="mb-3 d-flex justify-content-between border-bottom pb-2"><span class="text-muted">매장명</span><span class="fw-bold">${info.name}</span></li>
-                        <li class="mb-3 d-flex justify-content-between border-bottom pb-2"><span class="text-muted">분야</span><span class="badge bg-primary">${info.display_category}</span></li>
+                        <li class="mb-3 d-flex justify-content-between border-bottom pb-2"><span class="text-muted">매장명</span><span class="fw-bold">${escapeHtml(info.name)}</span></li>
+                        <li class="mb-3 d-flex justify-content-between border-bottom pb-2"><span class="text-muted">분야</span><span class="badge bg-primary">${escapeHtml(info.display_category)}</span></li>
                         <li class="mb-3 d-flex justify-content-between border-bottom pb-2"><span class="text-muted">활성 직원 수</span><span class="fw-bold">${stats.active_staff}명</span></li>
                         <li class="mb-3 d-flex justify-content-between border-bottom pb-2"><span class="text-muted">이번달 매출</span><span class="fw-bold text-primary">${formatMoney(stats.month_sales)}</span></li>
                         <li class="d-flex justify-content-between"><span class="text-muted">총 결제건수</span><span class="fw-bold">${stats.total_transactions}건</span></li>
@@ -7572,7 +7584,7 @@ async function loadOwnerReceiptReview(c, t) {
                     <div class="mb-3">
                         <label class="form-label fw-bold small mb-1">리뷰 URL</label>
                         <div class="input-group input-group-sm">
-                            <input class="form-control bg-light" id="reviewUrlInput" value="${reviewUrl}" readonly style="font-size:.8rem;">
+                            <input class="form-control bg-light" id="reviewUrlInput" value="${escapeHtml(reviewUrl)}" readonly style="font-size:.8rem;">
                             <button class="btn btn-primary" onclick="copyReviewUrl()" title="복사"><i class="fas fa-copy"></i></button>
                         </div>
                     </div>
@@ -7606,7 +7618,7 @@ async function loadOwnerReceiptReview(c, t) {
                 <div class="card-body px-4 py-3">
                     <h6 class="fw-bold mb-2"><i class="fas fa-wifi text-success me-2"></i>NFC 태그 설정</h6>
                     <p class="small text-muted mb-2">NFC 태그에 아래 URL을 기록하세요:</p>
-                    <code class="d-block bg-light p-2 rounded small mb-2" style="word-break:break-all;font-size:.75rem;">${reviewUrl}</code>
+                    <code class="d-block bg-light p-2 rounded small mb-2" style="word-break:break-all;font-size:.75rem;">${escapeHtml(reviewUrl)}</code>
                     <div class="small text-muted">
                         <i class="fas fa-lightbulb text-warning me-1"></i>
                         NFC 라이터 앱으로 URL 기록 → 매장 카운터에 부착 → 고객 터치 시 자동 이동
@@ -7931,8 +7943,8 @@ async function reloadDesignerTx() {
         <thead><tr><th>ID</th><th>금액</th><th>할부</th><th>카드</th><th>승인번호</th><th>일시</th></tr></thead>
         <tbody>${txns.map(tx=>`<tr>
             <td>${tx.id}</td><td class="fw-bold">${formatMoney(tx.amount)}</td>
-            <td>${tx.installment_months||'일시불'}</td><td>${tx.card_brand||'-'}</td>
-            <td><code>${tx.approval_code||'-'}</code></td><td>${formatDate(tx.created_at)}</td>
+            <td>${tx.installment_months||'일시불'}</td><td>${escapeHtml(tx.card_brand||'-')}</td>
+            <td><code>${escapeHtml(tx.approval_code||'-')}</code></td><td>${formatDate(tx.created_at)}</td>
         </tr>`).join('')}</tbody>
     </table></div>`;
 }
@@ -7961,8 +7973,8 @@ async function loadDesignerProfile(c, t) {
             </div>
         </div>
         <ul class="list-unstyled" style="max-width:400px;margin:0 auto;">
-            <li class="mb-3 d-flex justify-content-between border-bottom pb-2"><span class="text-muted">이름</span><span class="fw-bold">${stats.staff_name}</span></li>
-            <li class="mb-3 d-flex justify-content-between border-bottom pb-2"><span class="text-muted">직원 코드</span><code class="fs-5">${stats.staff_code}</code></li>
+            <li class="mb-3 d-flex justify-content-between border-bottom pb-2"><span class="text-muted">이름</span><span class="fw-bold">${escapeHtml(stats.staff_name)}</span></li>
+            <li class="mb-3 d-flex justify-content-between border-bottom pb-2"><span class="text-muted">직원 코드</span><code class="fs-5">${escapeHtml(stats.staff_code)}</code></li>
             <li class="mb-3 d-flex justify-content-between border-bottom pb-2"><span class="text-muted">역할</span><span class="badge bg-warning">직원</span></li>
             <li class="mb-3 d-flex justify-content-between border-bottom pb-2"><span class="text-muted">이번달 매출</span><span class="fw-bold text-primary">${formatMoney(stats.month_sales)}</span></li>
             <li class="d-flex justify-content-between"><span class="text-muted">총 결제건수</span><span class="fw-bold">${stats.total_transactions}건</span></li>
@@ -8376,6 +8388,8 @@ const DISPATCH_STATUS_BADGE = {
     stopped: ['dark', 'circle-stop'],
     failed: ['danger', 'circle-exclamation'],
     skipped: ['warning text-dark', 'pause'],
+    manual_queued: ['secondary', 'hand'],
+    manual_done: ['success', 'user-check'],
 };
 
 function dispatchStatusBadge(d) {
@@ -8394,17 +8408,18 @@ async function loadAdminAdDispatch(c, t) {
     if (!dispatchDate) dispatchDate = todayIso();
     try {
         const qs = `?date=${encodeURIComponent(dispatchDate)}`;
-        const [plan, history] = await Promise.all([
+        const [plan, history, manual] = await Promise.all([
             apiGet('/api/admin/ad-dispatch/preview' + qs),
             apiGet('/api/admin/ad-dispatch' + qs),
+            apiGet('/api/admin/ad-dispatch/manual-queue' + qs),
         ]);
-        c.innerHTML = dispatchMarkup(plan, history);
+        c.innerHTML = dispatchMarkup(plan, history, manual);
     } catch (e) {
         c.innerHTML = `<div class="alert alert-danger">${escapeHtml(e.message)}</div>`;
     }
 }
 
-function dispatchMarkup(plan, history) {
+function dispatchMarkup(plan, history, manual) {
     const labels = plan.skip_reason_labels || {};
     const planRows = (plan.items || []).map(i => {
         const willRun = i.action === 'dispatch';
@@ -8464,8 +8479,12 @@ function dispatchMarkup(plan, history) {
 
     // 리워드팝 공식 API는 플레이스 미션 전용이다. 오해를 줄이려고 화면에 못박아 둔다.
     const scopeNotice = `<div class="alert alert-light border small mb-3"><i class="fas fa-circle-info me-1"></i>
-        자동 집행 대상은 <b>플레이스 방문</b> 뿐입니다. 리워드팝 공식 API에는 블로그 리뷰 상품이 없고,
-        클로 플러스는 2026-09-01부터 신규 접수가 중단되어 자동 집행할 수 없습니다.</div>`;
+        <b>자동 전송 대상은 플레이스 방문 뿐입니다.</b>
+        블로그 배포(클로 블로그)는 리워드팝에 상품과 단가는 있지만 <b>등록 API가 없어</b>
+        자동 전송이 불가능합니다 &mdash; 아래 <b>블로그 수동 접수</b> 카드에서 오늘 접수할 수량을
+        확인하고, 리워드팝 어드민에서 접수한 뒤 완료 처리해주세요. 완료 처리하면 진도표와
+        기간 집계에 플레이스와 똑같이 반영됩니다.
+        클로 플러스는 2026-09-01부터 신규 접수가 중단됐습니다.</div>`;
 
     const basisLabel = plan.balance_basis === 'supply_price' ? '리워드팝 공급 단가 기준'
         : plan.balance_basis === 'sale_price' ? 'ADPAY 판매 단가로 추정(공급 단가 조회 실패)'
@@ -8526,6 +8545,8 @@ function dispatchMarkup(plan, history) {
             <div id="dispatchResult" class="mt-3"></div>
         </div>
     </div>
+
+    ${manualQueueMarkup(manual)}
 
     <div class="card data-card mb-3" id="dispatchReportCard">
         <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
@@ -8692,6 +8713,177 @@ function showDispatchRequest(id) {
         <div class="small text-muted mb-2">리워드팝 공식 <code>POST /ads</code> (CreateAdDto) 규격 그대로 보낸 값입니다.</div>
         <pre class="bg-light border rounded p-3" style="font-size:.8rem;max-height:50vh;overflow:auto">${escapeHtml(pretty)}</pre>`;
     new bootstrap.Modal(document.getElementById('formModal')).show();
+}
+
+// ─── 블로그 수동 접수 큐 ────────────────────────────────────
+//
+// 리워드팝에 블로그 등록 API 가 없어서 전송은 사람이 한다. 시스템은 최고관리자가
+// 정한 월 목표를 일 단위로 쪼개 "오늘 몇 건" 만 알려주고, 완료 처리된 건만
+// 진도표·집계에 실적으로 넣는다.
+
+function manualProgressBar(item) {
+    const monthly = Number(item.monthly_target || 0);
+    if (monthly <= 0) return '<span class="text-muted small">월 목표 없음</span>';
+    const done = Number(item.month_done || 0);
+    const expected = Number(item.month_expected || 0);
+    const pct = Math.min(100, Math.round(done / monthly * 100));
+    // 오늘까지 쌓여 있어야 할 양보다 적으면 빨간색 — 밀린 걸 한눈에 보이게 한다
+    const behind = done < expected;
+    return `<div style="min-width:150px">
+        <div class="progress" style="height:6px">
+            <div class="progress-bar bg-${behind ? 'danger' : 'success'}" style="width:${pct}%"></div>
+        </div>
+        <div class="small ${behind ? 'text-danger' : 'text-muted'}" style="font-size:.72rem">
+            이번 달 ${done.toLocaleString()} / ${monthly.toLocaleString()}건
+            ${behind ? ` · 오늘까지 ${expected.toLocaleString()}건 필요` : ''}
+        </div>
+        <div class="text-muted" style="font-size:.68rem">${escapeHtml(item.daily_description || '')}</div>
+    </div>`;
+}
+
+// 리워드팝 공급 단가(원가)와 마진. 단가를 못 읽었으면 그 사실을 그대로 보여준다
+// — 빈칸으로 두면 "원가가 0원"으로 오해할 수 있다.
+function manualCostCell(item) {
+    const sale = `<div class="fw-bold">${Number(item.est_cost).toLocaleString()}원</div>`;
+    if (item.supply_unit_price == null) {
+        return sale + '<div class="small text-muted">원가 미확인</div>';
+    }
+    const points = Number(item.required_points || 0);
+    const margin = Number(item.margin || 0);
+    return sale + `<div class="small text-muted">원가 ${points.toLocaleString()}P</div>
+        <div class="small ${margin < 0 ? 'text-danger fw-bold' : 'text-success'}">
+            마진 ${margin.toLocaleString()}원${item.supply_ambiguous ? ' <i class="fas fa-triangle-exclamation" title="이 매체에 단가가 여러 개라 가장 높은 값으로 계산했습니다"></i>' : ''}</div>`;
+}
+
+function manualQueueMarkup(manual) {
+    if (!manual) return '';
+    const labels = manual.skip_reason_labels || {};
+    window._manualQueue = manual.items || [];
+
+    const rows = (manual.items || []).map(i => {
+        const key = `${i.merchant_id}|${i.ad_type}`;
+        let actionCell, statusCell;
+        if (i.state === 'done') {
+            statusCell = `<span class="badge bg-success"><i class="fas fa-user-check me-1"></i>접수 완료 ${Number(i.done_count).toLocaleString()}건</span>
+                ${i.external_order_id ? `<div class="small text-muted mt-1">주문번호 ${escapeHtml(i.external_order_id)}</div>` : ''}
+                ${i.note ? `<div class="small text-muted mt-1">${escapeHtml(i.note)}</div>` : ''}`;
+            actionCell = `<button class="btn btn-sm btn-outline-secondary" onclick="openManualComplete('${key}')" title="수량·메모 수정"><i class="fas fa-pen"></i></button>
+                <button class="btn btn-sm btn-outline-danger ms-1" onclick="revertManualDispatch('${key}')" title="완료 처리 되돌리기"><i class="fas fa-rotate-left"></i></button>`;
+        } else if (i.state === 'skip') {
+            statusCell = `<span class="badge bg-light text-dark border"><i class="fas fa-minus me-1"></i>${escapeHtml(labels[i.skip_reason] || i.skip_reason || '해당 없음')}</span>`;
+            actionCell = '';
+        } else {
+            statusCell = '<span class="badge bg-warning text-dark"><i class="fas fa-hand me-1"></i>접수 대기</span>';
+            actionCell = `<button class="btn btn-sm btn-primary" onclick="openManualComplete('${key}')">
+                <i class="fas fa-check me-1"></i>접수 완료</button>`;
+        }
+        return `<tr class="${i.state === 'skip' ? 'text-muted' : ''}">
+            <td>${escapeHtml(i.merchant_name)}
+                ${i.place_code ? `<div class="small text-muted">플레이스 ${escapeHtml(String(i.place_code))}</div>` : ''}</td>
+            <td>${manualProgressBar(i)}</td>
+            <td class="text-end fw-bold">${Number(i.target).toLocaleString()}</td>
+            <td class="small">${i.keywords && i.keywords.length ? escapeHtml(i.keywords.join(', ')) : '<span class="text-muted">-</span>'}</td>
+            <td class="text-end">${manualCostCell(i)}</td>
+            <td>${statusCell}</td>
+            <td class="text-nowrap">${actionCell}</td>
+        </tr>`;
+    }).join('');
+
+    return `
+    <div class="card data-card mb-3" id="manualQueueCard">
+        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h5 class="mb-0"><i class="fas fa-pen-nib me-2 text-info"></i>블로그 수동 접수 (${escapeHtml(manual.date)})</h5>
+            <span class="badge bg-light text-dark border">${escapeHtml(manual.manual_reason_label || '수동 접수')}</span>
+        </div>
+        <div class="card-body">
+            <div class="alert alert-info small mb-3"><i class="fas fa-circle-info me-1"></i>
+                월 목표를 그 달의 날짜 수로 나눠 <b>오늘 접수할 수량</b>을 계산한 목록입니다
+                (일별 합계는 월 목표와 정확히 일치합니다). 리워드팝 어드민에서 접수한 뒤
+                <b>접수 완료</b>를 눌러주세요. 누른 건만 진도표와 기간 집계에 실적으로 들어갑니다.</div>
+            ${manual.supply_price_error ? `<div class="alert alert-warning small mb-3"><i class="fas fa-triangle-exclamation me-1"></i>
+                <b>리워드팝 공급 단가(클로 블로그 원가)를 읽지 못했습니다.</b> ${escapeHtml(manual.supply_price_error)}<br>
+                접수 목록과 수량은 그대로 유효합니다. 원가와 필요 포인트만 비어 있습니다.</div>` : ''}
+            ${manual.unpriced_count ? `<div class="alert alert-warning small mb-3"><i class="fas fa-circle-question me-1"></i>
+                ${manual.unpriced_count}건은 리워드팝 공급 단가에 <code>cloblog</code> 항목이 없어 원가를 계산하지 못했습니다.
+                리워드팝 계정에 클로 블로그 단가가 설정돼 있는지 확인해주세요.</div>` : ''}
+            <div class="row g-3 mb-3">
+                ${kpiCard('오늘 접수할 매장', `${manual.todo_count}곳`, 'fas fa-hand', 'warning')}
+                ${kpiCard('오늘 접수할 수량', `${Number(manual.todo_total).toLocaleString()}건`, 'fas fa-layer-group', 'primary')}
+                ${kpiCard('예상 매출', `${Number(manual.todo_cost).toLocaleString()}원`, 'fas fa-won-sign', 'secondary')}
+                ${manual.required_points == null
+                    ? kpiCard('접수 완료', `${Number(manual.done_total).toLocaleString()}건`, 'fas fa-user-check', 'success')
+                    : kpiCard('필요 포인트', `${Number(manual.required_points).toLocaleString()}P`, 'fas fa-coins', 'info')}
+            </div>
+            <div class="table-responsive"><table class="table table-hover align-middle">
+                <thead><tr><th>가맹점</th><th>이번 달 진행</th><th class="text-end">오늘 접수</th>
+                    <th>추천 키워드</th><th class="text-end">판매가 / 원가</th><th>상태</th><th></th></tr></thead>
+                <tbody>${rows || '<tr><td colspan="7" class="text-center text-muted py-4">대상이 없습니다</td></tr>'}</tbody>
+            </table></div>
+        </div>
+    </div>`;
+}
+
+function openManualComplete(key) {
+    const item = (window._manualQueue || []).find(i => `${i.merchant_id}|${i.ad_type}` === key);
+    if (!item) return;
+    resetFormModalFooter(true);
+    document.getElementById('formModalBody').innerHTML = `
+        <h6 class="fw-bold mb-1">${escapeHtml(item.merchant_name)} · ${escapeHtml(item.ad_type_label)}</h6>
+        <div class="small text-muted mb-3">리워드팝 어드민에서 접수를 마친 뒤 저장해주세요. 저장한 수량이 진도표에 실적으로 들어갑니다.</div>
+        ${item.keywords && item.keywords.length ? `<div class="alert alert-light border small py-2">
+            추천 키워드: <b>${escapeHtml(item.keywords.join(', '))}</b></div>` : ''}
+        <div class="mb-3">
+            <label class="form-label">접수 수량</label>
+            <input type="number" min="1" class="form-control" id="manualCount"
+                value="${item.state === 'done' ? item.done_count : item.target}">
+            <div class="form-text">오늘 자동 배분된 목표는 ${Number(item.target).toLocaleString()}건입니다. 실제로 접수한 수량을 넣어주세요.</div>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">리워드팝 주문번호 <span class="text-muted small">(선택)</span></label>
+            <input type="text" maxlength="100" class="form-control" id="manualOrderId"
+                value="${escapeHtml(item.external_order_id || '')}" placeholder="나중에 대조할 수 있게 남겨두면 좋습니다">
+        </div>
+        <div class="mb-1">
+            <label class="form-label">메모 <span class="text-muted small">(선택)</span></label>
+            <input type="text" maxlength="300" class="form-control" id="manualNote"
+                value="${escapeHtml(item.note || '')}">
+        </div>`;
+    const btn = document.getElementById('formModalSave');
+    if (btn) btn.onclick = () => submitManualComplete(item.merchant_id, item.ad_type);
+    new bootstrap.Modal(document.getElementById('formModal')).show();
+}
+
+async function submitManualComplete(merchantId, adType) {
+    const count = parseInt(document.getElementById('manualCount').value, 10);
+    if (!count || count < 1) { showToast('접수 수량은 1건 이상이어야 합니다', false); return; }
+    try {
+        await apiPost('/api/admin/ad-dispatch/manual-queue/complete', {
+            merchant_id: merchantId,
+            ad_type: adType,
+            execution_date: dispatchDate,
+            count: count,
+            external_order_id: document.getElementById('manualOrderId').value.trim() || null,
+            note: document.getElementById('manualNote').value.trim() || null,
+        });
+        bootstrap.Modal.getInstance(document.getElementById('formModal')).hide();
+        showToast(`접수 완료로 기록했습니다 — ${count.toLocaleString()}건`, true);
+        navigate('admin-ad-dispatch');
+    } catch (e) { showToast(e.message, false); }
+}
+
+async function revertManualDispatch(key) {
+    const item = (window._manualQueue || []).find(i => `${i.merchant_id}|${i.ad_type}` === key);
+    if (!item) return;
+    if (!confirm(`${item.merchant_name} 의 접수 완료 처리를 되돌립니다.\n진도표 실적에서 빠집니다. 계속할까요?`)) return;
+    try {
+        await apiPost('/api/admin/ad-dispatch/manual-queue/revert', {
+            merchant_id: item.merchant_id,
+            ad_type: item.ad_type,
+            execution_date: dispatchDate,
+        });
+        showToast('완료 처리를 되돌렸습니다', true);
+        navigate('admin-ad-dispatch');
+    } catch (e) { showToast(e.message, false); }
 }
 
 // ─── 광고 집행 키워드 (관리자 승인 / 매장 등록) ─────────────
