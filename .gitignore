@@ -51,3 +51,6 @@ android/.gradle/
 android/local.properties
 android/app/build/
 .android-tools/
+
+# 업로드 파일 (APK 등) — 서버 디스크 보관, 리포에 커밋하지 않음
+uploads/

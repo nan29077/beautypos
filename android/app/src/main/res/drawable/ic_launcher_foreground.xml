@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ADPAY 아이콘 전경: 흰 꽃잎 6장 + 주황 코어 (favicon.svg 재현, 108 뷰포트 중앙 배치) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 꽃잎 6장: 하나를 그려 중심(54,54) 기준 60도씩 회전 -->
+    <group android:name="petals">
+        <group android:pivotX="54" android:pivotY="54" android:rotation="0">
+            <path android:pathData="M54,15.6 a11.8,17.4 0 1,0 0,34.8 a11.8,17.4 0 1,0 0,-34.8 z">
+                <aapt:attr name="android:fillColor">
+                    <gradient android:type="linear"
+                        android:startX="37" android:startY="24" android:endX="71" android:endY="84">
+                        <item android:offset="0" android:color="#FFFFFFFF"/>
+                        <item android:offset="1" android:color="#FFDCD3FF"/>
+                    </gradient>
+                </aapt:attr>
+            </path>
+        </group>
+        <group android:pivotX="54" android:pivotY="54" android:rotation="60">
+            <path android:pathData="M54,15.6 a11.8,17.4 0 1,0 0,34.8 a11.8,17.4 0 1,0 0,-34.8 z"
+                android:fillColor="#FFEFE9FF"/>
+        </group>
+        <group android:pivotX="54" android:pivotY="54" android:rotation="120">
+            <path android:pathData="M54,15.6 a11.8,17.4 0 1,0 0,34.8 a11.8,17.4 0 1,0 0,-34.8 z"
+                android:fillColor="#FFFFFFFF"/>
+        </group>
+        <group android:pivotX="54" android:pivotY="54" android:rotation="180">
+            <path android:pathData="M54,15.6 a11.8,17.4 0 1,0 0,34.8 a11.8,17.4 0 1,0 0,-34.8 z"
+                android:fillColor="#FFEFE9FF"/>
+        </group>
+        <group android:pivotX="54" android:pivotY="54" android:rotation="240">
+            <path android:pathData="M54,15.6 a11.8,17.4 0 1,0 0,34.8 a11.8,17.4 0 1,0 0,-34.8 z"
+                android:fillColor="#FFFFFFFF"/>
+        </group>
+        <group android:pivotX="54" android:pivotY="54" android:rotation="300">
+            <path android:pathData="M54,15.6 a11.8,17.4 0 1,0 0,34.8 a11.8,17.4 0 1,0 0,-34.8 z"
+                android:fillColor="#FFEFE9FF"/>
+        </group>
+    </group>
+
+    <!-- 코어: 주황 radial -->
+    <path android:pathData="M54,42.75 a11.25,11.25 0 1,0 0,22.5 a11.25,11.25 0 1,0 0,-22.5 z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="radial"
+                android:centerX="54" android:centerY="51.75" android:gradientRadius="12.4">
+                <item android:offset="0" android:color="#FFFFC083"/>
+                <item android:offset="1" android:color="#FFFF8F7A"/>
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- 하이라이트 -->
+    <path android:pathData="M50.6,47.2 m-3.4,0 a3.4,3.4 0 1,0 6.8,0 a3.4,3.4 0 1,0 -6.8,0 z"
+        android:fillColor="#FFFFFFFF" android:fillAlpha="0.55"/>
+</vector>

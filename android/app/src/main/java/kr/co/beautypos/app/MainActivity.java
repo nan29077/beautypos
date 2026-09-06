@@ -3,11 +3,17 @@ package kr.co.beautypos.app;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.DownloadManager;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.provider.Settings;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -25,8 +31,14 @@ import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.Toast;
 
+import org.json.JSONObject;
+
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.net.URL;
 
 public class MainActivity extends Activity {
     private static final String PREFS = "beautypos_preferences";
@@ -57,6 +69,9 @@ public class MainActivity extends Activity {
         } else {
             openLogin();
         }
+
+        // 앱 시작 시 서버의 최신 배포본을 확인해 업데이트를 안내한다.
+        checkForUpdate();
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -260,6 +275,126 @@ public class MainActivity extends Activity {
             Uri[] result = WebChromeClient.FileChooserParams.parseResult(resultCode, data);
             fileCallback.onReceiveValue(result);
             fileCallback = null;
+        }
+    }
+
+    // ─── 인앱 업데이트 ──────────────────────────────────────────
+    // 서버 /api/app/latest-version 의 version_code 가 이 앱보다 크면 안내한다.
+    // 다운로드는 DownloadManager, 설치는 content:// URI + 설치 인텐트로 처리해
+    // 별도 라이브러리(FileProvider/androidx) 없이 프레임워크만으로 완결한다.
+
+    private void checkForUpdate() {
+        if (serverUrl == null || serverUrl.isEmpty()) return;
+        final String base = serverUrl;
+        new Thread(() -> {
+            HttpURLConnection conn = null;
+            try {
+                URL url = new URL(base + "/api/app/latest-version");
+                conn = (HttpURLConnection) url.openConnection();
+                conn.setConnectTimeout(8000);
+                conn.setReadTimeout(8000);
+                if (conn.getResponseCode() != 200) return;
+                StringBuilder sb = new StringBuilder();
+                try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {
+                    String line;
+                    while ((line = br.readLine()) != null) sb.append(line);
+                }
+                JSONObject o = new JSONObject(sb.toString());
+                if (!o.optBoolean("available", false)) return;
+                int latest = o.optInt("version_code", 0);
+                if (latest <= BuildConfig.VERSION_CODE) return;
+                final String name = o.optString("version_name", "");
+                final String notes = o.optString("notes", "");
+                final boolean mandatory = o.optBoolean("mandatory", false);
+                final String downloadPath = o.optString("download_url", "");
+                if (downloadPath.isEmpty()) return;
+                runOnUiThread(() -> showUpdateDialog(name, notes, mandatory, downloadPath));
+            } catch (Exception ignored) {
+                // 업데이트 확인 실패는 조용히 무시 — 앱 사용은 계속된다.
+            } finally {
+                if (conn != null) conn.disconnect();
+            }
+        }).start();
+    }
+
+    private void showUpdateDialog(String versionName, String notes, boolean mandatory, String downloadPath) {
+        if (isFinishing()) return;
+        String message = "새 버전 " + versionName + " 이(가) 있습니다.";
+        if (notes != null && !notes.trim().isEmpty()) message += "\n\n" + notes.trim();
+        if (mandatory) message += "\n\n※ 계속 사용하려면 업데이트가 필요합니다.";
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this)
+                .setTitle("업데이트 안내")
+                .setMessage(message)
+                .setCancelable(!mandatory)
+                .setPositiveButton("업데이트", (d, which) -> startUpdateDownload(downloadPath));
+        if (mandatory) {
+            builder.setNegativeButton("종료", (d, which) -> finish());
+        } else {
+            builder.setNegativeButton("나중에", null);
+        }
+        builder.show();
+    }
+
+    private void startUpdateDownload(String downloadPath) {
+        // '알 수 없는 출처 앱 설치' 권한이 없으면 설정으로 유도한다.
+        if (!getPackageManager().canRequestPackageInstalls()) {
+            Toast.makeText(this, "설치를 위해 이 앱의 '알 수 없는 앱 설치' 권한을 허용해 주세요.", Toast.LENGTH_LONG).show();
+            try {
+                startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        Uri.parse("package:" + getPackageName())));
+            } catch (Exception ignored) {
+            }
+            return;
+        }
+
+        String fullUrl = downloadPath.startsWith("http") ? downloadPath : serverUrl + downloadPath;
+        final DownloadManager dm = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
+        if (dm == null) {
+            Toast.makeText(this, "다운로드를 시작할 수 없습니다.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        DownloadManager.Request request = new DownloadManager.Request(Uri.parse(fullUrl));
+        request.setTitle("BeautyPOS 업데이트");
+        request.setDescription("새 버전을 내려받는 중입니다.");
+        request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+        request.setDestinationInExternalFilesDir(this, Environment.DIRECTORY_DOWNLOADS, "beautypos-update.apk");
+        request.setMimeType("application/vnd.android.package-archive");
+
+        final long downloadId = dm.enqueue(request);
+        Toast.makeText(this, "업데이트를 내려받는 중입니다...", Toast.LENGTH_SHORT).show();
+
+        BroadcastReceiver receiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                long completedId = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1);
+                if (completedId != downloadId) return;
+                try {
+                    context.unregisterReceiver(this);
+                } catch (Exception ignored) {
+                }
+                Uri apkUri = dm.getUriForDownloadedFile(downloadId);
+                if (apkUri == null) {
+                    Toast.makeText(MainActivity.this, "업데이트 파일을 준비하지 못했습니다.", Toast.LENGTH_LONG).show();
+                    return;
+                }
+                Intent install = new Intent(Intent.ACTION_VIEW);
+                install.setDataAndType(apkUri, "application/vnd.android.package-archive");
+                install.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                try {
+                    startActivity(install);
+                } catch (Exception ex) {
+                    Toast.makeText(MainActivity.this, "설치 화면을 열 수 없습니다.", Toast.LENGTH_LONG).show();
+                }
+            }
+        };
+
+        IntentFilter filter = new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED);
+        } else {
+            registerReceiver(receiver, filter);
         }
     }
 }

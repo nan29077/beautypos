@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ADPAY 아이콘 배경: 보라 그라디언트 (favicon.svg 의 adpayViolet 재현) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:pathData="M0,0h108v108h-108z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="11.25" android:startY="6.75"
+                android:endX="96.75" android:endY="101.25">
+                <item android:offset="0" android:color="#FF715FCE"/>
+                <item android:offset="1" android:color="#FF443680"/>
+            </gradient>
+        </aapt:attr>
+    </path>
+</vector>

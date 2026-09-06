@@ -15,12 +15,14 @@ Covers: merchants CRUD, PG config, transactions, payout requests,
 - dispatch_routes.py — 광고 자동 집행 실행·조회
 - credit_routes.py — 매장 광고비 크레딧 충전·환불
 - ongi_routes.py — 온기(ONGI) QR 결제 연동 설정·결제 내역 조회
+- app_release_routes.py — 안드로이드 앱 배포본(APK) 업로드·관리
 """
 from fastapi import APIRouter
 
 from app.api.admin import (
     merchant_routes, pg_routes, settlement_routes, ad_routes, payout_routes, misc_routes,
     rewardpop_routes, keyword_routes, dispatch_routes, credit_routes, ongi_routes,
+    app_release_routes,
 )
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -35,3 +37,4 @@ router.include_router(keyword_routes.router)
 router.include_router(dispatch_routes.router)
 router.include_router(credit_routes.router)
 router.include_router(ongi_routes.router)
+router.include_router(app_release_routes.router)

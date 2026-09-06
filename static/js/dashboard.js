@@ -94,6 +94,7 @@ const mobilePageMeta = {
     'admin-users': ['사용자 목록', 'fas fa-users-cog'],
     'admin-ai-settings': ['AI 설정', 'fas fa-robot'],
     'admin-rewardpop': ['리워드팝 연동', 'fas fa-plug'],
+    'admin-app-release': ['앱 배포 관리', 'fas fa-mobile-screen'],
     'admin-ad-keywords': ['광고 키워드 승인', 'fas fa-key'],
     'admin-ad-dispatch': ['광고 자동 집행', 'fas fa-paper-plane'],
     'admin-ad-credits': ['광고비 크레딧', 'fas fa-wallet'],
@@ -639,7 +640,8 @@ function buildSidebar() {
         <a class="nav-link" href="#" data-page="admin-users"><i class="fas fa-users-cog"></i>사용자 목록</a>
         <div class="nav-section"><i class="fas fa-gear me-1" style="font-size:.6rem"></i>시스템 설정</div>
         <a class="nav-link" href="#" data-page="admin-ai-settings"><i class="fas fa-robot"></i>AI 설정</a>
-        <a class="nav-link" href="#" data-page="admin-rewardpop"><i class="fas fa-plug"></i>리워드팝 연동</a>`;
+        <a class="nav-link" href="#" data-page="admin-rewardpop"><i class="fas fa-plug"></i>리워드팝 연동</a>
+        <a class="nav-link" href="#" data-page="admin-app-release"><i class="fas fa-mobile-screen"></i>앱 배포 관리</a>`;
     } else if (role === 'sales') {
         html += `
         <div class="nav-section">영업 관리</div>
@@ -763,6 +765,7 @@ async function loadPage(page) {
             case 'admin-users': await loadAdminUsers(c, t); break;
             case 'admin-ai-settings': await loadAdminAiSettings(c, t); break;
             case 'admin-rewardpop': await loadAdminRewardpop(c, t); break;
+            case 'admin-app-release': await loadAdminAppRelease(c, t); break;
             case 'admin-ad-keywords': await loadAdminAdKeywords(c, t); break;
             case 'admin-ad-dispatch': await loadAdminAdDispatch(c, t); break;
             case 'admin-ad-credits': await loadAdminAdCredits(c, t); break;
@@ -10929,4 +10932,180 @@ function resetOngiFilters() {
         if (el) el.value = '';
     });
     if (ongiState && ongiState.configured) reloadOngiTransactions(1);
+}
+
+// ─── ADMIN: 앱 배포 관리 (안드로이드 APK) ───────────────────
+function fmtBytes(n) {
+    n = Number(n || 0);
+    if (n >= 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + ' MB';
+    if (n >= 1024) return (n / 1024).toFixed(0) + ' KB';
+    return n + ' B';
+}
+
+async function loadAdminAppRelease(c, t) {
+    t.textContent = '앱 배포 관리';
+    c.innerHTML = adpayLoadingMarkup('배포 이력을 불러오는 중입니다');
+    c.innerHTML = `
+    <div class="card data-card mb-3">
+        <div class="card-header"><h5 class="mb-0"><i class="fas fa-cloud-arrow-up me-2"></i>새 APK 업로드</h5></div>
+        <div class="card-body">
+            <div class="alert alert-info small mb-3">
+                <i class="fas fa-circle-info me-1"></i>
+                업로드하는 APK는 반드시 <b>릴리스 서명 키</b>로 서명돼 있어야 기존 설치본이 업데이트를 받습니다(디버그 서명 APK는 설치 거부됨).
+                <b>버전 코드</b>는 정수로, 새 버전일수록 커야 앱이 업데이트로 인식합니다.
+            </div>
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label small fw-bold">APK 파일</label>
+                    <input type="file" class="form-control" id="arFile" accept=".apk,application/vnd.android.package-archive">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small fw-bold">버전 코드 (정수)</label>
+                    <input type="number" min="1" class="form-control" id="arVersionCode" placeholder="예: 2">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small fw-bold">버전 이름</label>
+                    <input class="form-control" id="arVersionName" placeholder="예: 1.1.0">
+                </div>
+                <div class="col-12">
+                    <label class="form-label small fw-bold">변경사항 (선택, 사용자 안내 문구)</label>
+                    <textarea class="form-control" id="arNotes" rows="2" placeholder="이번 업데이트 내용"></textarea>
+                </div>
+                <div class="col-12">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="arMandatory">
+                        <label class="form-check-label" for="arMandatory"><b>강제 업데이트</b> — 켜면 사용자가 건너뛸 수 없습니다.</label>
+                    </div>
+                </div>
+            </div>
+            <div class="mt-3 d-flex align-items-center gap-2">
+                <button class="btn btn-primary btn-sm" onclick="uploadAppRelease()" id="arUploadBtn"><i class="fas fa-upload me-1"></i>업로드</button>
+                <div id="arProgress" class="small text-muted"></div>
+            </div>
+            <div id="arResult" class="mt-2"></div>
+        </div>
+    </div>
+    <div class="card data-card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="fas fa-list me-2"></i>배포 이력</h5>
+            <span class="badge bg-primary" id="arLatestBadge">-</span>
+        </div>
+        <div class="card-body" id="arTableBody">${adpayLoadingMarkup()}</div>
+    </div>`;
+    await reloadAppReleases();
+}
+
+async function reloadAppReleases() {
+    const body = document.getElementById('arTableBody');
+    try {
+        const data = await apiGet('/api/admin/app-releases');
+        const items = data.items || [];
+        const latest = data.latest_version_code;
+        const badge = document.getElementById('arLatestBadge');
+        if (badge) badge.textContent = latest != null ? `최신 배포 code ${latest}` : '배포본 없음';
+
+        body.innerHTML = `
+            <div class="table-responsive"><table class="table table-hover table-sm align-middle">
+                <thead><tr><th>버전</th><th>코드</th><th>크기</th><th>강제</th><th>상태</th><th>변경사항</th><th>업로드</th><th>작업</th></tr></thead>
+                <tbody>${items.length ? items.map(r => `<tr>
+                    <td class="fw-bold">${escapeHtml(r.version_name)}</td>
+                    <td>${r.version_code}${r.version_code === latest ? ' <span class="badge bg-success">최신</span>' : ''}</td>
+                    <td>${fmtBytes(r.file_size)}</td>
+                    <td>${r.is_mandatory ? '<span class="badge bg-danger">강제</span>' : '<span class="text-muted">선택</span>'}</td>
+                    <td>${r.is_active ? '<span class="badge bg-success">배포중</span>' : '<span class="badge bg-secondary">내림</span>'}</td>
+                    <td class="small" style="max-width:220px">${r.notes ? escapeHtml(r.notes) : '-'}</td>
+                    <td class="small text-nowrap">${escapeHtml(r.created_at || '-')}</td>
+                    <td class="text-nowrap">
+                        <a class="btn btn-outline-secondary btn-sm" href="${r.download_url}" title="다운로드"><i class="fas fa-download"></i></a>
+                        <button class="btn btn-outline-${r.is_active ? 'warning' : 'success'} btn-sm" onclick="toggleAppReleaseActive(${r.id}, ${!r.is_active})" title="${r.is_active ? '배포 내리기' : '다시 배포'}"><i class="fas fa-${r.is_active ? 'eye-slash' : 'eye'}"></i></button>
+                        <button class="btn btn-outline-danger btn-sm" onclick="deleteAppRelease(${r.id}, '${escapeHtml(r.version_name)}')" title="삭제"><i class="fas fa-trash"></i></button>
+                    </td>
+                </tr>`).join('') : '<tr><td colspan="8" class="text-center text-muted py-4">업로드된 배포본이 없습니다.</td></tr>'}</tbody>
+            </table></div>`;
+    } catch (e) {
+        body.innerHTML = `<div class="alert alert-danger">${escapeHtml(e.message)}</div>`;
+    }
+}
+
+function showArResult(ok, msg) {
+    const box = document.getElementById('arResult');
+    if (box) box.innerHTML = `<div class="alert alert-${ok ? 'success' : 'danger'} py-2 mb-0 small"><i class="fas fa-${ok ? 'circle-check' : 'circle-exclamation'} me-1"></i>${escapeHtml(msg)}</div>`;
+}
+
+function uploadAppRelease() {
+    const fileInput = document.getElementById('arFile');
+    const file = fileInput.files[0];
+    const versionCode = parseInt(document.getElementById('arVersionCode').value, 10);
+    const versionName = document.getElementById('arVersionName').value.trim();
+    const notes = document.getElementById('arNotes').value.trim();
+    const mandatory = document.getElementById('arMandatory').checked;
+
+    if (!file) { showArResult(false, 'APK 파일을 선택해주세요.'); return; }
+    if (!file.name.toLowerCase().endsWith('.apk')) { showArResult(false, 'APK 파일만 업로드할 수 있습니다.'); return; }
+    if (!versionCode || versionCode < 1) { showArResult(false, '버전 코드를 정수로 입력해주세요.'); return; }
+    if (!versionName) { showArResult(false, '버전 이름을 입력해주세요.'); return; }
+
+    const form = new FormData();
+    form.append('apk', file);
+    form.append('version_code', String(versionCode));
+    form.append('version_name', versionName);
+    form.append('notes', notes);
+    form.append('is_mandatory', mandatory ? 'true' : 'false');
+
+    const btn = document.getElementById('arUploadBtn');
+    const progress = document.getElementById('arProgress');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>업로드 중...';
+
+    // 진행률 표시를 위해 XHR 사용 (fetch 는 업로드 진행률 이벤트가 없음).
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/admin/app-releases');
+    const token = getToken();
+    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable && progress) {
+            progress.textContent = `${Math.round(e.loaded / e.total * 100)}% (${fmtBytes(e.loaded)} / ${fmtBytes(e.total)})`;
+        }
+    };
+    xhr.onload = async () => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-upload me-1"></i>업로드';
+        if (progress) progress.textContent = '';
+        if (xhr.status >= 200 && xhr.status < 300) {
+            showArResult(true, `버전 ${versionName} (code ${versionCode}) 업로드 완료`);
+            document.getElementById('arFile').value = '';
+            document.getElementById('arVersionCode').value = '';
+            document.getElementById('arVersionName').value = '';
+            document.getElementById('arNotes').value = '';
+            document.getElementById('arMandatory').checked = false;
+            await reloadAppReleases();
+        } else {
+            let msg = `업로드 실패 (HTTP ${xhr.status})`;
+            try { msg = formatApiDetail(JSON.parse(xhr.responseText).detail) || msg; } catch {}
+            showArResult(false, msg);
+        }
+    };
+    xhr.onerror = () => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-upload me-1"></i>업로드';
+        showArResult(false, '네트워크 오류로 업로드에 실패했습니다.');
+    };
+    xhr.send(form);
+}
+
+async function toggleAppReleaseActive(id, makeActive) {
+    try {
+        const form = new FormData();
+        form.append('is_active', makeActive ? 'true' : 'false');
+        await api(`/api/admin/app-releases/${id}/active`, { method: 'PUT', body: form });
+        await reloadAppReleases();
+    } catch (e) { showArResult(false, e.message); }
+}
+
+async function deleteAppRelease(id, versionName) {
+    if (!confirm(`배포본 ${versionName} 을(를) 삭제할까요? APK 파일도 함께 삭제됩니다.`)) return;
+    try {
+        await apiDelete(`/api/admin/app-releases/${id}`);
+        await reloadAppReleases();
+    } catch (e) { showArResult(false, e.message); }
 }

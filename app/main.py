@@ -15,6 +15,7 @@ from app.api.owner import router as owner_router
 from app.api.sales_routes import router as sales_router
 from app.api.terminal_routes import router as terminal_router
 from app.api.webhook_routes import router as webhook_router
+from app.api.app_routes import router as app_router
 from app.auth.dependencies import get_current_user
 from app.config import get_settings
 from app.database import get_db
@@ -83,6 +84,7 @@ app.include_router(sales_router)
 app.include_router(designer_router)
 app.include_router(crm_router)
 app.include_router(webhook_router)
+app.include_router(app_router)
 
 
 @app.get("/api/public/review/{token}")
