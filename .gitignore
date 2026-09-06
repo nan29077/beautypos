@@ -54,3 +54,7 @@ android/app/build/
 
 # 업로드 파일 (APK 등) — 서버 디스크 보관, 리포에 커밋하지 않음
 uploads/
+
+# 안드로이드 릴리스 서명 (절대 커밋 금지)
+android/keystore/
+android/keystore.properties

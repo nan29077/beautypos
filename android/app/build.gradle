@@ -2,6 +2,14 @@ plugins {
     id 'com.android.application'
 }
 
+// 릴리스 서명 설정을 android/keystore.properties 에서 읽는다(리포에 커밋하지 않음).
+// 파일이 없으면 릴리스 서명 없이 빌드되며, 이 경우 릴리스 APK 는 설치할 수 없다.
+def keystorePropsFile = rootProject.file('keystore.properties')
+def keystoreProps = new Properties()
+if (keystorePropsFile.exists()) {
+    keystoreProps.load(new FileInputStream(keystorePropsFile))
+}
+
 android {
     namespace 'kr.co.beautypos.app'
     compileSdk 35
@@ -18,10 +26,24 @@ android {
         buildConfig true
     }
 
+    signingConfigs {
+        release {
+            if (keystorePropsFile.exists()) {
+                storeFile rootProject.file(keystoreProps['storeFile'])
+                storePassword keystoreProps['storePassword']
+                keyAlias keystoreProps['keyAlias']
+                keyPassword keystoreProps['keyPassword']
+            }
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (keystorePropsFile.exists()) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 }
