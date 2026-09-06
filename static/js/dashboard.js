@@ -10610,7 +10610,7 @@ function ongiPageMarkup(d) {
                 <div class="col-md-2"><label class="form-label small mb-1">종료일</label><input type="date" class="form-control form-control-sm" id="ongiFilterTo"></div>
                 <div class="col-md-2"><label class="form-label small mb-1">상태</label>
                     <select class="form-select form-select-sm" id="ongiFilterStatus">
-                        <option value="">전체</option><option value="완료">완료</option><option value="취소">취소</option>
+                        <option value="">전체</option><option value="완료">완료</option><option value="대기">대기</option><option value="취소">취소</option>
                     </select></div>
                 <div class="col-md-2"><label class="form-label small mb-1">QR</label>
                     <select class="form-select form-select-sm" id="ongiFilterQr"><option value="">전체 QR</option></select></div>
@@ -10846,6 +10846,7 @@ async function loadOngiQrOptions() {
 
 function ongiTxStatusBadge(status) {
     if (status === '완료') return '<span class="badge bg-success">완료</span>';
+    if (status === '대기') return '<span class="badge bg-warning text-dark">대기</span>';
     if (status === '취소') return '<span class="badge bg-danger">취소</span>';
     return `<span class="badge bg-secondary">${escapeHtml(status || '-')}</span>`;
 }
