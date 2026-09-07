@@ -9,6 +9,7 @@ same prefix/tags as the original monolithic app/api/owner_routes.py:
     - misc_routes: payout requests, merchant info, affiliate malls
     - keyword_routes: 광고 집행 키워드 등록(관리자 승인 후 집행)
     - credit_routes: 광고비 크레딧 조회·환불 신청
+    - ongi_routes: 온기 QR 결제 내역 (매핑된 QR 한정)
 """
 from fastapi import APIRouter
 
@@ -19,6 +20,7 @@ from app.api.owner.review_routes import router as review_router
 from app.api.owner.misc_routes import router as misc_router
 from app.api.owner.keyword_routes import router as keyword_router
 from app.api.owner.credit_routes import router as credit_router
+from app.api.owner.ongi_routes import router as ongi_router
 
 router = APIRouter(prefix="/api/owner", tags=["owner"])
 router.include_router(dashboard_router)
@@ -28,3 +30,4 @@ router.include_router(review_router)
 router.include_router(misc_router)
 router.include_router(keyword_router)
 router.include_router(credit_router)
+router.include_router(ongi_router)

@@ -103,6 +103,7 @@ const mobilePageMeta = {
     'sales-payouts': ['출금요청', 'fas fa-money-bill-wave'],
     'sales-payout-history': ['출금내역', 'fas fa-history'],
     'owner-transactions': ['결제 내역', 'fas fa-receipt'],
+    'owner-ongi': ['온기 QR 결제', 'fas fa-qrcode'],
     'owner-staff': ['직원 관리', 'fas fa-users'],
     'owner-staff-sales': ['직원별 매출', 'fas fa-chart-bar'],
     'owner-settlement': ['정산 분배', 'fas fa-coins'],
@@ -340,7 +341,7 @@ function isAdminMobile() {
 
 function ownerMobilePages() {
     const needsStaff = ownerMerchantInfo ? ownerMerchantInfo.needs_staff_management : true;
-    const pages = ['home', 'owner-transactions'];
+    const pages = ['home', 'owner-transactions', 'owner-ongi'];
     if (needsStaff) {
         pages.push('owner-staff', 'owner-staff-sales', 'owner-settlement');
     }
@@ -657,7 +658,8 @@ function buildSidebar() {
         const placeOn = adFeatureFlags.ad_place_traffic_enabled;
         html += `
         <div class="nav-section">매장 관리</div>
-        <a class="nav-link" href="#" data-page="owner-transactions"><i class="fas fa-receipt"></i>결제 내역</a>`;
+        <a class="nav-link" href="#" data-page="owner-transactions"><i class="fas fa-receipt"></i>결제 내역</a>
+        <a class="nav-link" href="#" data-page="owner-ongi"><i class="fas fa-qrcode"></i>온기 QR 결제</a>`;
         if (needsStaff) {
             html += `
         <a class="nav-link" href="#" data-page="owner-staff"><i class="fas fa-users"></i>직원 관리</a>
@@ -776,6 +778,7 @@ async function loadPage(page) {
             case 'sales-payout-history': await loadSalesPayoutHistory(c, t); break;
             // Owner
             case 'owner-transactions': await loadOwnerTransactions(c, t); break;
+            case 'owner-ongi': await loadOwnerOngi(c, t); break;
             case 'owner-staff': await loadOwnerStaff(c, t); break;
             case 'owner-staff-sales': await loadOwnerStaffSales(c, t); break;
             case 'owner-settlement': await loadOwnerSettlement(c, t); break;
@@ -10585,6 +10588,7 @@ async function loadAdminOngi(c, t) {
         return;
     }
     c.innerHTML = ongiPageMarkup(ongiState);
+    ongiMappingLoaded = false;   // 페이지를 새로 그렸으니 매핑 표는 다시 펼칠 때 로드
     // 미연결이면 설정을 펼쳐 키 입력을 안내하고, 연결됐으면 바로 내역을 보여준다
     toggleOngiSettings(!ongiState.configured);
     if (ongiState.configured) {
@@ -10640,6 +10644,19 @@ function ongiPageMarkup(d) {
             ? adpayLoadingMarkup()
             : '<div class="alert alert-info mb-0"><i class="fas fa-info-circle me-1"></i>아래 <b>연동 설정</b>에서 온기 API 키를 먼저 등록해주세요.</div>'}</div>
         <div class="card-footer py-2 d-flex justify-content-between align-items-center" id="ongiPagerRow" style="display:none!important"></div>
+    </div>
+
+    <div class="card data-card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center" style="cursor:pointer" onclick="toggleOngiMapping()">
+            <h5 class="mb-0"><i class="fas fa-link me-2"></i>QR ↔ 가맹점 매핑 <span class="badge bg-light text-muted ms-1 fw-normal">사장님 조회 권한</span></h5>
+            <i class="fas fa-chevron-down" id="ongiMappingChevron"></i>
+        </div>
+        <div class="card-body" id="ongiMappingBody" style="display:none">
+            <div class="alert alert-info small py-2">
+                <i class="fas fa-circle-info me-1"></i>QR을 가맹점에 연결하면 해당 <b>사장님 계정</b>이 그 QR의 온기 결제 내역을 볼 수 있습니다.
+            </div>
+            <div id="ongiMappingTable">${adpayLoadingMarkup()}</div>
+        </div>
     </div>
 
     <div class="card data-card">
@@ -10710,6 +10727,76 @@ function toggleOngiSettings(forceOpen) {
     const open = forceOpen !== undefined ? forceOpen : body.style.display === 'none';
     body.style.display = open ? '' : 'none';
     if (chevron) chevron.className = open ? 'fas fa-chevron-up' : 'fas fa-chevron-down';
+}
+
+let ongiMappingLoaded = false;
+
+function toggleOngiMapping(forceOpen) {
+    const body = document.getElementById('ongiMappingBody');
+    const chevron = document.getElementById('ongiMappingChevron');
+    if (!body) return;
+    const open = forceOpen !== undefined ? forceOpen : body.style.display === 'none';
+    body.style.display = open ? '' : 'none';
+    if (chevron) chevron.className = open ? 'fas fa-chevron-up' : 'fas fa-chevron-down';
+    if (open && !ongiMappingLoaded) loadOngiMappingTable();
+}
+
+async function loadOngiMappingTable() {
+    const box = document.getElementById('ongiMappingTable');
+    if (!box) return;
+    box.innerHTML = adpayLoadingMarkup();
+    try {
+        // QR 목록은 온기 서버에서 실시간으로, 매핑·가맹점은 우리 DB에서 가져온다.
+        const [qrRes, mapRes, merchants] = await Promise.all([
+            apiGet('/api/admin/ongi/qrs?limit=100'),
+            apiGet('/api/admin/ongi/qr-mappings'),
+            apiGet('/api/admin/merchants'),
+        ]);
+        const qrs = qrRes.items || [];
+        const mappings = {};
+        (mapRes.items || []).forEach(m => { mappings[m.qr_id] = m; });
+        // 온기 목록에 안 나오는(삭제·비활성) QR도 매핑이 남아 있으면 함께 보여준다.
+        const knownIds = new Set(qrs.map(q => q.id));
+        (mapRes.items || []).forEach(m => {
+            if (!knownIds.has(m.qr_id)) qrs.push({ id: m.qr_id, name: m.qr_name, _stale: true });
+        });
+        if (!qrs.length) {
+            box.innerHTML = '<div class="text-center text-muted py-3">온기에 등록된 QR이 없습니다.</div>';
+            ongiMappingLoaded = true;
+            return;
+        }
+        const merchantOptions = (mid) => '<option value="">연결 안 함</option>' +
+            (merchants || []).map(m =>
+                `<option value="${m.id}" ${m.id === mid ? 'selected' : ''}>${escapeHtml(m.name)}</option>`).join('');
+        box.innerHTML = `
+            <div class="table-responsive"><table class="table table-hover table-sm align-middle">
+                <thead><tr><th>QR</th><th style="width:280px">연결된 가맹점</th><th style="width:80px"></th></tr></thead>
+                <tbody>${qrs.map(q => {
+                    const mapped = mappings[q.id];
+                    return `<tr>
+                        <td>${escapeHtml(q.name || `QR #${q.id}`)} <span class="text-muted small">#${q.id}</span>${q._stale ? ' <span class="badge bg-secondary">온기 목록에 없음</span>' : ''}</td>
+                        <td><select class="form-select form-select-sm" id="ongiMapSel_${q.id}" data-qr-name="${escapeHtml(q.name || '')}">${merchantOptions(mapped ? mapped.merchant_id : null)}</select></td>
+                        <td><button class="btn btn-primary btn-sm" onclick="saveOngiQrMapping(${q.id})"><i class="fas fa-floppy-disk"></i></button></td>
+                    </tr>`;
+                }).join('')}</tbody>
+            </table></div>`;
+        ongiMappingLoaded = true;
+    } catch (e) {
+        box.innerHTML = `<div class="alert alert-danger">${escapeHtml(e.message)}</div>`;
+    }
+}
+
+async function saveOngiQrMapping(qrId) {
+    const sel = document.getElementById(`ongiMapSel_${qrId}`);
+    if (!sel) return;
+    const merchantId = sel.value ? parseInt(sel.value, 10) : null;
+    try {
+        await apiPut(`/api/admin/ongi/qr-mappings/${qrId}`, {
+            merchant_id: merchantId,
+            qr_name: sel.dataset.qrName || null,
+        });
+        showToast(merchantId ? 'QR을 가맹점에 연결했습니다.' : 'QR 연결을 해제했습니다.', true);
+    } catch (e) { showToast(e.message, false); }
 }
 
 function toggleOngiKeyVisible() {
@@ -10932,6 +11019,139 @@ function resetOngiFilters() {
         if (el) el.value = '';
     });
     if (ongiState && ongiState.configured) reloadOngiTransactions(1);
+}
+
+// ─── OWNER: 온기(ONGI) QR 결제 내역 ─────────────────────────
+let ownerOngiPage = 1;
+let ownerOngiLastPage = 1;
+let ownerOngiQrLoaded = false;
+
+async function loadOwnerOngi(c, t) {
+    t.textContent = '온기 QR 결제';
+    ownerOngiQrLoaded = false;
+    c.innerHTML = `
+    <div class="card data-card mb-3">
+        <div class="card-body py-2 px-3">
+            <div class="row g-2 align-items-end">
+                <div class="col-md-2 col-6"><label class="form-label small mb-1">시작일</label><input type="date" class="form-control form-control-sm" id="oOngiFilterFrom"></div>
+                <div class="col-md-2 col-6"><label class="form-label small mb-1">종료일</label><input type="date" class="form-control form-control-sm" id="oOngiFilterTo"></div>
+                <div class="col-md-2 col-6"><label class="form-label small mb-1">상태</label>
+                    <select class="form-select form-select-sm" id="oOngiFilterStatus">
+                        <option value="">전체</option><option value="완료">완료</option><option value="대기">대기</option><option value="취소">취소</option>
+                    </select></div>
+                <div class="col-md-2 col-6"><label class="form-label small mb-1">QR</label>
+                    <select class="form-select form-select-sm" id="oOngiFilterQr"><option value="">전체 QR</option></select></div>
+                <div class="col-md-2"><label class="form-label small mb-1">검색</label>
+                    <input class="form-control form-control-sm" id="oOngiFilterSearch" placeholder="결제자 / 주문번호"></div>
+                <div class="col-md-2 d-flex gap-1">
+                    <button class="btn btn-primary btn-sm flex-fill" onclick="reloadOwnerOngi(1)"><i class="fas fa-search me-1"></i>조회</button>
+                    <button class="btn btn-outline-secondary btn-sm" onclick="resetOwnerOngiFilters()" title="필터 초기화"><i class="fas fa-undo"></i></button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="row g-3 mb-3" id="oOngiSummaryRow"></div>
+    <div class="card data-card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="fas fa-qrcode me-2"></i>온기 QR 결제 내역</h5>
+            <span class="badge bg-primary" id="oOngiCountBadge">-</span>
+        </div>
+        <div class="card-body" id="oOngiTableBody">${adpayLoadingMarkup()}</div>
+        <div class="card-footer py-2 d-flex justify-content-between align-items-center" id="oOngiPagerRow" style="display:none!important"></div>
+    </div>`;
+    await reloadOwnerOngi(1);
+}
+
+async function reloadOwnerOngi(page) {
+    ownerOngiPage = page || 1;
+    const from = document.getElementById('oOngiFilterFrom')?.value || '';
+    const to = document.getElementById('oOngiFilterTo')?.value || '';
+    const status = document.getElementById('oOngiFilterStatus')?.value || '';
+    const qrId = document.getElementById('oOngiFilterQr')?.value || '';
+    const search = document.getElementById('oOngiFilterSearch')?.value.trim() || '';
+
+    let url = `/api/owner/ongi/transactions?page=${ownerOngiPage}&limit=20`;
+    if (from) url += `&start_date=${from}`;
+    if (to) url += `&end_date=${to}`;
+    if (status) url += `&status=${encodeURIComponent(status)}`;
+    if (qrId) url += `&qr_id=${qrId}`;
+    if (search) url += `&search=${encodeURIComponent(search)}`;
+
+    const body = document.getElementById('oOngiTableBody');
+    try {
+        const data = await apiGet(url);
+
+        if (!data.mapped) {
+            document.getElementById('oOngiSummaryRow').innerHTML = '';
+            document.getElementById('oOngiCountBadge').textContent = '0건';
+            body.innerHTML = `<div class="alert alert-info mb-0">
+                <i class="fas fa-circle-info me-1"></i>아직 우리 매장에 연결된 온기 QR이 없습니다.<br>
+                <small class="text-muted">온기 QR 결제 내역을 보려면 관리자에게 QR 연결을 요청해주세요.</small></div>`;
+            return;
+        }
+
+        // QR 필터 옵션은 첫 로드 때 한 번만 채운다 (내 매장에 매핑된 QR만 내려온다).
+        const sel = document.getElementById('oOngiFilterQr');
+        if (sel && !ownerOngiQrLoaded && data.qrs) {
+            sel.innerHTML = '<option value="">전체 QR</option>' + data.qrs.map(q =>
+                `<option value="${q.qr_id}">${escapeHtml(q.qr_name || `QR #${q.qr_id}`)}</option>`).join('');
+            ownerOngiQrLoaded = true;
+        }
+
+        const items = data.items || [];
+        const pg = data.pagination || {};
+        const sum = data.summary || {};
+        ownerOngiLastPage = pg.last_page || 1;
+
+        document.getElementById('oOngiCountBadge').textContent = `${(pg.total || 0).toLocaleString()}건`;
+        document.getElementById('oOngiSummaryRow').innerHTML = `
+            <div class="col-md-4 col-4"><div class="card border-0 shadow-sm text-center" style="border-radius:12px"><div class="card-body py-2">
+                <div class="fs-5 fw-bold text-primary">${(sum.completed_count || 0).toLocaleString()}</div><small class="text-muted">완료 건수</small>
+            </div></div></div>
+            <div class="col-md-4 col-4"><div class="card border-0 shadow-sm text-center" style="border-radius:12px"><div class="card-body py-2">
+                <div class="fs-5 fw-bold text-success">${formatMoney(sum.completed_amount || 0)}</div><small class="text-muted">완료 금액</small>
+            </div></div></div>
+            <div class="col-md-4 col-4"><div class="card border-0 shadow-sm text-center" style="border-radius:12px"><div class="card-body py-2">
+                <div class="fs-5 fw-bold text-danger">${(sum.cancelled_count || 0).toLocaleString()}</div><small class="text-muted">취소 건수</small>
+            </div></div></div>`;
+
+        body.innerHTML = `
+            <div class="table-responsive"><table class="table table-hover table-sm">
+                <thead><tr><th>결제일시</th><th>결제자</th><th>금액</th><th>상태</th><th>결제수단</th><th>QR</th><th>주문번호</th></tr></thead>
+                <tbody>${items.length ? items.map(tx => `<tr>
+                    <td class="text-nowrap">${escapeHtml(tx.paid_at || '-')}</td>
+                    <td>${escapeHtml(tx.member_name || '-')}</td>
+                    <td class="fw-bold ${tx.status === '취소' ? 'text-decoration-line-through text-muted' : ''}">${formatMoney(tx.pay_price != null ? tx.pay_price : tx.amount)}</td>
+                    <td>${ongiTxStatusBadge(tx.status)}</td>
+                    <td>${escapeHtml(tx.payment_type || '-')}</td>
+                    <td>${escapeHtml(tx.qr_name || (tx.qr_id != null ? `QR #${tx.qr_id}` : '-'))}</td>
+                    <td>${tx.order_code ? `<code>${escapeHtml(tx.order_code)}</code>` : '-'}</td>
+                </tr>`).join('') : '<tr><td colspan="7" class="text-center text-muted py-4">조건에 맞는 결제 내역이 없습니다.</td></tr>'}</tbody>
+            </table></div>`;
+
+        const pager = document.getElementById('oOngiPagerRow');
+        if (pager) {
+            if ((pg.total || 0) > (pg.per_page || 20)) {
+                pager.style.setProperty('display', 'flex', 'important');
+                pager.innerHTML = `
+                    <button class="btn btn-outline-secondary btn-sm" onclick="reloadOwnerOngi(${ownerOngiPage - 1})" ${ownerOngiPage <= 1 ? 'disabled' : ''}><i class="fas fa-chevron-left"></i></button>
+                    <span class="small text-muted">${ownerOngiPage} / ${ownerOngiLastPage} 페이지</span>
+                    <button class="btn btn-outline-secondary btn-sm" onclick="reloadOwnerOngi(${ownerOngiPage + 1})" ${ownerOngiPage >= ownerOngiLastPage ? 'disabled' : ''}><i class="fas fa-chevron-right"></i></button>`;
+            } else {
+                pager.style.setProperty('display', 'none', 'important');
+            }
+        }
+    } catch (e) {
+        body.innerHTML = `<div class="alert alert-danger">${escapeHtml(e.message)}</div>`;
+    }
+}
+
+function resetOwnerOngiFilters() {
+    ['oOngiFilterFrom', 'oOngiFilterTo', 'oOngiFilterStatus', 'oOngiFilterQr', 'oOngiFilterSearch'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+    });
+    reloadOwnerOngi(1);
 }
 
 // ─── ADMIN: 앱 배포 관리 (안드로이드 APK) ───────────────────

@@ -4,21 +4,20 @@ API 키·노티 시크릿 등록/삭제, 연동 설정(기준 URL·API MID·동�
 연결 테스트, 결제 내역 조회(온기 실시간 프록시 + 로컬 사본), 수동 동기화를
 담당한다. 온기 호출은 모두 app.services.ongi 어댑터를 거친다.
 """
-from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_admin
 from app.database import get_db
-from app.models.ongi_transaction import (
-    OngiTransaction, ONGI_STATUS_CANCELLED, ONGI_STATUS_COMPLETED,
-)
+from app.models.merchant import Merchant
+from app.models.ongi_qr_mapping import OngiQrMapping
 from app.models.user import User
-from app.schemas.schemas import OngiApiKeyUpdate, OngiNotifySecretUpdate, OngiSettingsUpdate
-from app.services import ongi, ongi_sync
+from app.schemas.schemas import (
+    OngiApiKeyUpdate, OngiNotifySecretUpdate, OngiQrMappingUpdate, OngiSettingsUpdate,
+)
+from app.services import ongi, ongi_query, ongi_sync
 
 router = APIRouter()
 
@@ -148,28 +147,6 @@ async def run_ongi_sync(_: User = Depends(require_admin)):
     return await ongi_sync.run_once(force=True)
 
 
-def _serialize_transaction(row: OngiTransaction) -> dict:
-    return {
-        "id": row.id,
-        "ongi_payment_id": row.ongi_payment_id,
-        "payment_code": row.payment_code,
-        "order_code": row.order_code,
-        "status": row.status,
-        "amount": int(row.amount) if row.amount is not None else None,
-        "pay_price": int(row.pay_price) if row.pay_price is not None else None,
-        "discount_price": int(row.discount_price) if row.discount_price is not None else None,
-        "payment_type": row.payment_type,
-        "division": row.division,
-        "member_name": row.member_name,
-        "qr_id": row.qr_id,
-        "qr_name": row.qr_name,
-        "auth_no": row.auth_no,
-        "transaction_no": row.transaction_no,
-        "paid_at": row.paid_at.strftime("%Y-%m-%d %H:%M:%S") if row.paid_at else None,
-        "synced_at": row.synced_at.strftime("%Y-%m-%d %H:%M:%S") if row.synced_at else None,
-    }
-
-
 @router.get("/ongi/transactions")
 def list_ongi_transactions(
     page: int = Query(1, ge=1),
@@ -182,69 +159,14 @@ def list_ongi_transactions(
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    """로컬에 동기화된 온기 결제 내역을 조회한다 (대시보드 데이터 소스).
-
-    합계(summary)는 페이지가 아니라 필터 전체 기준이다.
-    """
-    query = db.query(OngiTransaction)
-    if start_date:
-        try:
-            query = query.filter(
-                OngiTransaction.paid_at >= datetime.strptime(start_date, "%Y-%m-%d")
-            )
-        except ValueError:
-            raise HTTPException(status_code=400, detail="start_date 형식은 YYYY-MM-DD 입니다")
-    if end_date:
-        try:
-            query = query.filter(
-                OngiTransaction.paid_at < datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
-            )
-        except ValueError:
-            raise HTTPException(status_code=400, detail="end_date 형식은 YYYY-MM-DD 입니다")
-    if qr_id is not None:
-        query = query.filter(OngiTransaction.qr_id == qr_id)
-    if status:
-        query = query.filter(OngiTransaction.status == status)
-    if search:
-        keyword = f"%{search.strip()}%"
-        query = query.filter(
-            OngiTransaction.member_name.like(keyword)
-            | OngiTransaction.order_code.like(keyword)
+    """로컬에 동기화된 온기 결제 내역을 조회한다 (대시보드 데이터 소스)."""
+    try:
+        return ongi_query.list_transactions(
+            db, page=page, limit=limit, start_date=start_date, end_date=end_date,
+            qr_id=qr_id, status=status, search=search,
         )
-
-    total = query.count()
-    # FILTER 절은 MariaDB 가 지원하지 않으므로 CASE 로 집계한다.
-    is_completed = OngiTransaction.status == ONGI_STATUS_COMPLETED
-    is_cancelled = OngiTransaction.status == ONGI_STATUS_CANCELLED
-    completed_sum, completed_count, cancelled_count = (
-        query.with_entities(
-            func.coalesce(
-                func.sum(case((is_completed, OngiTransaction.pay_price), else_=0)), 0),
-            func.coalesce(func.sum(case((is_completed, 1), else_=0)), 0),
-            func.coalesce(func.sum(case((is_cancelled, 1), else_=0)), 0),
-        ).one()
-    )
-
-    rows = (
-        query.order_by(OngiTransaction.paid_at.desc(), OngiTransaction.id.desc())
-        .offset((page - 1) * limit)
-        .limit(limit)
-        .all()
-    )
-    return {
-        "items": [_serialize_transaction(r) for r in rows],
-        "pagination": {
-            "current_page": page,
-            "per_page": limit,
-            "total": total,
-            "last_page": max(1, -(-total // limit)),
-        },
-        "summary": {
-            "completed_count": int(completed_count),
-            "completed_amount": int(completed_sum),
-            "cancelled_count": int(cancelled_count),
-        },
-    }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.get("/ongi/qrs")
@@ -261,3 +183,63 @@ async def list_ongi_qrs(
         return await ongi.list_qrs(db, page=page, limit=limit, status=status, search=search)
     except ongi.OngiError as exc:
         raise HTTPException(status_code=502 if exc.retryable else 400, detail=exc.message)
+
+
+# ─── QR ↔ 가맹점 매핑 (OWNER 조회 범위 결정) ─────────────────
+
+@router.get("/ongi/qr-mappings")
+def list_ongi_qr_mappings(db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    """QR ↔ 가맹점 매핑 전체를 반환한다 (관리자 매핑 화면용)."""
+    rows = (
+        db.query(OngiQrMapping, Merchant.name)
+        .join(Merchant, Merchant.id == OngiQrMapping.merchant_id)
+        .order_by(OngiQrMapping.qr_id)
+        .all()
+    )
+    return {
+        "items": [
+            {
+                "qr_id": m.qr_id,
+                "qr_name": m.qr_name,
+                "merchant_id": m.merchant_id,
+                "merchant_name": merchant_name,
+            }
+            for m, merchant_name in rows
+        ]
+    }
+
+
+@router.put("/ongi/qr-mappings/{qr_id}")
+def set_ongi_qr_mapping(
+    qr_id: int,
+    req: OngiQrMappingUpdate,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """QR을 가맹점에 연결하거나(merchant_id) 연결을 해제한다(merchant_id=null)."""
+    mapping = db.query(OngiQrMapping).filter(OngiQrMapping.qr_id == qr_id).first()
+
+    if req.merchant_id is None:
+        if mapping:
+            db.delete(mapping)
+            db.commit()
+        return {"ok": True, "qr_id": qr_id, "merchant_id": None}
+
+    merchant = db.query(Merchant).filter(Merchant.id == req.merchant_id).first()
+    if not merchant:
+        raise HTTPException(status_code=404, detail="가맹점을 찾을 수 없습니다")
+
+    if mapping:
+        mapping.merchant_id = merchant.id
+        if req.qr_name is not None:
+            mapping.qr_name = req.qr_name
+    else:
+        mapping = OngiQrMapping(qr_id=qr_id, qr_name=req.qr_name, merchant_id=merchant.id)
+        db.add(mapping)
+    db.commit()
+    return {
+        "ok": True,
+        "qr_id": qr_id,
+        "merchant_id": merchant.id,
+        "merchant_name": merchant.name,
+    }

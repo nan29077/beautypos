@@ -405,6 +405,12 @@ class OngiNotifySecretUpdate(BaseModel):
     secret: str
 
 
+class OngiQrMappingUpdate(BaseModel):
+    """온기 QR ↔ 가맹점 연결. merchant_id 를 null 로 보내면 연결 해제."""
+    merchant_id: Optional[int] = None
+    qr_name: Optional[str] = None                 # 매핑 시점의 QR 이름 (표시용 스냅샷)
+
+
 # ─── 단말기 관리 (Admin) ─────────────────────────────────────
 
 class TerminalCreate(BaseModel):

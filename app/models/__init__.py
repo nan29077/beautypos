@@ -40,6 +40,7 @@ from app.models.affiliate_mall import AffiliateMall
 from app.models.ongi_transaction import (
     OngiTransaction, ONGI_STATUS_COMPLETED, ONGI_STATUS_CANCELLED,
 )
+from app.models.ongi_qr_mapping import OngiQrMapping
 from app.models.app_release import AppRelease
 from app.models.system_config import (
     SystemConfig, AD_ORDER_MGMT_ENABLED, AD_BLOG_ENABLED, AD_PLACE_TRAFFIC_ENABLED,
@@ -81,6 +82,7 @@ __all__ = [
     "MIN_REFUND_AMOUNT", "PAYMENT_PLAN", "PAYMENT_CREDIT",
     "AffiliateMall",
     "OngiTransaction", "ONGI_STATUS_COMPLETED", "ONGI_STATUS_CANCELLED",
+    "OngiQrMapping",
     "AppRelease",
     "SystemConfig", "AD_ORDER_MGMT_ENABLED", "AD_BLOG_ENABLED", "AD_PLACE_TRAFFIC_ENABLED",
     "AD_SHORTS_ENABLED", "REWARDPOP_API_KEY", "REWARDPOP_SETTINGS",
