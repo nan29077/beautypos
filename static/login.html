@@ -110,7 +110,10 @@
                             <label class="form-label fw-bold small mb-1">비밀번호</label>
                             <div class="input-group">
                                 <span class="input-group-text bg-white border-end-0" style="border-radius:10px 0 0 10px;"><i class="fas fa-lock text-muted"></i></span>
-                                <input type="password" class="form-control border-start-0" id="loginPassword" placeholder="비밀번호 입력" style="border-radius:0 10px 10px 0;">
+                                <input type="password" class="form-control border-start-0 border-end-0" id="loginPassword" placeholder="비밀번호 입력">
+                                <button type="button" class="input-group-text bg-white border-start-0" style="border-radius:0 10px 10px 0;" onclick="togglePassword('loginPassword', this)" tabindex="-1" aria-label="비밀번호 표시">
+                                    <i class="fas fa-eye-slash text-muted"></i>
+                                </button>
                             </div>
                         </div>
                         <button class="btn btn-primary btn-login w-100" onclick="doLogin()">
@@ -215,6 +218,15 @@
             localStorage.setItem('refresh_token', data.refresh_token);
             localStorage.setItem('user', JSON.stringify(data.user));
             window.location.href = '/static/dashboard.html';
+        }
+
+        function togglePassword(inputId, btn) {
+            const input = document.getElementById(inputId);
+            const icon = btn.querySelector('i');
+            const show = input.type === 'password';
+            input.type = show ? 'text' : 'password';
+            icon.classList.toggle('fa-eye', show);
+            icon.classList.toggle('fa-eye-slash', !show);
         }
 
         async function doLogin() {
