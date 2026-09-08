@@ -27,24 +27,45 @@ from app.models.crm import (CrmCustomer, CrmService, CrmVisit, CrmReservation, C
 from app.models.plan import Plan, MerchantPlan
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-TEST_PASSWORD = "Test1234!"
+TEST_PASSWORD = "Test1234!"        # 영업담당자·직원
+ADMIN_PASSWORD = "Admin1234!"      # 최고관리자·사장님
 TERMINAL_API_KEY = "term-api-key-001"
+
+# ─── 데모 계정 ──────────────────────────────────────────────
+# 로그인 ID 는 User.email 컬럼에 그대로 들어간다. 최고관리자는 이메일이 아닌
+# 짧은 아이디("admin")를 쓴다 — /api/auth/login 은 형식을 검사하지 않는다.
+ADMIN_EMAIL = "admin"
+SALES_EMAIL = "sales@adpay.co.kr"
+OWNER_EMAIL = "beautyshop@adpay.co.kr"
+DESIGNER_EMAIL = "designer@adpay.co.kr"
+DESIGNER2_EMAIL = "designer2@test.com"
+OWNER_GENERAL_EMAIL = "owner_general@test.com"
+
+# (현재 ID, 이전 ID, 비밀번호) — 예전 시드로 만들어진 DB 를 옮길 때 쓴다.
+# scripts/set_accounts.py 가 이 목록을 보고 기존 계정을 갱신한다.
+ACCOUNT_SPECS = [
+    (ADMIN_EMAIL, "admin@test.com", ADMIN_PASSWORD),
+    (SALES_EMAIL, "sales@test.com", TEST_PASSWORD),
+    (OWNER_EMAIL, "owner@test.com", ADMIN_PASSWORD),
+    (DESIGNER_EMAIL, "designer@test.com", TEST_PASSWORD),
+]
 
 
 def run_seed(db: Session):
-    # Check if already seeded
-    if db.query(User).filter(User.email == "admin@test.com").first():
+    # Check if already seeded — 예전 ID(admin@test.com)로 만들어진 DB 도 건너뛴다
+    if db.query(User).filter(User.email.in_([ADMIN_EMAIL, "admin@test.com"])).first():
         print("   Seed data already exists, skipping.")
         return
 
     # ─── 1. Users ────────────────────────────────────────────
     pw_hash = pwd_context.hash(TEST_PASSWORD)
+    admin_pw_hash = pwd_context.hash(ADMIN_PASSWORD)
 
-    admin = User(email="admin@test.com", password_hash=pw_hash, name="최고관리자", role=UserRole.ADMIN)
-    sales = User(email="sales@test.com", password_hash=pw_hash, name="김영업", role=UserRole.SALES)
-    owner = User(email="owner@test.com", password_hash=pw_hash, name="박사장", role=UserRole.OWNER)
-    designer1 = User(email="designer@test.com", password_hash=pw_hash, name="홍길동", role=UserRole.DESIGNER)
-    designer2 = User(email="designer2@test.com", password_hash=pw_hash, name="이디자", role=UserRole.DESIGNER)
+    admin = User(email=ADMIN_EMAIL, password_hash=admin_pw_hash, name="최고관리자", role=UserRole.ADMIN)
+    sales = User(email=SALES_EMAIL, password_hash=pw_hash, name="김영업", role=UserRole.SALES)
+    owner = User(email=OWNER_EMAIL, password_hash=admin_pw_hash, name="박사장", role=UserRole.OWNER)
+    designer1 = User(email=DESIGNER_EMAIL, password_hash=pw_hash, name="홍길동", role=UserRole.DESIGNER)
+    designer2 = User(email=DESIGNER2_EMAIL, password_hash=pw_hash, name="이디자", role=UserRole.DESIGNER)
 
     db.add_all([admin, sales, owner, designer1, designer2])
     db.flush()
@@ -231,9 +252,9 @@ def run_seed(db: Session):
 def seed_crm_demo(db: Session):
     """미용실 CRM 데모 데이터를 멱등하게 시드한다.
 
-    데모 미용실(owner@test.com 소유)에 CRM 고객이 하나도 없을 때만 채운다.
+    데모 미용실(사장님 계정 소유)에 CRM 고객이 하나도 없을 때만 채운다.
     기존 운영 DB에서도 1회 안전하게 실행 가능 (다른 미용실은 건드리지 않음)."""
-    owner = db.query(User).filter(User.email == "owner@test.com").first()
+    owner = db.query(User).filter(User.email.in_([OWNER_EMAIL, "owner@test.com"])).first()
     if not owner:
         return
     merchant = db.query(Merchant).filter(Merchant.owner_user_id == owner.id).first()
@@ -362,15 +383,15 @@ def seed_general_owner(db: Session):
     """일반 업종 테스트 원장 계정을 멱등하게 시드한다.
 
     owner_general@test.com — business_type='general', CRM 없음.
-    기존 뷰티 업종 owner@test.com 과 구분해 일반 업종 테스트용으로 사용.
+    기존 뷰티 업종 사장님 계정과 구분해 일반 업종 테스트용으로 사용.
     """
-    if db.query(User).filter(User.email == "owner_general@test.com").first():
+    if db.query(User).filter(User.email == OWNER_GENERAL_EMAIL).first():
         return  # 이미 시드됨
 
     pw_hash = pwd_context.hash(TEST_PASSWORD)
 
     owner_g = User(
-        email="owner_general@test.com",
+        email=OWNER_GENERAL_EMAIL,
         password_hash=pw_hash,
         name="김일반",
         role=UserRole.OWNER,

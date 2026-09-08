@@ -94,13 +94,17 @@ alembic upgrade head
 - 상태/역할 필드는 Enum 사용
 - 민감 데이터는 `services.encryption`으로 암호화 저장, API 응답 시 `mask_value()`로 마스킹
 - Decimal, datetime은 JSON 직렬화 시 문자열 변환
-- 시드 데이터는 `app/seed.py`에서 idempotent하게 관리 (admin@test.com 존재 여부 체크)
+- 시드 데이터는 `app/seed.py`에서 idempotent하게 관리 (ADMIN 계정 존재 여부 체크)
 
 ### 테스트 계정 (시드 데이터)
 
-| 이메일 | 비밀번호 | 역할 |
+| 아이디 | 비밀번호 | 역할 |
 |--------|----------|------|
-| admin@test.com | Test1234! | ADMIN |
-| sales@test.com | Test1234! | SALES |
-| owner@test.com | Test1234! | OWNER |
-| designer@test.com | Test1234! | DESIGNER |
+| admin | Admin1234! | ADMIN |
+| sales@adpay.co.kr | Test1234! | SALES |
+| beautyshop@adpay.co.kr | Admin1234! | OWNER |
+| designer@adpay.co.kr | Test1234! | DESIGNER |
+
+계정 ID/비밀번호는 `app/seed.py`의 `ACCOUNT_SPECS`가 기준이다. 이미 시드된 DB는
+`python -m scripts.set_accounts` 로 맞춘다 (예전 ID → 현재 ID 변경 + 비밀번호 재설정).
+로그인은 `User.email` 컬럼을 그대로 비교하므로 ADMIN 처럼 이메일 형식이 아닌 ID 도 쓸 수 있다.

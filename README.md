@@ -55,12 +55,12 @@ uvicorn app.main:app --reload --port 8000
 
 ## 테스트 계정
 
-| 역할 | 이메일 | 비밀번호 |
+| 역할 | 아이디 | 비밀번호 |
 |------|--------|----------|
-| 최고관리자 | admin@test.com | Test1234! |
-| 영업관리자 | sales@test.com | Test1234! |
-| 원장님 | owner@test.com | Test1234! |
-| 디자이너 | designer@test.com | Test1234! |
+| 최고관리자 | admin | Admin1234! |
+| 영업관리자 | sales@adpay.co.kr | Test1234! |
+| 사장님 | beautyshop@adpay.co.kr | Admin1234! |
+| 직원(디자이너) | designer@adpay.co.kr | Test1234! |
 
 로그인 화면 하단 "테스트 계정으로 빠른 로그인" 버튼으로 원클릭 로그인 가능
 

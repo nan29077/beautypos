@@ -100,10 +100,11 @@
                     <!-- Login Form -->
                     <div id="loginForm">
                         <div class="mb-3">
-                            <label class="form-label fw-bold small mb-1">이메일</label>
+                            <label class="form-label fw-bold small mb-1">아이디</label>
                             <div class="input-group">
                                 <span class="input-group-text bg-white border-end-0" style="border-radius:10px 0 0 10px;"><i class="fas fa-envelope text-muted"></i></span>
-                                <input type="email" class="form-control border-start-0" id="loginEmail" placeholder="email@example.com" style="border-radius:0 10px 10px 0;">
+                                <!-- 관리자 아이디처럼 이메일이 아닌 ID 도 받으므로 type=text 로 둔다 -->
+                                <input type="text" inputmode="email" autocapitalize="off" autocorrect="off" spellcheck="false" class="form-control border-start-0" id="loginEmail" placeholder="아이디 또는 이메일" style="border-radius:0 10px 10px 0;">
                             </div>
                         </div>
                         <div class="mb-3">
@@ -232,7 +233,7 @@
         async function doLogin() {
             const email = document.getElementById('loginEmail').value;
             const password = document.getElementById('loginPassword').value;
-            if (!email || !password) { showAlert('이메일과 비밀번호를 입력하세요', 'warning'); return; }
+            if (!email || !password) { showAlert('아이디와 비밀번호를 입력하세요', 'warning'); return; }
             try {
                 const res = await fetch(API + '/api/auth/login', {
                     method: 'POST',

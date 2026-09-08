@@ -18,6 +18,7 @@ from app.schemas.schemas import (
 )
 from app.services import login_guard, plan_service
 from app.config import get_settings
+from app import seed
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -165,11 +166,11 @@ def test_login(role: str = Query(...), db: Session = Depends(get_db)):
         raise HTTPException(status_code=403, detail="Test login disabled in production")
 
     role_email_map = {
-        "admin": "admin@test.com",
-        "sales": "sales@test.com",
-        "owner": "owner@test.com",
-        "designer": "designer@test.com",
-        "owner_general": "owner_general@test.com",  # 일반 업종 테스트 원장 (CRM 없음)
+        "admin": seed.ADMIN_EMAIL,
+        "sales": seed.SALES_EMAIL,
+        "owner": seed.OWNER_EMAIL,
+        "designer": seed.DESIGNER_EMAIL,
+        "owner_general": seed.OWNER_GENERAL_EMAIL,  # 일반 업종 테스트 원장 (CRM 없음)
     }
     email = role_email_map.get(role)
     if not email:

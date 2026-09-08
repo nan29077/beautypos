@@ -152,6 +152,7 @@ def test_rewardpop_official_http_contract(monkeypatch):
 
 def test_approved_place_order_is_dispatched_to_rewardpop(client, monkeypatch):
     """추가 플레이스 주문은 관리자 집행 시 order 출처 원장으로 한 번만 전송된다."""
+    from app import seed
     from app.models.ad import AdOrder, AdOrderPlaceTrafficDetail, AdOrderStatus, AdOrderType
     from app.models.ad_dispatch import AdDispatch
     from app.models.merchant import Merchant
@@ -162,7 +163,7 @@ def test_approved_place_order_is_dispatched_to_rewardpop(client, monkeypatch):
     db = _session()
     try:
         merchant = db.query(Merchant).first()
-        admin = db.query(User).filter(User.email == "admin@test.com").first()
+        admin = db.query(User).filter(User.email == seed.ADMIN_EMAIL).first()
         merchant.place_code = "1750900108"
         config = MerchantAdConfig(
             merchant_id=merchant.id,
@@ -225,6 +226,7 @@ def test_approved_place_order_is_dispatched_to_rewardpop(client, monkeypatch):
 
 def test_invalid_order_transition_does_not_dispatch_to_rewardpop(client, monkeypatch):
     """내부 상태 전환이 잘못되면 되돌릴 수 없는 외부 POST를 먼저 보내지 않는다."""
+    from app import seed
     from app.models.ad import AdOrder, AdOrderPlaceTrafficDetail, AdOrderStatus, AdOrderType
     from app.models.merchant import Merchant
     from app.models.merchant_ad_config import MerchantAdConfig
@@ -234,7 +236,7 @@ def test_invalid_order_transition_does_not_dispatch_to_rewardpop(client, monkeyp
     db = _session()
     try:
         merchant = db.query(Merchant).first()
-        admin = db.query(User).filter(User.email == "admin@test.com").first()
+        admin = db.query(User).filter(User.email == seed.ADMIN_EMAIL).first()
         merchant.place_code = "1750900108"
         config = db.query(MerchantAdConfig).filter(
             MerchantAdConfig.merchant_id == merchant.id,
@@ -294,6 +296,7 @@ def test_invalid_order_transition_does_not_dispatch_to_rewardpop(client, monkeyp
 
 def test_rejecting_credit_order_returns_the_credit(client):
     """크레딧으로 결제한 광고 주문을 반려하면 광고비가 되돌아와야 한다."""
+    from app import seed
     from app.models.ad import AdOrder, AdOrderStatus, AdOrderType
     from app.models.merchant import Merchant
     from app.models.user import User
@@ -303,7 +306,7 @@ def test_rejecting_credit_order_returns_the_credit(client):
     db = _session()
     try:
         merchant = db.query(Merchant).first()
-        admin = db.query(User).filter(User.email == "admin@test.com").first()
+        admin = db.query(User).filter(User.email == seed.ADMIN_EMAIL).first()
         ad_credit.charge(db, merchant.id, 100000, "테스트 충전", admin.id)
         before = ad_credit.balance_of(db, merchant.id)
 
@@ -483,24 +486,25 @@ def test_cancelled_transactions_are_excluded_from_sales(client):
 # ─── 로그인 실패 제한 ────────────────────────────────────────
 
 def test_login_locks_out_after_repeated_failures(client):
+    from app import seed
     from app.services import login_guard
 
     login_guard.reset()
     try:
         for _ in range(5):
             bad = client.post("/api/auth/login",
-                              json={"email": "owner@test.com", "password": "wrong-password"})
+                              json={"email": seed.OWNER_EMAIL, "password": "wrong-password"})
             assert bad.status_code == 401
 
         blocked = client.post("/api/auth/login",
-                              json={"email": "owner@test.com", "password": "Test1234!"})
+                              json={"email": seed.OWNER_EMAIL, "password": seed.ADMIN_PASSWORD})
         assert blocked.status_code == 429
         assert "Retry-After" in blocked.headers
 
         # 다른 계정은 영향을 받지 않는다
         login_guard.reset()
         ok = client.post("/api/auth/login",
-                         json={"email": "owner@test.com", "password": "Test1234!"})
+                         json={"email": seed.OWNER_EMAIL, "password": seed.ADMIN_PASSWORD})
         assert ok.status_code == 200
     finally:
         login_guard.reset()

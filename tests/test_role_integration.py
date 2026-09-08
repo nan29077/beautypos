@@ -195,6 +195,7 @@ def test_sales_sees_only_assigned_merchants(client, second_store):
 
 def test_designer_only_sees_their_own_sales(client):
     designer = _auth(client, "designer")
+    from app import seed
     from app.database import SessionLocal
     from app.models.staff import Staff
     from app.models.transaction import Transaction
@@ -202,7 +203,7 @@ def test_designer_only_sees_their_own_sales(client):
 
     db = SessionLocal()
     try:
-        user = db.query(User).filter(User.email == "designer@test.com").first()
+        user = db.query(User).filter(User.email == seed.DESIGNER_EMAIL).first()
         staff = db.query(Staff).filter(Staff.user_id == user.id).first()
         my_staff_id = staff.id
         other_ids = {
