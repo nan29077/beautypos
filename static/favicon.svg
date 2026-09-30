@@ -1,31 +1,3 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" role="img" aria-label="ADPAY 꽃 심볼">
-  <defs>
-    <linearGradient id="adpayViolet" x1="20" y1="12" x2="172" y2="180" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#715fce"/>
-      <stop offset="1" stop-color="#443680"/>
-    </linearGradient>
-    <linearGradient id="adpayPetal" x1="66" y1="42" x2="126" y2="150" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#ffffff"/>
-      <stop offset="1" stop-color="#dcd3ff"/>
-    </linearGradient>
-    <radialGradient id="adpayCore" cx="96" cy="92" r="22" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#ffc083"/>
-      <stop offset="1" stop-color="#ff8f7a"/>
-    </radialGradient>
-  </defs>
-
-  <rect width="192" height="192" rx="46" fill="url(#adpayViolet)"/>
-
-  <!-- 여섯 장의 꽃잎: 하나를 그려 중심(96,96) 기준으로 60도씩 돌린다 -->
-  <g fill="url(#adpayPetal)">
-    <ellipse cx="96" cy="59" rx="21" ry="31"/>
-    <ellipse cx="96" cy="59" rx="21" ry="31" transform="rotate(60 96 96)"/>
-    <ellipse cx="96" cy="59" rx="21" ry="31" transform="rotate(120 96 96)"/>
-    <ellipse cx="96" cy="59" rx="21" ry="31" transform="rotate(180 96 96)"/>
-    <ellipse cx="96" cy="59" rx="21" ry="31" transform="rotate(240 96 96)"/>
-    <ellipse cx="96" cy="59" rx="21" ry="31" transform="rotate(300 96 96)"/>
-  </g>
-
-  <circle cx="96" cy="96" r="20" fill="url(#adpayCore)"/>
-  <circle cx="90" cy="90" r="6" fill="#ffffff" opacity=".55"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" role="img" aria-label="확성기를 든 ADPAY 펭귄">
+  <image href="/static/favicon-192.png?v=4" width="192" height="192" preserveAspectRatio="xMidYMid meet"/>
 </svg>

@@ -60,8 +60,8 @@ function adpayLoadingMarkup(message = '') {
     return `<div class="adpay-loading" role="status" aria-live="polite">
         <div>
             <div class="adpay-loading-logo">
-                <strong><span>AD</span>PAY</strong>
-                <small>결제와 마케팅을 하나로</small>
+                <img class="adpay-brand-symbol" src="/static/img/brand/adpay-penguin-ad-symbol.png?v=1" alt="" width="360" height="360">
+                <span class="adpay-loading-copy"><strong><span>AD</span>PAY</strong><small>결제와 마케팅을 하나로</small></span>
             </div>
             ${message ? `<p class="adpay-loading-message">${escapeHtml(message)}</p>` : ''}
         </div>
